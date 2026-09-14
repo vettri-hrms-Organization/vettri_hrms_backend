@@ -1,0 +1,19 @@
+package com.haodaone.software.entity;
+
+public enum SoftwareDeploymentStatus {
+    DEPLOYMENT_QUEUED,
+    DEVICE_REACHED,
+    JOB_RECEIVED,
+    PENDING,
+    DOWNLOADING,
+    DOWNLOAD_VERIFIED,
+    INSTALLING,
+    INSTALLATION_COMPLETED,
+    VERIFYING,
+    COMPLETED,
+    INSTALLED,
+    ALREADY_INSTALLED,
+    FAILED,
+    CANCELLED,
+    DEVICE_OFFLINE
+}

@@ -1,0 +1,34 @@
+# Brevo email (optional for local development; OTP delivery requires a configured key)
+app.email.brevo-api-key=${BREVO_API_KEY:}
+app.email.from-address=${EMAIL_FROM_ADDRESS:no-reply@example.com}
+app.email.from-name=${EMAIL_FROM_NAME:Vettri HRMS}
+
+# Agent token OTP policy
+app.agent-token.otp-expiry-minutes=${AGENT_TOKEN_OTP_EXPIRY_MINUTES:10}
+app.agent-token.otp-resend-seconds=${AGENT_TOKEN_OTP_RESEND_SECONDS:60}
+app.agent-token.otp-max-resends=${AGENT_TOKEN_OTP_MAX_RESENDS:3}
+# ==========================================================
+# application.properties reads DB_URL/DB_USERNAME/DB_PASSWORD (and the
+# other vars below) purely from the environment, with no built-in
+# default - so one of these needs to be set before running locally,
+# whether via this local profile, exported shell env vars, or your IDE's
+# run configuration.
+# ==========================================================
+# Copy to `application-local.properties` (gitignored) and run with:
+#   mvn spring-boot:run -Dspring-boot.run.profiles=local
+# ----------------------------------------------------------
+
+DB_URL=jdbc:postgresql://localhost:5432/haodaone
+DB_USERNAME=postgres
+DB_PASSWORD=changeme
+
+# Generate with: openssl rand -base64 48
+JWT_SECRET=local-dev-only-secret-change-before-deploying-anywhere-real-1234567890
+JWT_ACCESS_EXPIRY_MINUTES=15
+JWT_REFRESH_EXPIRY_DAYS=7
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+
+APP_SEED_ADMIN_USERNAME=admin
+APP_SEED_ADMIN_EMAIL=admin@haodaone.local
+APP_SEED_ADMIN_PASSWORD=ChangeMe123!

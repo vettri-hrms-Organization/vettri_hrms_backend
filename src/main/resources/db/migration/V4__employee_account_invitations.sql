@@ -1,0 +1,19 @@
+ALTER TABLE app_user ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+
+CREATE TABLE IF NOT EXISTS account_token (
+    id BIGSERIAL PRIMARY KEY,
+    version BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP,
+    user_id BIGINT NOT NULL REFERENCES app_user(id),
+    token_hash VARCHAR(100) NOT NULL UNIQUE,
+    type VARCHAR(20) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_token_hash ON account_token(token_hash);
