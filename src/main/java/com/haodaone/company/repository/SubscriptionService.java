@@ -24,7 +24,7 @@ public class SubscriptionService {
         Optional<Subscription> s = getForCompany(companyId);
         if (s.isEmpty()) return;
         Subscription sub = s.get();
-        if (sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.ACTIVE && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIAL) {
+        if (sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.ACTIVE && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIAL && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIALING) {
             throw new BadRequestException("Company subscription status " + sub.getStatus() + " does not allow adding devices");
         }
         Integer limit = sub.getDeviceLimit();
@@ -37,7 +37,7 @@ public class SubscriptionService {
         Optional<Subscription> s = getForCompany(companyId);
         if (s.isEmpty()) return;
         Subscription sub = s.get();
-        if (sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.ACTIVE && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIAL) {
+        if (sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.ACTIVE && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIAL && sub.getStatus() != com.haodaone.company.entity.SubscriptionStatus.TRIALING) {
             throw new BadRequestException("Company subscription status " + sub.getStatus() + " does not allow adding employees");
         }
         Integer limit = sub.getEmployeeLimit();

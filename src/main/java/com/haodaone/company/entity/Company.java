@@ -25,6 +25,18 @@ public class Company extends BaseEntity {
     @Column(name = "neutral_threshold_percent")
     private Integer neutralThresholdPercent = 50;
 
+    @Column(length = 100)
+    private String industry;
+
+    @Column(name = "company_size", length = 30)
+    private String companySize;
+
+    @Column(length = 100)
+    private String country;
+
+    @Column(name = "workspace_interests", columnDefinition = "TEXT")
+    private String workspaceInterests;
+
     public String getName() {
         return name;
     }
@@ -55,5 +67,37 @@ public class Company extends BaseEntity {
 
     public void setNeutralThresholdPercent(Integer value) {
         this.neutralThresholdPercent = value;
+    }
+
+    public String getIndustry() {
+        return industry;
+    }
+
+    public void setIndustry(String industry) {
+        this.industry = industry;
+    }
+
+    public String getCompanySize() {
+        return companySize;
+    }
+
+    public void setCompanySize(String companySize) {
+        this.companySize = companySize;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
+    public String getWorkspaceInterests() {
+        return workspaceInterests;
+    }
+
+    public void setWorkspaceInterests(String workspaceInterests) {
+        this.workspaceInterests = workspaceInterests;
     }
 }

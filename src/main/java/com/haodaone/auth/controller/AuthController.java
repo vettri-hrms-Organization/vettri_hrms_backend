@@ -4,7 +4,9 @@ import com.haodaone.auth.dto.ChangePasswordRequest;
 import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
 import com.haodaone.auth.dto.RefreshRequest;
+import com.haodaone.auth.dto.RegisterRequest;
 import com.haodaone.auth.service.AuthService;
+import com.haodaone.auth.service.RegistrationService;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.security.CustomUserPrincipal;
 import com.haodaone.user.dto.UserDTO;
@@ -21,16 +23,23 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final RegistrationService registrationService;
     private final EmployeeRepository employeeRepository;
 
-    public AuthController(AuthService authService, EmployeeRepository employeeRepository) {
+    public AuthController(AuthService authService, RegistrationService registrationService, EmployeeRepository employeeRepository) {
         this.authService = authService;
+        this.registrationService = registrationService;
         this.employeeRepository = employeeRepository;
     }
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         return ResponseEntity.ok(authService.login(request, httpRequest));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
+        return ResponseEntity.status(201).body(registrationService.register(request, httpRequest));
     }
 
     @PostMapping("/refresh")
