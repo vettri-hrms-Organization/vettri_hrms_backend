@@ -118,16 +118,19 @@ public class WfhRequestController {
     }
 
     private Employee currentEmployee() {
-        String username = SecurityContextHolder.getContext().getAuthentication() != null
-                ? SecurityContextHolder.getContext().getAuthentication().getName()
-                : null;
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication != null ? authentication.getName() : null;
         if (username == null) {
             throw new BadRequestException("Authentication required");
         }
+
+        Object principal = authentication != null ? authentication.getPrincipal() : null;
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
-            .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(
-                SecurityContextHolder.getContext().getAuthentication().getPrincipal() instanceof com.haodaone.security.CustomUserPrincipal principal
-                    ? principal.getUser().getEmail() : username))
+                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(username))
+                .or(() -> principal instanceof com.haodaone.security.CustomUserPrincipal customUserPrincipal
+                        ? employeeRepository.findByUser_IdAndDeletedFalse(customUserPrincipal.getId())
+                                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(customUserPrincipal.getUser().getEmail()))
+                        : java.util.Optional.empty())
                 .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
     }
 

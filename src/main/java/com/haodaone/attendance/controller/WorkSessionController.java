@@ -38,8 +38,17 @@ public class WorkSessionController {
 
     private Employee currentEmployee() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        if (a == null) {
+            throw new BadRequestException("Authentication required");
+        }
         String username = a.getName();
+        Object principal = a.getPrincipal();
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(username))
+                .or(() -> principal instanceof com.haodaone.security.CustomUserPrincipal customUserPrincipal
+                        ? employeeRepository.findByUser_IdAndDeletedFalse(customUserPrincipal.getId())
+                                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(customUserPrincipal.getUser().getEmail()))
+                        : java.util.Optional.empty())
                 .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
     }
 

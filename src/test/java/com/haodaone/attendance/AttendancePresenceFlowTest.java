@@ -20,12 +20,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Set;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -155,6 +158,42 @@ public class AttendancePresenceFlowTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    public void employee_today_lookup_accepts_email_as_principal_name() throws Exception {
+        Company company = companyRepository.save(newCompany("Acme 3"));
+        Role employeeRole = roleRepository.findByName("EMPLOYEE").orElseGet(() -> {
+            Role role = new Role();
+            role.setName("EMPLOYEE");
+            role.setLabel("Employee");
+            role.setPermissions(Set.of());
+            return roleRepository.save(role);
+        });
+        User user = new User();
+        user.setUsername("emp-email-lookup");
+        user.setEmail("emp-email-lookup@acme.test");
+        user.setFullName("Employee Three");
+        user.setPasswordHash(passwordEncoder.encode("password"));
+        user.setCompany(company);
+        user.setRoles(Set.of(employeeRole));
+        user = userRepository.save(user);
+
+        Employee employee = new Employee();
+        employee.setEmployeeCode("E-102");
+        employee.setFirstName("Employee");
+        employee.setLastName("Three");
+        employee.setEmail(user.getEmail());
+        employee.setDateOfJoining(java.time.LocalDate.now());
+        employee.setCompany(company);
+        employee.setUser(user);
+        employee.setStatus("Active");
+        employeeRepository.save(employee);
+
+        mockMvc.perform(get("/api/attendance/today")
+                        .principal(new UsernamePasswordAuthenticationToken(user.getEmail(), null,
+                                AuthorityUtils.createAuthorityList("ROLE_EMPLOYEE"))))
+                .andExpect(status().isOk());
     }
 
     private Company newCompany(String name) {

@@ -86,8 +86,18 @@ public class EmployeeSelfServiceController {
     }
 
     private Employee currentEmployee() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BadRequestException("Authentication required");
+        }
+        String username = authentication.getName();
+        Object principal = authentication.getPrincipal();
         Employee employee = employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(username))
+                .or(() -> principal instanceof com.haodaone.security.CustomUserPrincipal customUserPrincipal
+                        ? employeeRepository.findByUser_IdAndDeletedFalse(customUserPrincipal.getId())
+                                .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(customUserPrincipal.getUser().getEmail()))
+                        : java.util.Optional.empty())
                 .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
         if (employee.getCompany() == null || employee.getUser() == null) {
             throw new BadRequestException("Employee account is missing workspace information");
