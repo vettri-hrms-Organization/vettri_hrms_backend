@@ -68,7 +68,7 @@ public class WfhRequestController {
     @GetMapping("/wfh/team")
     @PreAuthorize("hasAuthority('LEAVE_APPROVE') or hasAuthority('ATTENDANCE_VIEW')")
     public List<WfhRequestDTO> teamWfhRequests() {
-        Long companyId = requiredTenant();
+        Long companyId = requireCompany(currentEmployee()).getId();
         return wfhRequestRepository.findAllByCompany_IdAndStatusAndDeletedFalseOrderByWorkDateDesc(companyId, "PENDING")
                 .stream().map(this::toDto).toList();
     }
@@ -125,6 +125,9 @@ public class WfhRequestController {
             throw new BadRequestException("Authentication required");
         }
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+            .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(
+                SecurityContextHolder.getContext().getAuthentication().getPrincipal() instanceof com.haodaone.security.CustomUserPrincipal principal
+                    ? principal.getUser().getEmail() : username))
                 .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
     }
 
@@ -132,7 +135,11 @@ public class WfhRequestController {
         if (employee.getCompany() == null) {
             throw new BadRequestException("Employee has no company assigned");
         }
-        Long tenant = requiredTenant();
+        Long tenant = TenantContext.getCurrentTenant();
+        if (tenant == null) {
+            tenant = employee.getCompany().getId();
+            TenantContext.setCurrentTenant(tenant);
+        }
         if (!Objects.equals(employee.getCompany().getId(), tenant)) {
             throw new BadRequestException("Company mismatch");
         }

@@ -239,7 +239,10 @@ public class AttendanceController {
     @GetMapping("/office-locations")
     @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('ATTENDANCE_VIEW')")
     public List<OfficeLocation> officeLocations() {
-        Long companyId = requiredTenant();
+        Long companyId = TenantContext.getCurrentTenant();
+        if (companyId == null) {
+            companyId = requireCompany(currentEmployee()).getId();
+        }
         return officeLocationRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId);
     }
 
@@ -247,7 +250,7 @@ public class AttendanceController {
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or hasAuthority('LEAVE_APPROVE')")
     public List<AttendanceSessionDTO> teamPresence(@RequestParam(required = false) String date) {
         Employee manager = currentEmployee();
-        Long companyId = requiredTenant();
+        Long companyId = requireCompany(manager).getId();
         List<Long> teamIds = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(manager.getId())
                 .stream().map(Employee::getId).toList();
         if (teamIds.isEmpty()) {
@@ -284,6 +287,9 @@ public class AttendanceController {
             throw new BadRequestException("Authentication required");
         }
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+            .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(
+                SecurityContextHolder.getContext().getAuthentication().getPrincipal() instanceof com.haodaone.security.CustomUserPrincipal principal
+                    ? principal.getUser().getEmail() : username))
                 .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
     }
 
@@ -291,7 +297,11 @@ public class AttendanceController {
         if (employee.getCompany() == null) {
             throw new BadRequestException("Employee has no company assigned");
         }
-        Long tenant = requiredTenant();
+        Long tenant = TenantContext.getCurrentTenant();
+        if (tenant == null) {
+            tenant = employee.getCompany().getId();
+            TenantContext.setCurrentTenant(tenant);
+        }
         if (!Objects.equals(employee.getCompany().getId(), tenant)) {
             throw new BadRequestException("Company mismatch");
         }

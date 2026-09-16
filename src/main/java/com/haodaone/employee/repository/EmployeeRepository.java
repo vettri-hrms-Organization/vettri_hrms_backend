@@ -36,6 +36,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
         Optional<Employee> findByUser_IdAndDeletedFalse(Long userId);
 
+        Optional<Employee> findByEmailIgnoreCaseAndDeletedFalse(String email);
+
     boolean existsByEmail(String email);
 
     boolean existsByEmployeeCode(String employeeCode);
