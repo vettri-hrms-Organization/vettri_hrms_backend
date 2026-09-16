@@ -1,48 +1,69 @@
 package com.haodaone.attendance.controller;
 
-import com.haodaone.attendance.dto.AttendanceExceptionDTO;
-import com.haodaone.attendance.dto.AttendanceRecordDTO;
+import com.haodaone.attendance.dto.*;
+import com.haodaone.attendance.entity.AttendanceSession;
+import com.haodaone.attendance.entity.OfficeLocation;
 import com.haodaone.attendance.repository.AttendanceRecordRepository;
+import com.haodaone.attendance.repository.AttendanceSessionRepository;
+import com.haodaone.attendance.repository.OfficeLocationRepository;
 import com.haodaone.attendance.service.AttendanceEventPublisher;
+import com.haodaone.attendance.service.AttendanceValidationService;
+import com.haodaone.common.exception.BadRequestException;
+import com.haodaone.company.entity.Company;
 import com.haodaone.employee.dto.EmployeeSummaryDTO;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.repository.HolidayRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
+import com.haodaone.tenant.TenantContext;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import com.haodaone.tenant.TenantContext;
 
 @RestController
 @RequestMapping("/api/attendance")
 public class AttendanceController {
 
     private final AttendanceRecordRepository attendanceRecordRepository;
+    private final AttendanceSessionRepository attendanceSessionRepository;
     private final AttendanceEventPublisher eventPublisher;
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final HolidayRepository holidayRepository;
+    private final OfficeLocationRepository officeLocationRepository;
+    private final AttendanceValidationService attendanceValidationService;
 
-    public AttendanceController(AttendanceRecordRepository attendanceRecordRepository, AttendanceEventPublisher eventPublisher,
-                                 EmployeeRepository employeeRepository, LeaveRequestRepository leaveRequestRepository,
-                                 HolidayRepository holidayRepository) {
+    public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
+                               AttendanceSessionRepository attendanceSessionRepository,
+                               AttendanceEventPublisher eventPublisher,
+                               EmployeeRepository employeeRepository,
+                               LeaveRequestRepository leaveRequestRepository,
+                               HolidayRepository holidayRepository,
+                               OfficeLocationRepository officeLocationRepository,
+                               AttendanceValidationService attendanceValidationService) {
         this.attendanceRecordRepository = attendanceRecordRepository;
+        this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
         this.employeeRepository = employeeRepository;
         this.leaveRequestRepository = leaveRequestRepository;
         this.holidayRepository = holidayRepository;
+        this.officeLocationRepository = officeLocationRepository;
+        this.attendanceValidationService = attendanceValidationService;
     }
 
-    /** Defaults to today - the Live Attendance view's primary query. */
     @GetMapping
     @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
     public List<AttendanceRecordDTO> byDate(@RequestParam(required = false) String date) {
@@ -55,14 +76,6 @@ public class AttendanceController {
                 .toList();
     }
 
-    /**
-     * Active employees with no punch at all on a given working day, and
-     * not on approved leave that day - see AttendanceExceptionDTO for why
-     * "missing entirely" is the only exception type this can honestly
-     * report without a shift/scheduled-hours concept to compare against.
-     * Weekends and company holidays return workingDay=false with an empty
-     * list rather than a misleading "everyone's missing" result.
-     */
     @GetMapping("/exceptions")
     @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
     @Transactional(readOnly = true)
@@ -108,7 +121,6 @@ public class AttendanceController {
                 .toList();
     }
 
-    /** Punches from PINs that haven't been mapped to an Employee yet - surfaces gaps in biometric enrollment. */
     @GetMapping("/unmapped")
     @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
     public List<AttendanceRecordDTO> unmapped() {
@@ -124,9 +136,173 @@ public class AttendanceController {
         return eventPublisher.subscribe();
     }
 
+    @PostMapping("/check-in")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @Transactional
+    public ResponseEntity<AttendanceSessionDTO> checkIn(@Valid @RequestBody AttendanceCheckInRequest request) {
+        Employee employee = currentEmployee();
+        Company company = requireCompany(employee);
+
+        if (attendanceValidationService.currentActiveSession(employee, company) != null) {
+            throw new BadRequestException("ALREADY_CHECKED_IN");
+        }
+
+        String normalizedSource = attendanceValidationService.normalizeSource(request.getSource());
+        boolean wfh = Boolean.TRUE.equals(request.getWfh()) || "WFH".equalsIgnoreCase(request.getWorkingMode());
+        attendanceValidationService.validateManagedDevice(employee, request.getDeviceId(), normalizedSource);
+
+        AttendanceSession session = new AttendanceSession();
+        session.setCompany(company);
+        session.setEmployee(employee);
+        session.setAttendanceDate(LocalDate.now());
+        session.setCheckInTime(LocalDateTime.now());
+        session.setStatus("CHECKED_IN");
+        session.setSource(normalizedSource);
+        session.setDeviceId(request.getDeviceId());
+        session.setWfh(wfh);
+
+        if (wfh) {
+            attendanceValidationService.validateWfhApproval(employee, company, session.getAttendanceDate());
+            session.setLocationType("WFH");
+            session.setLocationValidationStatus("APPROVED_WFH");
+            session.setLatitude(request.getLatitude());
+            session.setLongitude(request.getLongitude());
+            session.setAccuracyMeters(request.getAccuracy());
+        } else {
+            OfficeLocation officeLocation = attendanceValidationService.resolveOffice(company, request.getOfficeLocationId());
+            attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(), officeLocation);
+            double distance = attendanceValidationService.calculateDistance(
+                    request.getLatitude(), request.getLongitude(), officeLocation.getLatitude(), officeLocation.getLongitude());
+            session.setLocationType("OFFICE");
+            session.setLocationValidationStatus("VALID");
+            session.setDistanceFromOfficeMeters(distance);
+            session.setOfficeLocationId(officeLocation.getId());
+            session.setOfficeLocationName(officeLocation.getName());
+            session.setLatitude(request.getLatitude());
+            session.setLongitude(request.getLongitude());
+            session.setAccuracyMeters(request.getAccuracy());
+        }
+
+        session = attendanceSessionRepository.save(session);
+        return ResponseEntity.ok(mapSession(session));
+    }
+
+    @PostMapping("/check-out")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @Transactional
+    public ResponseEntity<AttendanceSessionDTO> checkOut(@Valid @RequestBody AttendanceCheckOutRequest request) {
+        Employee employee = currentEmployee();
+        Company company = requireCompany(employee);
+
+        AttendanceSession session = attendanceSessionRepository
+                .findByEmployee_IdAndCompany_IdAndStatusAndAttendanceDate(
+                        employee.getId(), company.getId(), "CHECKED_IN", LocalDate.now())
+                .orElseThrow(() -> new BadRequestException("CHECK_IN_REQUIRED"));
+
+        if (request.getLatitude() != null && request.getLongitude() != null && session.getOfficeLocationId() != null) {
+            OfficeLocation officeLocation = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(
+                    session.getOfficeLocationId(), company.getId()).orElse(null);
+            if (officeLocation != null) {
+                attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(), officeLocation);
+            }
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        session.setCheckOutTime(now);
+        session.setStatus("CHECKED_OUT");
+        session.setSource(attendanceValidationService.normalizeSource(request.getSource()));
+        session.setDeviceId(request.getDeviceId());
+        if (session.getCheckInTime() != null) {
+            session.setDurationMinutes(Duration.between(session.getCheckInTime(), now).toMinutes());
+        }
+        attendanceSessionRepository.save(session);
+
+        return ResponseEntity.ok(mapSession(session));
+    }
+
+    @GetMapping("/today")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    public ResponseEntity<AttendanceSessionDTO> today() {
+        Employee employee = currentEmployee();
+        Company company = requireCompany(employee);
+
+        AttendanceSession session = attendanceSessionRepository
+            .findTopByEmployee_IdAndCompany_IdAndAttendanceDateAndStatusInOrderByCheckInTimeDesc(
+                employee.getId(), company.getId(), LocalDate.now(), List.of("CHECKED_IN", "CHECKED_OUT"))
+            .orElse(null);
+        if (session == null) {
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.ok(mapSession(session));
+    }
+
+    @GetMapping("/office-locations")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('ATTENDANCE_VIEW')")
+    public List<OfficeLocation> officeLocations() {
+        Long companyId = requiredTenant();
+        return officeLocationRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId);
+    }
+
+    @GetMapping("/team")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or hasAuthority('LEAVE_APPROVE')")
+    public List<AttendanceSessionDTO> teamPresence(@RequestParam(required = false) String date) {
+        Employee manager = currentEmployee();
+        Long companyId = requiredTenant();
+        List<Long> teamIds = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(manager.getId())
+                .stream().map(Employee::getId).toList();
+        if (teamIds.isEmpty()) {
+            return List.of();
+        }
+        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
+        return attendanceSessionRepository.findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(companyId, teamIds, targetDate)
+                .stream().map(this::mapSession).toList();
+    }
+
+    private AttendanceSessionDTO mapSession(AttendanceSession session) {
+        AttendanceSessionDTO dto = new AttendanceSessionDTO();
+        dto.setId(session.getId());
+        dto.setEmployeeId(session.getEmployee() != null ? session.getEmployee().getId() : null);
+        dto.setEmployeeName(session.getEmployee() != null ? session.getEmployee().getFullName() : null);
+        dto.setStatus(session.getStatus());
+        dto.setAttendanceDate(session.getAttendanceDate());
+        dto.setCheckInTime(session.getCheckInTime());
+        dto.setCheckOutTime(session.getCheckOutTime());
+        dto.setSource(session.getSource());
+        dto.setLocationType(session.getLocationType());
+        dto.setLocationValidationStatus(session.getLocationValidationStatus());
+        dto.setDistanceFromOfficeMeters(session.getDistanceFromOfficeMeters());
+        dto.setOfficeLocationName(session.getOfficeLocationName());
+        dto.setWfh(session.isWfh());
+        return dto;
+    }
+
+    private Employee currentEmployee() {
+        String username = SecurityContextHolder.getContext().getAuthentication() != null
+                ? SecurityContextHolder.getContext().getAuthentication().getName()
+                : null;
+        if (username == null) {
+            throw new BadRequestException("Authentication required");
+        }
+        return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+                .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
+    }
+
+    private Company requireCompany(Employee employee) {
+        if (employee.getCompany() == null) {
+            throw new BadRequestException("Employee has no company assigned");
+        }
+        Long tenant = requiredTenant();
+        if (!Objects.equals(employee.getCompany().getId(), tenant)) {
+            throw new BadRequestException("Company mismatch");
+        }
+        return employee.getCompany();
+    }
+
     private Long requiredTenant() {
         Long tenant = TenantContext.getCurrentTenant();
-        if (tenant == null) throw new IllegalStateException("Company context is required");
+        if (tenant == null) {
+            throw new IllegalStateException("Company context is required");
+        }
         return tenant;
     }
 }

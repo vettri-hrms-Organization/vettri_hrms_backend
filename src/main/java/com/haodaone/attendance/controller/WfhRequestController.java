@@ -1,0 +1,147 @@
+package com.haodaone.attendance.controller;
+
+import com.haodaone.attendance.dto.WfhRequestDTO;
+import com.haodaone.attendance.entity.WfhRequest;
+import com.haodaone.attendance.repository.WfhRequestRepository;
+import com.haodaone.common.exception.BadRequestException;
+import com.haodaone.company.entity.Company;
+import com.haodaone.employee.entity.Employee;
+import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.tenant.TenantContext;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Objects;
+
+@RestController
+@RequestMapping("/api/attendance")
+public class WfhRequestController {
+
+    private final WfhRequestRepository wfhRequestRepository;
+    private final EmployeeRepository employeeRepository;
+
+    public WfhRequestController(WfhRequestRepository wfhRequestRepository, EmployeeRepository employeeRepository) {
+        this.wfhRequestRepository = wfhRequestRepository;
+        this.employeeRepository = employeeRepository;
+    }
+
+    @PostMapping("/wfh/request")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @Transactional
+    public ResponseEntity<WfhRequestDTO> requestWfh(@RequestBody @Valid WfhRequestDTO request) {
+        Employee employee = currentEmployee();
+        Company company = requireCompany(employee);
+        LocalDate workDate = request.getWorkDate();
+        if (workDate == null) {
+            throw new BadRequestException("WORK_DATE_REQUIRED");
+        }
+        if (wfhRequestRepository.findByEmployee_IdAndCompany_IdAndWorkDateAndDeletedFalse(employee.getId(), company.getId(), workDate).isPresent()) {
+            throw new BadRequestException("WFH_REQUEST_ALREADY_EXISTS");
+        }
+
+        WfhRequest entity = new WfhRequest();
+        entity.setCompany(company);
+        entity.setEmployee(employee);
+        entity.setWorkDate(workDate);
+        entity.setReason(request.getReason());
+        entity.setStatus("PENDING");
+        entity = wfhRequestRepository.save(entity);
+
+        return ResponseEntity.status(201).body(toDto(entity));
+    }
+
+    @GetMapping("/wfh/my")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    public List<WfhRequestDTO> myWfhRequests() {
+        Employee employee = currentEmployee();
+        return wfhRequestRepository.findAllByEmployee_IdAndDeletedFalseOrderByWorkDateDesc(employee.getId())
+                .stream().map(this::toDto).toList();
+    }
+
+    @GetMapping("/wfh/team")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE') or hasAuthority('ATTENDANCE_VIEW')")
+    public List<WfhRequestDTO> teamWfhRequests() {
+        Long companyId = requiredTenant();
+        return wfhRequestRepository.findAllByCompany_IdAndStatusAndDeletedFalseOrderByWorkDateDesc(companyId, "PENDING")
+                .stream().map(this::toDto).toList();
+    }
+
+    @PatchMapping("/wfh/{id}/approve")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @Transactional
+    public ResponseEntity<WfhRequestDTO> approve(@PathVariable Long id, @RequestParam(required = false) String note) {
+        WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
+        Employee manager = currentEmployee();
+        if (!Objects.equals(entity.getCompany().getId(), manager.getCompany().getId())) {
+            throw new BadRequestException("WFH_REQUEST_NOT_FOUND");
+        }
+        entity.setStatus("APPROVED");
+        entity.setApprovedByEmployee(manager);
+        entity.setApprovedAt(LocalDateTime.now());
+        entity.setManagerNote(note);
+        return ResponseEntity.ok(toDto(wfhRequestRepository.save(entity)));
+    }
+
+    @PatchMapping("/wfh/{id}/reject")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @Transactional
+    public ResponseEntity<WfhRequestDTO> reject(@PathVariable Long id, @RequestParam(required = false) String note) {
+        WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
+        Employee manager = currentEmployee();
+        if (!Objects.equals(entity.getCompany().getId(), manager.getCompany().getId())) {
+            throw new BadRequestException("WFH_REQUEST_NOT_FOUND");
+        }
+        entity.setStatus("REJECTED");
+        entity.setApprovedByEmployee(manager);
+        entity.setApprovedAt(LocalDateTime.now());
+        entity.setManagerNote(note);
+        return ResponseEntity.ok(toDto(wfhRequestRepository.save(entity)));
+    }
+
+    private WfhRequestDTO toDto(WfhRequest entity) {
+        WfhRequestDTO dto = new WfhRequestDTO();
+        dto.setId(entity.getId());
+        dto.setEmployeeId(entity.getEmployee() != null ? entity.getEmployee().getId() : null);
+        dto.setEmployeeName(entity.getEmployee() != null ? entity.getEmployee().getFullName() : null);
+        dto.setWorkDate(entity.getWorkDate());
+        dto.setReason(entity.getReason());
+        dto.setStatus(entity.getStatus());
+        dto.setManagerNote(entity.getManagerNote());
+        return dto;
+    }
+
+    private Employee currentEmployee() {
+        String username = SecurityContextHolder.getContext().getAuthentication() != null
+                ? SecurityContextHolder.getContext().getAuthentication().getName()
+                : null;
+        if (username == null) {
+            throw new BadRequestException("Authentication required");
+        }
+        return employeeRepository.findByUser_UsernameAndDeletedFalse(username)
+                .orElseThrow(() -> new BadRequestException("Current login is not linked to an employee"));
+    }
+
+    private Company requireCompany(Employee employee) {
+        if (employee.getCompany() == null) {
+            throw new BadRequestException("Employee has no company assigned");
+        }
+        Long tenant = requiredTenant();
+        if (!Objects.equals(employee.getCompany().getId(), tenant)) {
+            throw new BadRequestException("Company mismatch");
+        }
+        return employee.getCompany();
+    }
+
+    private Long requiredTenant() {
+        Long tenant = TenantContext.getCurrentTenant();
+        if (tenant == null) throw new BadRequestException("Company context is required");
+        return tenant;
+    }
+}
