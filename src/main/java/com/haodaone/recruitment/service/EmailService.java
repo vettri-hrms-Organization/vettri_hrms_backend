@@ -58,6 +58,9 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.email.invitation-disable-click-tracking:true}")
+    private boolean invitationDisableClickTracking;
+
     /** To the hiring manager, when HR assigns them a candidate for the manager round. */
     public void sendManagerAssignmentEmail(Candidate candidate, Interview interview, Employee manager) {
         if (manager.getEmail() == null || manager.getEmail().isBlank()) {
@@ -166,7 +169,7 @@ public class EmailService {
                 + "<p><a href=\"" + escape(activationLink) + "\" style=\"display:inline-block;padding:12px 20px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:4px;\">Set Password / Activate Account</a></p>"
                 + "<p>This invitation expires on " + escape(expiresAt.toString()) + ". Please request a new invitation if it has expired.</p>"
                 + "<p>Regards,<br>Vettri HRMS</p></div>";
-        return sendAndReport(toEmail, toName, subject, body);
+        return sendAndReport(toEmail, toName, subject, body, invitationDisableClickTracking);
     }
 
     public void sendAgentTokenOtpEmail(String toEmail, String toName, String otp, int expiryMinutes, String deviceName) {
@@ -179,10 +182,14 @@ public class EmailService {
     }
 
     private void send(String toEmail, String toName, String subject, String htmlBody) {
-        sendAndReport(toEmail, toName, subject, htmlBody);
+        sendAndReport(toEmail, toName, subject, htmlBody, false);
     }
 
     private boolean sendAndReport(String toEmail, String toName, String subject, String htmlBody) {
+        return sendAndReport(toEmail, toName, subject, htmlBody, false);
+    }
+
+    private boolean sendAndReport(String toEmail, String toName, String subject, String htmlBody, boolean disableClickTracking) {
         if (brevoApiKey == null || brevoApiKey.isBlank()) {
             log.info("BREVO_API_KEY not configured - not sending email. To: {} <{}>, Subject: {}", toName, toEmail, subject);
             return false;
@@ -194,6 +201,9 @@ public class EmailService {
             payload.put("to", List.of(Map.of("email", toEmail, "name", toName != null ? toName : toEmail)));
             payload.put("subject", subject);
             payload.put("htmlContent", htmlBody);
+            if (disableClickTracking) {
+                payload.put("headers", Map.of("X-Mailin-track-clicks", "0"));
+            }
 
             String json = objectMapper.writeValueAsString(payload);
             HttpRequest request = HttpRequest.newBuilder()
