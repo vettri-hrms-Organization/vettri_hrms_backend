@@ -70,7 +70,7 @@ public class EmailService {
         }
 
         String subject = "Candidate Assigned for Manager Interview";
-        String myInterviewsLink = frontendUrl + "/my-interviews";
+        String myInterviewsLink = applicationUrl() + "/my-interviews";
         String body = "<p>Hi " + escape(manager.getFullName()) + ",</p>"
                 + "<p>You've been assigned to conduct the manager interview for the following candidate:</p>"
                 + "<table style=\"border-collapse:collapse;margin:16px 0;\">"
@@ -142,7 +142,7 @@ public class EmailService {
     /** To the new hire, once accepting the offer auto-creates their employee login. */
     public void sendEmployeeWelcomeEmail(String toEmail, String toName, String employeeCode, String username, String temporaryPassword) {
         String subject = "Welcome to Haoda - Your Login Details";
-        String loginUrl = frontendUrl + "/login";
+        String loginUrl = applicationUrl() + "/login";
         String body = "<p>Dear " + escape(toName) + ",</p>"
                 + "<p>Welcome aboard! Your employee account has been created.</p>"
                 + "<table style=\"border-collapse:collapse;margin:16px 0;\">"
@@ -159,7 +159,7 @@ public class EmailService {
     public boolean sendEmployeeInvitationEmail(String toEmail, String toName, String employeeCode,
                                                String rawToken, LocalDateTime expiresAt) {
         String subject = "You're invited to Vettri HRMS";
-        String activationLink = frontendUrl + "/activate-account?token=" + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
+        String activationLink = applicationUrl() + "/activate-account?token=" + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
         String body = "<div style=\"font-family:Arial,sans-serif;color:#17212b;max-width:600px;\">"
                 + "<h1 style=\"color:#0b6e69;\">Vettri HRMS</h1>"
                 + "<p>Hi " + escape(toName) + ",</p>"
@@ -185,6 +185,14 @@ public class EmailService {
 
     private void send(String toEmail, String toName, String subject, String htmlBody) {
         sendAndReport(toEmail, toName, subject, htmlBody, false);
+    }
+
+    private String applicationUrl() {
+        String value = frontendUrl == null ? "" : frontendUrl.trim();
+        if (value.isBlank() || value.contains(",") || !(value.startsWith("http://") || value.startsWith("https://"))) {
+            throw new IllegalStateException("APP_FRONTEND_URL must contain exactly one HTTP application URL");
+        }
+        return value.replaceAll("/+$", "");
     }
 
     private boolean sendAndReport(String toEmail, String toName, String subject, String htmlBody) {

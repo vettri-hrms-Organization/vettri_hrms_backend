@@ -143,8 +143,16 @@ public class EmployeeInvitationService {
         if (rawTokenOrEncryptedToken == null || rawTokenOrEncryptedToken.isBlank()) return null;
         String rawToken = rawTokenOrEncryptedToken.contains(".") ? decryptToken(rawTokenOrEncryptedToken) : rawTokenOrEncryptedToken;
         if (rawToken.isBlank()) return null;
-        return frontendUrl.replaceAll("/$", "") + "/activate-account?token="
+        return canonicalApplicationUrl(frontendUrl) + "/activate-account?token="
                 + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String canonicalApplicationUrl(String configuredUrl) {
+        String value = configuredUrl == null ? "" : configuredUrl.trim();
+        if (value.isBlank() || value.contains(",") || !(value.startsWith("http://") || value.startsWith("https://"))) {
+            throw new IllegalStateException("APP_FRONTEND_URL must contain exactly one HTTP application URL");
+        }
+        return value.replaceAll("/+$", "");
     }
 
     private String encryptToken(String rawToken) {

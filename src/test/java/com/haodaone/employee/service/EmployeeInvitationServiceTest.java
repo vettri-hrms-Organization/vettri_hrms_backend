@@ -4,6 +4,7 @@ import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.ConflictException;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.entity.EmployeeInvitation;
+import com.haodaone.employee.dto.InvitationResponse;
 import com.haodaone.employee.repository.EmployeeInvitationRepository;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.recruitment.service.EmailService;
@@ -19,12 +20,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -55,11 +58,11 @@ class EmployeeInvitationServiceTest {
         employee.setEmail("  AMVIKKASH@GMAIL.COM ");
         TenantContext.setCurrentTenant(1L);
         when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(10L, 1L)).thenReturn(Optional.of(employee));
-        when(emailService.sendEmployeeInvitationEmail(anyString(), anyString(), anyString(), anyString(), any()))
+        lenient().when(emailService.sendEmployeeInvitationEmail(anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(true);
-        when(passwordEncoder.encode(anyString())).thenReturn("hashed");
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(invitationRepository.save(any(EmployeeInvitation.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+        lenient().when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(invitationRepository.save(any(EmployeeInvitation.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @AfterEach
@@ -79,6 +82,30 @@ class EmployeeInvitationServiceTest {
         verify(userRepository).lockEmployeeForCurrentTransaction(10L);
         verify(userRepository).save(any(User.class));
         verify(employeeRepository).save(employee);
+    }
+
+    @Test
+    void buildsExactlyOneConfiguredApplicationUrl() {
+        Role role = new Role();
+        when(userRepository.findByEmailIgnoreCase("amvikkash@gmail.com")).thenReturn(Optional.empty());
+        when(roleRepository.findByName("EMPLOYEE")).thenReturn(Optional.of(role));
+        ReflectionTestUtils.setField(service, "frontendUrl", "https://app.vettrihrms.com/");
+
+        InvitationResponse response = service.sendInvitation(10L);
+
+        assertTrue(response.inviteUrl().matches("https://app\\.vettrihrms\\.com/activate-account\\?token=[A-Za-z0-9_-]+"));
+        assertEquals(-1, response.inviteUrl().indexOf(','));
+        assertEquals(-1, response.inviteUrl().indexOf("localhost"));
+    }
+
+    @Test
+    void rejectsCommaSeparatedApplicationUrl() {
+        Role role = new Role();
+        when(userRepository.findByEmailIgnoreCase("amvikkash@gmail.com")).thenReturn(Optional.empty());
+        when(roleRepository.findByName("EMPLOYEE")).thenReturn(Optional.of(role));
+        ReflectionTestUtils.setField(service, "frontendUrl", "http://localhost:5173,http://localhost:3000");
+
+        assertThrows(IllegalStateException.class, () -> service.sendInvitation(10L));
     }
 
     @Test
@@ -126,7 +153,7 @@ class EmployeeInvitationServiceTest {
         employee.setUser(user);
         EmployeeInvitation previous = new EmployeeInvitation();
         previous.setStatus("PENDING");
-        when(userRepository.findByEmailIgnoreCase("amvikkash@gmail.com")).thenReturn(Optional.of(user));
+        lenient().when(userRepository.findByEmailIgnoreCase("amvikkash@gmail.com")).thenReturn(Optional.of(user));
         when(invitationRepository.findByEmployee_IdAndStatus(10L, "PENDING")).thenReturn(Optional.of(previous));
 
         assertThrows(ConflictException.class, () -> service.sendInvitation(10L));
