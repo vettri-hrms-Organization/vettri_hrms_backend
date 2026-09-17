@@ -68,7 +68,6 @@ public class AuthService {
     private UserDTO toUserDTO(User user) {
         UserDTO dto = UserDTO.from(user);
         employeeRepository.findByUser_UsernameAndDeletedFalse(user.getUsername())
-            .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(user.getEmail()))
                 .ifPresent(employee -> dto.setEmployeeId(employee.getId()));
         return dto;
     }
