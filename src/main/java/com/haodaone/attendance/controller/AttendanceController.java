@@ -10,6 +10,7 @@ import com.haodaone.attendance.service.AttendanceEventPublisher;
 import com.haodaone.attendance.service.AttendanceValidationService;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.entity.Company;
+import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.employee.dto.EmployeeSummaryDTO;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
@@ -45,6 +46,7 @@ public class AttendanceController {
     private final HolidayRepository holidayRepository;
     private final OfficeLocationRepository officeLocationRepository;
     private final AttendanceValidationService attendanceValidationService;
+    private final CompanyRepository companyRepository;
 
     public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
                                AttendanceSessionRepository attendanceSessionRepository,
@@ -53,7 +55,8 @@ public class AttendanceController {
                                LeaveRequestRepository leaveRequestRepository,
                                HolidayRepository holidayRepository,
                                OfficeLocationRepository officeLocationRepository,
-                               AttendanceValidationService attendanceValidationService) {
+                               AttendanceValidationService attendanceValidationService,
+                               CompanyRepository companyRepository) {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
@@ -62,6 +65,7 @@ public class AttendanceController {
         this.holidayRepository = holidayRepository;
         this.officeLocationRepository = officeLocationRepository;
         this.attendanceValidationService = attendanceValidationService;
+        this.companyRepository = companyRepository;
     }
 
     @GetMapping
@@ -238,12 +242,44 @@ public class AttendanceController {
 
     @GetMapping("/office-locations")
     @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('ATTENDANCE_VIEW')")
-    public List<OfficeLocation> officeLocations() {
+    public List<OfficeLocationDTO> officeLocations() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {
             companyId = requireCompany(currentEmployee()).getId();
         }
-        return officeLocationRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId);
+        return officeLocationRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId)
+            .stream().map(OfficeLocationDTO::from).toList();
+    }
+
+    @PostMapping("/office-locations")
+    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @Transactional
+    public ResponseEntity<OfficeLocationDTO> createOfficeLocation(@Valid @RequestBody OfficeLocationRequest request) {
+        Company company = companyRepository.findById(requiredTenant())
+                .orElseThrow(() -> new BadRequestException("COMPANY_NOT_FOUND"));
+        OfficeLocation location = new OfficeLocation();
+        location.setCompany(company);
+        applyOfficeLocation(location, request);
+        return ResponseEntity.status(201).body(OfficeLocationDTO.from(officeLocationRepository.save(location)));
+    }
+
+    @PatchMapping("/office-locations/{id}/status")
+    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @Transactional
+    public ResponseEntity<OfficeLocationDTO> setOfficeLocationStatus(@PathVariable Long id, @RequestParam boolean active) {
+        OfficeLocation location = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
+                .orElseThrow(() -> new BadRequestException("OFFICE_LOCATION_NOT_FOUND"));
+        location.setActive(active);
+        return ResponseEntity.ok(OfficeLocationDTO.from(officeLocationRepository.save(location)));
+    }
+
+    private void applyOfficeLocation(OfficeLocation location, OfficeLocationRequest request) {
+        location.setName(request.getName().trim());
+        location.setAddress(request.getAddress());
+        location.setLatitude(request.getLatitude());
+        location.setLongitude(request.getLongitude());
+        location.setAllowedRadiusMeters(request.getAllowedRadiusMeters());
+        location.setActive(true);
     }
 
     @GetMapping("/team")

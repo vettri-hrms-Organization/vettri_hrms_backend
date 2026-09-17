@@ -20,8 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -190,9 +188,10 @@ public class AttendancePresenceFlowTest {
         employee.setStatus("Active");
         employeeRepository.save(employee);
 
+        String token = jwtService.generateAccessToken(user.getEmail(), java.util.List.of(employeeRole.getName()));
+
         mockMvc.perform(get("/api/attendance/today")
-                        .principal(new UsernamePasswordAuthenticationToken(user.getEmail(), null,
-                                AuthorityUtils.createAuthorityList("ROLE_EMPLOYEE"))))
+                .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }
 
