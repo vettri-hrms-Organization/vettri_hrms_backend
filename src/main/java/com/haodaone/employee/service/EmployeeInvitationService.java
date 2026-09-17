@@ -3,7 +3,6 @@ package com.haodaone.employee.service;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.common.exception.ConflictException;
-import com.haodaone.common.exception.EmailDeliveryException;
 import com.haodaone.common.exception.ResourceNotFoundException;
 import com.haodaone.employee.dto.EmployeeDetailDTO;
 import com.haodaone.employee.dto.InvitationResponse;
@@ -29,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Locale;
@@ -54,6 +54,12 @@ public class EmployeeInvitationService {
     @Value("${app.account-invitation.expiry-hours:48}")
     private long expiryHours;
 
+    @Value("${app.frontend-url:http://localhost:5173}")
+    private String frontendUrl = "http://localhost:5173";
+
+    @Value("${app.account-invitation.encryption-key:local-dev-only-invitation-key}")
+    private String invitationEncryptionKey = "local-dev-only-invitation-key";
+
     public EmployeeInvitationService(EmployeeRepository employeeRepository,
                                      EmployeeInvitationRepository invitationRepository,
                                      UserRepository userRepository, RoleRepository roleRepository,
@@ -78,6 +84,25 @@ public class EmployeeInvitationService {
         return issueInvitation(employeeId, true);
     }
 
+    @Transactional
+    public InvitationResponse status(Long employeeId) {
+        Employee employee = findEmployee(employeeId);
+        EmployeeInvitation invitation = invitationRepository.findByEmployee_IdAndStatus(employeeId, PENDING).orElse(null);
+        if (invitation != null && !invitation.getExpiresAt().isAfter(LocalDateTime.now())) {
+            invitation.setStatus(EXPIRED);
+            invitationRepository.save(invitation);
+            invitation = null;
+        }
+        if (invitation != null) {
+            return new InvitationResponse("Invitation sent", "INVITATION_SENT", buildInviteUrl(invitation.getEncryptedToken()), invitation.getExpiresAt().toString());
+        }
+        if (employee.getUser() != null && "ACTIVE".equals(employee.getUser().getAccountStatus()) && !employee.getUser().isMustChangePassword()) {
+            return new InvitationResponse("Onboarding completed", "COMPLETED", null, null);
+        }
+        boolean hasExpired = invitationRepository.findByEmployee_IdAndStatus(employeeId, EXPIRED).isPresent();
+        return new InvitationResponse(hasExpired ? "Invitation expired" : "Invitation not sent", hasExpired ? "INVITATION_EXPIRED" : "NO_INVITATION", null, null);
+    }
+
     private InvitationResponse issueInvitation(Long employeeId, boolean resend) {
         Employee employee = findEmployee(employeeId);
         userRepository.lockEmployeeForCurrentTransaction(employeeId);
@@ -98,20 +123,58 @@ public class EmployeeInvitationService {
         EmployeeInvitation invitation = new EmployeeInvitation();
         invitation.setEmployee(employee);
         invitation.setTokenHash(hash(rawToken));
+        invitation.setEncryptedToken(encryptToken(rawToken));
         invitation.setExpiresAt(LocalDateTime.now().plusHours(expiryHours));
         invitation.setUsedAt(null);
         invitation.setStatus(PENDING);
         invitationRepository.save(invitation);
 
-        if (!emailService.sendEmployeeInvitationEmail(email, employee.getFullName(),
-                employee.getEmployeeCode(), rawToken, invitation.getExpiresAt())) {
-            invitation.setStatus(REVOKED);
-            throw new EmailDeliveryException("Invitation email could not be sent. Please try again.");
-        }
+        emailService.sendEmployeeInvitationEmail(email, employee.getFullName(),
+            employee.getEmployeeCode(), rawToken, invitation.getExpiresAt());
 
         auditLogService.log("Employee", employee.getId(), resend ? "INVITATION_RESENT" : "INVITATION_SENT",
                 "Invitation sent to '" + employee.getFullName() + "'");
-        return new InvitationResponse("Invitation sent successfully", invitation.getExpiresAt().toString());
+        String inviteUrl = buildInviteUrl(rawToken);
+        return new InvitationResponse("Invitation sent successfully", "INVITATION_SENT", inviteUrl, invitation.getExpiresAt().toString());
+    }
+
+    private String buildInviteUrl(String rawTokenOrEncryptedToken) {
+        if (rawTokenOrEncryptedToken == null || rawTokenOrEncryptedToken.isBlank()) return null;
+        String rawToken = rawTokenOrEncryptedToken.contains(".") ? decryptToken(rawTokenOrEncryptedToken) : rawTokenOrEncryptedToken;
+        if (rawToken.isBlank()) return null;
+        return frontendUrl.replaceAll("/$", "") + "/activate-account?token="
+                + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String encryptToken(String rawToken) {
+        try {
+            byte[] iv = new byte[12];
+            secureRandom.nextBytes(iv);
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, new javax.crypto.spec.SecretKeySpec(keyBytes(), "AES"), new javax.crypto.spec.GCMParameterSpec(128, iv));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(iv) + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(cipher.doFinal(rawToken.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("Invitation token encryption is unavailable", exception);
+        }
+    }
+
+    private String decryptToken(String encryptedToken) {
+        try {
+            String[] parts = encryptedToken.split("\\.", 2);
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, new javax.crypto.spec.SecretKeySpec(keyBytes(), "AES"), new javax.crypto.spec.GCMParameterSpec(128, Base64.getUrlDecoder().decode(parts[0])));
+            return new String(cipher.doFinal(Base64.getUrlDecoder().decode(parts[1])), StandardCharsets.UTF_8);
+        } catch (Exception exception) {
+            return "";
+        }
+    }
+
+    private byte[] keyBytes() {
+        try {
+            return Arrays.copyOf(MessageDigest.getInstance("SHA-256").digest(invitationEncryptionKey.getBytes(StandardCharsets.UTF_8)), 16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -188,17 +251,17 @@ public class EmployeeInvitationService {
         EmployeeInvitation invitation = (lockForUpdate
                 ? invitationRepository.findByTokenHashWithEmployeeForUpdate(tokenHash)
                 : invitationRepository.findByTokenHashWithEmployee(tokenHash))
-                .orElseThrow(() -> new BadRequestException("Invitation link is invalid"));
+                .orElseThrow(() -> new BadRequestException("This invitation link is invalid."));
         if (!PENDING.equals(invitation.getStatus())) {
             if (USED.equals(invitation.getStatus())) {
                 throw new ConflictException("This invitation has already been used");
             }
-            throw new BadRequestException("Invitation link is invalid");
+            throw new BadRequestException("This invitation link is invalid.");
         }
         if (!invitation.getExpiresAt().isAfter(LocalDateTime.now())) {
             invitation.setStatus(EXPIRED);
             invitationRepository.save(invitation);
-            throw new BadRequestException("Invitation has expired");
+            throw new BadRequestException("This invitation link has expired. Please contact your HR administrator.");
         }
         return invitation;
     }
@@ -275,7 +338,6 @@ public class EmployeeInvitationService {
         }
         if (!normalized.equals(employee.getEmail())) {
             employee.setEmail(normalized);
-            employeeRepository.save(employee);
         }
         return normalized;
     }

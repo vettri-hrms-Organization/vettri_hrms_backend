@@ -1,0 +1,1 @@
+ALTER TABLE employee_invitation ADD COLUMN encrypted_token TEXT;

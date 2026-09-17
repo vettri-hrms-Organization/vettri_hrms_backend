@@ -77,6 +77,12 @@ public class EmployeeController {
         return ResponseEntity.ok(invitationService.sendInvitation(employeeId));
     }
 
+    @GetMapping("/{employeeId}/invitation")
+    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('EMPLOYEE_VIEW') and (@companySecurity.canManageEmployee(#employeeId) or @companySecurity.isSuperAdmin())")
+    public InvitationResponse invitationStatus(@PathVariable Long employeeId) {
+        return invitationService.status(employeeId);
+    }
+
     @PostMapping("/{employeeId}/invitation/resend")
     @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('EMPLOYEE_CREATE') and (@companySecurity.canCreateEmployee() or @companySecurity.isSuperAdmin())")
     public ResponseEntity<InvitationResponse> resendInvitation(@PathVariable Long employeeId) {
