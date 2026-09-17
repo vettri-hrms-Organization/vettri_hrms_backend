@@ -263,6 +263,16 @@ public class AttendanceController {
         return ResponseEntity.status(201).body(OfficeLocationDTO.from(officeLocationRepository.save(location)));
     }
 
+    @PutMapping("/office-locations/{id}")
+    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @Transactional
+    public ResponseEntity<OfficeLocationDTO> updateOfficeLocation(@PathVariable Long id, @Valid @RequestBody OfficeLocationRequest request) {
+        OfficeLocation location = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
+                .orElseThrow(() -> new BadRequestException("OFFICE_LOCATION_NOT_FOUND"));
+        applyOfficeLocation(location, request);
+        return ResponseEntity.ok(OfficeLocationDTO.from(officeLocationRepository.save(location)));
+    }
+
     @PatchMapping("/office-locations/{id}/status")
     @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
     @Transactional
@@ -276,6 +286,9 @@ public class AttendanceController {
     private void applyOfficeLocation(OfficeLocation location, OfficeLocationRequest request) {
         location.setName(request.getName().trim());
         location.setAddress(request.getAddress());
+        location.setCity(request.getCity());
+        location.setState(request.getState());
+        location.setCountry(request.getCountry());
         location.setLatitude(request.getLatitude());
         location.setLongitude(request.getLongitude());
         location.setAllowedRadiusMeters(request.getAllowedRadiusMeters());

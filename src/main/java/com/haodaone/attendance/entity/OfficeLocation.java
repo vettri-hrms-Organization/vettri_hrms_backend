@@ -21,6 +21,15 @@ public class OfficeLocation extends BaseEntity {
     @Column(length = 255)
     private String address;
 
+    @Column(length = 120)
+    private String city;
+
+    @Column(length = 120)
+    private String state;
+
+    @Column(length = 120)
+    private String country;
+
     @Column(nullable = false)
     private Double latitude;
 
@@ -56,6 +65,13 @@ public class OfficeLocation extends BaseEntity {
     public void setAddress(String address) {
         this.address = address;
     }
+
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
+    public String getState() { return state; }
+    public void setState(String state) { this.state = state; }
+    public String getCountry() { return country; }
+    public void setCountry(String country) { this.country = country; }
 
     public Double getLatitude() {
         return latitude;
