@@ -119,6 +119,7 @@ public class EmployeeInvitationService {
         if (pending != null) {
             pending.setStatus(REVOKED);
             invitationRepository.save(pending);
+            invitationRepository.flush();
         }
         EmployeeInvitation invitation = new EmployeeInvitation();
         invitation.setEmployee(employee);
