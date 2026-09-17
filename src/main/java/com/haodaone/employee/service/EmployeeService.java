@@ -136,6 +136,12 @@ public class EmployeeService {
         }
 
         Employee saved = employeeRepository.save(employee);
+        userRepository.findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(saved.getEmail(), company.getId())
+            .filter(user -> saved.getUser() == null)
+            .ifPresent(user -> {
+                saved.setUser(user);
+                employeeRepository.save(saved);
+            });
         auditLogService.log("Employee", saved.getId(), "CREATE",
                 "Onboarded '" + saved.getFullName() + "' (" + saved.getEmployeeCode() + ")");
         return EmployeeDetailDTO.from(saved);
@@ -169,6 +175,10 @@ public class EmployeeService {
         }
 
         applyRequestFields(employee, request);
+        if (employee.getUser() == null) {
+            userRepository.findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(request.getEmail(), employee.getCompany().getId())
+                .ifPresent(employee::setUser);
+        }
         Employee saved = employeeRepository.save(employee);
         auditLogService.log("Employee", saved.getId(), "UPDATE", "Profile updated for '" + saved.getFullName() + "'");
         return EmployeeDetailDTO.from(saved);

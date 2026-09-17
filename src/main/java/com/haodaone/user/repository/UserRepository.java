@@ -29,4 +29,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
     java.util.List<User> findAllByCompanyIdAndDeletedFalse(Long companyId);
 
     Optional<User> findByIdAndCompanyIdAndDeletedFalse(Long id, Long companyId);
+
+    Optional<User> findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(String email, Long companyId);
 }

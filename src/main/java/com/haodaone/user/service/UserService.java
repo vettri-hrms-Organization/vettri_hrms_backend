@@ -9,9 +9,12 @@ import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.RoleRepository;
 import com.haodaone.user.repository.UserRepository;
+import com.haodaone.employee.entity.Employee;
+import com.haodaone.employee.repository.EmployeeRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.HashSet;
 import java.util.List;
@@ -25,14 +28,17 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final com.haodaone.company.repository.CompanyRepository companyRepository;
+    private final EmployeeRepository employeeRepository;
 
     public UserService(UserRepository userRepository, RoleRepository roleRepository,
-                        PasswordEncoder passwordEncoder, AuditLogService auditLogService, com.haodaone.company.repository.CompanyRepository companyRepository) {
+                        PasswordEncoder passwordEncoder, AuditLogService auditLogService, com.haodaone.company.repository.CompanyRepository companyRepository,
+                        EmployeeRepository employeeRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
+        this.employeeRepository = employeeRepository;
     }
 
     public List<UserDTO> listAll() {
@@ -56,6 +62,7 @@ public class UserService {
         }
 
         Set<String> requestedRoleNames = request.getRoleNames().isEmpty() ? Set.of("EMPLOYEE") : request.getRoleNames();
+        validateRequestedRoles(requestedRoleNames);
         Set<Role> roles = new HashSet<>();
         for (String roleName : requestedRoleNames) {
             roles.add(roleRepository.findByName(roleName)
@@ -79,6 +86,14 @@ public class UserService {
         }
 
         User saved = userRepository.save(user);
+        if (requestedRoleNames.contains("EMPLOYEE") && currentTenant != null) {
+            employeeRepository.findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(saved.getEmail(), currentTenant)
+                    .filter(employee -> employee.getUser() == null)
+                    .ifPresent(employee -> {
+                        employee.setUser(saved);
+                        employeeRepository.save(employee);
+                    });
+        }
         auditLogService.log("User", saved.getId(), "CREATE", "Created user '" + saved.getUsername() + "' with roles " + requestedRoleNames);
         return UserDTO.from(saved);
     }
@@ -99,6 +114,7 @@ public class UserService {
     @Transactional
     public UserDTO assignRoles(Long id, Set<String> roleNames) {
         User user = findActiveOrThrow(id);
+        validateRequestedRoles(roleNames);
         Set<Role> roles = new HashSet<>();
         for (String roleName : roleNames) {
             roles.add(roleRepository.findByName(roleName)
@@ -126,5 +142,15 @@ public class UserService {
             throw new BadRequestException("Company context is required");
         }
         return tenant;
+    }
+
+    private void validateRequestedRoles(Set<String> roleNames) {
+        if (roleNames.contains("SUPER_ADMIN") || roleNames.contains("HR_ADMIN")) {
+            boolean isSuperAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                    .anyMatch(authority -> "ROLE_SUPER_ADMIN".equals(authority.getAuthority()) || "SUPER_ADMIN".equals(authority.getAuthority()));
+            if (!isSuperAdmin) {
+                throw new BadRequestException("Only a Super Admin can assign platform administrator roles.");
+            }
+        }
     }
 }
