@@ -166,7 +166,9 @@ public class EmailService {
                 + "<p>Your Vettri HRMS employee account has been created.</p>"
                 + row("Employee ID", escape(employeeCode))
                 + "<p>Set your password to activate your account and access your employee dashboard.</p>"
-                + "<p><a href=\"" + escape(activationLink) + "\" style=\"display:inline-block;padding:12px 20px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:4px;\">Set Password / Activate Account</a></p>"
+                + "<p><strong>Employee setup link:</strong></p>"
+                + "<p style=\"word-break:break-all;\"><code>" + escape(activationLink) + "</code></p>"
+                + "<p>Copy and paste this link into your browser to set your password.</p>"
                 + "<p>This invitation expires on " + escape(expiresAt.toString()) + ". Please request a new invitation if it has expired.</p>"
                 + "<p>Regards,<br>Vettri HRMS</p></div>";
         return sendAndReport(toEmail, toName, subject, body, invitationDisableClickTracking);
