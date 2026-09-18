@@ -101,6 +101,10 @@ public class AttendancePresenceFlowTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/attendance/today")
+                .header("Authorization", "Bearer " + token))
+            .andExpect(status().isOk());
     }
 
     @Test

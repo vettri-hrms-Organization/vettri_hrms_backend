@@ -16,6 +16,7 @@ public class AttendanceSessionDTO {
     private String locationValidationStatus;
     private Double distanceFromOfficeMeters;
     private String officeLocationName;
+    private Long durationMinutes;
     private boolean wfh;
 
     public Long getId() { return id; }
@@ -42,6 +43,8 @@ public class AttendanceSessionDTO {
     public void setDistanceFromOfficeMeters(Double distanceFromOfficeMeters) { this.distanceFromOfficeMeters = distanceFromOfficeMeters; }
     public String getOfficeLocationName() { return officeLocationName; }
     public void setOfficeLocationName(String officeLocationName) { this.officeLocationName = officeLocationName; }
+    public Long getDurationMinutes() { return durationMinutes; }
+    public void setDurationMinutes(Long durationMinutes) { this.durationMinutes = durationMinutes; }
     public boolean isWfh() { return wfh; }
     public void setWfh(boolean wfh) { this.wfh = wfh; }
 }

@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Comparator;
@@ -52,6 +53,7 @@ public class EmployeeSalaryService {
         this.payrollItemRepository = payrollItemRepository;
     }
 
+    @Transactional(readOnly = true)
     public Page<EmployeeSalarySummaryDTO> list(String search, Long departmentId, String status, String sortBy, String sortDir, Pageable pageable) {
         Long companyId = requiredTenant();
         List<Employee> employees = employeeRepository.searchForPayroll(companyId,

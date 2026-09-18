@@ -234,6 +234,7 @@ public class AttendanceController {
 
     @GetMapping("/today")
     @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @Transactional(readOnly = true)
     public ResponseEntity<AttendanceSessionDTO> today() {
         Employee employee = currentEmployee();
         Company company = requireCompany(employee);
@@ -332,6 +333,7 @@ public class AttendanceController {
         dto.setLocationValidationStatus(session.getLocationValidationStatus());
         dto.setDistanceFromOfficeMeters(session.getDistanceFromOfficeMeters());
         dto.setOfficeLocationName(session.getOfficeLocationName());
+        dto.setDurationMinutes(session.getDurationMinutes());
         dto.setWfh(session.isWfh());
         return dto;
     }

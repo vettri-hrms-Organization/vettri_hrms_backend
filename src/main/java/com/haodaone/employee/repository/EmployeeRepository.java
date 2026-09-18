@@ -134,6 +134,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             "lower(e.lastName) like lower(concat('%', :term, '%')) or " +
             "lower(e.employeeCode) like lower(concat('%', :term, '%')) or " +
             "lower(e.email) like lower(concat('%', :term, '%')))")
+        @EntityGraph(attributePaths = {"department", "designation"})
         List<Employee> searchForPayroll(@Param("companyId") Long companyId, @Param("term") String term,
                                                                         @Param("departmentId") Long departmentId, @Param("status") String status);
 
