@@ -27,12 +27,34 @@ class AttendanceValidationServiceTest {
     @Test
     void rejectsInaccurateLocationWithDiagnostics() {
         AttendanceLocationException error = assertThrows(AttendanceLocationException.class,
-                () -> service.validateLocation(13.0827, 80.2707, 143.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP"));
+                () -> service.validateLocation(13.0827, 80.2707, 201.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP"));
 
         assertEquals("LOCATION_INACCURATE", error.getCode());
-        assertEquals(143.0, error.getAccuracyMeters());
-        assertEquals(50.0, error.getRequiredAccuracyMeters());
+        assertEquals(201.0, error.getAccuracyMeters());
+        assertEquals(200.0, error.getRequiredAccuracyMeters());
         assertEquals("ACCURACY", error.getValidationStage());
+    }
+
+    @Test
+    void acceptsModerateLocationInsideOffice() {
+        service.validateLocation(13.0827, 80.2707, 102.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP");
+    }
+
+    @Test
+    void acceptsModerateBoundaryLocationsInsideOffice() {
+        service.validateLocation(13.0827, 80.2707, 98.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP");
+        service.validateLocation(13.0827, 80.2707, 150.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP");
+        service.validateLocation(13.0827, 80.2707, 199.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP");
+    }
+
+    @Test
+    void rejectsVeryInaccurateLocation() {
+        AttendanceLocationException error = assertThrows(AttendanceLocationException.class,
+                () -> service.validateLocation(13.0827, 80.2707, 500.0, System.currentTimeMillis(), office(150), "WEB_DESKTOP"));
+
+        assertEquals("LOCATION_INACCURATE", error.getCode());
+        assertEquals(500.0, error.getAccuracyMeters());
+        assertEquals(200.0, error.getRequiredAccuracyMeters());
     }
 
     @Test
