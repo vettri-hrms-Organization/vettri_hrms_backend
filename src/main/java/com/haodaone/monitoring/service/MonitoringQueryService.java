@@ -64,7 +64,7 @@ public class MonitoringQueryService {
         if (scope.isPresent() && scope.get().isEmpty()) return Page.empty(pageable);
 
         return activitySessionRepository
-            .searchPaged(from, to, companyId, employeeId, trimmedCode, deviceId, windowTitlePattern, scope.orElse(null), pageable)
+            .searchPaged(from, to, companyId, employeeId, scope.orElse(null), trimmedCode, deviceId, windowTitlePattern, pageable)
                 .map(ActivitySessionDTO::from);
     }
 

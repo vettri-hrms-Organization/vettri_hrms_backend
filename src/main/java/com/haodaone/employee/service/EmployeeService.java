@@ -89,10 +89,16 @@ public class EmployeeService {
         String term = (search == null) ? "" : search.trim();
         var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW");
         if (scope.isPresent() && scope.get().isEmpty()) return new PageResponse<>(List.of(), safePage, safeSize, 0, 0);
-        var result = scope.isEmpty() && departmentId != null
-                ? employeeRepository.searchPagedByDepartmentForCompany(companyId, term, departmentId, pageable)
-            : (scope.isEmpty() ? (term.isEmpty() ? employeeRepository.findAllByCompany_IdAndDeletedFalse(companyId, pageable) : employeeRepository.searchPagedForCompany(companyId, term, pageable))
-                : new org.springframework.data.domain.PageImpl<>(employeeRepository.searchForPayrollInScope(companyId, scope.get(), term, departmentId, null), pageable));
+        org.springframework.data.domain.Page<Employee> result;
+        if (scope.isEmpty() && departmentId != null) {
+            result = employeeRepository.searchPagedByDepartmentForCompany(companyId, term, departmentId, pageable);
+        } else if (scope.isEmpty()) {
+            result = term.isEmpty()
+                    ? employeeRepository.findAllByCompany_IdAndDeletedFalse(companyId, pageable)
+                    : employeeRepository.searchPagedForCompany(companyId, term, pageable);
+        } else {
+            result = new org.springframework.data.domain.PageImpl<>(employeeRepository.searchForPayrollInScope(companyId, scope.get(), term, departmentId, null), pageable);
+        }
 
         return PageResponse.from(result, EmployeeSummaryDTO::from);
     }

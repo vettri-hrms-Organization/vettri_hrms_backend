@@ -68,13 +68,14 @@ public class LeaveRequestService {
      *  returns an empty list rather than falling back to "all", since an
      *  empty team should mean nothing to approve, not everything. Blank
      *  status means every status, mirroring listAll's own behavior. */
-    public List<LeaveRequestDTO> listForEmployees(List<Long> employeeIds, String status) {
+    public List<LeaveRequestDTO> listForEmployees(java.util.Collection<Long> employeeIds, String status) {
         if (employeeIds == null || employeeIds.isEmpty()) {
             return List.of();
         }
+        List<Long> ids = new java.util.ArrayList<>(employeeIds);
         List<LeaveRequest> requests = (status == null || status.isBlank())
-                ? leaveRequestRepository.findAllByEmployeeIdInOrderByStartDateDesc(employeeIds)
-                : leaveRequestRepository.findAllByEmployeeIdInAndStatusOrderByStartDateAsc(employeeIds, status.toUpperCase());
+                ? leaveRequestRepository.findAllByEmployeeIdInOrderByStartDateDesc(ids)
+                : leaveRequestRepository.findAllByEmployeeIdInAndStatusOrderByStartDateAsc(ids, status.toUpperCase());
         return requests.stream().map(LeaveRequestDTO::from).toList();
     }
 
