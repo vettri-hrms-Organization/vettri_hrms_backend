@@ -85,18 +85,24 @@ public class RegistrationService {
             user.setAccountStatus("PENDING_PAYMENT");
             User savedUser = users.save(user);
 
+            String billingCycle = normalizeBillingCycle(request.billingCycle());
+            int employeeCount = request.employeeCount() == null || request.employeeCount() < 1 ? 1 : request.employeeCount();
+            java.math.BigDecimal amount = calculateAmount(employeeCount, billingCycle);
+
             Subscription subscription = new Subscription();
             subscription.setCompany(savedCompany);
-            subscription.setPlan(Plan.valueOf(planName));
+            subscription.setPlan(Plan.VETTRI_HRMS);
             subscription.setStatus(SubscriptionStatus.PENDING_PAYMENT);
-            subscription.setEmployeeLimit(planName.equals("STARTER") ? 25 : planName.equals("BUSINESS") ? 100 : 500);
-            subscription.setDeviceLimit(planName.equals("STARTER") ? 2 : planName.equals("BUSINESS") ? 10 : 50);
+            subscription.setEmployeeLimit(Math.max(1, employeeCount));
+            subscription.setDeviceLimit(Math.max(1, Math.min(100, employeeCount)));
+            subscription.setBillingCycle(billingCycle);
+            subscription.setBillableEmployeeCount(employeeCount);
             subscription.setStartDate(LocalDate.now());
             subscription.setRenewalDate(LocalDate.now().plusDays(30));
-            subscription.setAmount(planName.equals("STARTER") ? new java.math.BigDecimal("2999") : planName.equals("BUSINESS") ? new java.math.BigDecimal("5999") : new java.math.BigDecimal("14999"));
+            subscription.setAmount(amount);
             subscriptions.save(subscription);
 
-            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", subscription.getAmount(), "Payment required to activate your workspace.");
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", amount, "Payment required to activate your workspace.");
         }
 
         user.setAccountStatus("ACTIVE");
@@ -122,8 +128,27 @@ public class RegistrationService {
         if (plan == null || plan.isBlank()) return null;
         String normalized = plan.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
-            case "STARTER", "BUSINESS", "ENTERPRISE" -> normalized;
+            case "VETTRI_HRMS", "VETTRI", "HRMS" -> "VETTRI_HRMS";
             default -> null;
+        };
+    }
+
+    private String normalizeBillingCycle(String billingCycle) {
+        if (billingCycle == null || billingCycle.isBlank()) {
+            return "MONTHLY";
+        }
+        return switch (billingCycle.trim().toUpperCase(Locale.ROOT)) {
+            case "MONTHLY", "QUARTERLY", "ANNUAL" -> billingCycle.trim().toUpperCase(Locale.ROOT);
+            default -> "MONTHLY";
+        };
+    }
+
+    private java.math.BigDecimal calculateAmount(int employeeCount, String billingCycle) {
+        java.math.BigDecimal monthlyBase = new java.math.BigDecimal("199").multiply(java.math.BigDecimal.valueOf(employeeCount));
+        return switch (billingCycle) {
+            case "QUARTERLY" -> monthlyBase.multiply(new java.math.BigDecimal("3")).setScale(2, java.math.RoundingMode.HALF_UP);
+            case "ANNUAL" -> monthlyBase.multiply(new java.math.BigDecimal("12")).multiply(new java.math.BigDecimal("0.9")).setScale(2, java.math.RoundingMode.HALF_UP);
+            default -> monthlyBase.setScale(2, java.math.RoundingMode.HALF_UP);
         };
     }
 

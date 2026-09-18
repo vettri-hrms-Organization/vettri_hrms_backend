@@ -2,10 +2,11 @@ package com.haodaone.billing.service;
 
 import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
-import com.haodaone.auth.dto.RegisterRequest;
-import com.haodaone.auth.dto.SignupRegistrationResponse;
 import com.haodaone.auth.service.AuthService;
 import com.haodaone.billing.dto.PlanPricingResponse;
+import com.haodaone.billing.entity.PaymentTransaction;
+import com.haodaone.billing.entity.PaymentTransactionStatus;
+import com.haodaone.billing.repository.PaymentTransactionRepository;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.entity.Plan;
 import com.haodaone.company.entity.Subscription;
@@ -16,6 +17,7 @@ import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.UserRepository;
 import com.razorpay.Order;
+import com.razorpay.Payment;
 import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
 import org.json.JSONObject;
@@ -26,23 +28,24 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
 public class BillingService {
 
     private static final Map<String, PlanSpec> PLAN_PRICING = Map.of(
-            "STARTER", new PlanSpec(Plan.STARTER, "Starter", new BigDecimal("2999"), 25, 2),
-            "BUSINESS", new PlanSpec(Plan.BUSINESS, "Business", new BigDecimal("5999"), 100, 10),
-            "ENTERPRISE", new PlanSpec(Plan.ENTERPRISE, "Enterprise", new BigDecimal("14999"), 500, 50)
+            "VETTRI_HRMS", new PlanSpec(Plan.VETTRI_HRMS, "Vettri HRMS", new BigDecimal("299"), 1000, 500)
     );
 
     private final UserRepository users;
     private final CompanyRepository companies;
     private final SubscriptionRepository subscriptions;
+    private final PaymentTransactionRepository paymentTransactions;
     private final AuthService authService;
 
     @Value("${app.razorpay.key-id:}")
@@ -54,11 +57,17 @@ public class BillingService {
     @Value("${app.razorpay.currency:INR}")
     private String razorpayCurrency;
 
+    @Value("${app.razorpay.webhook-secret:}")
+    private String razorpayWebhookSecret;
+
     public BillingService(UserRepository users, CompanyRepository companies,
-                          SubscriptionRepository subscriptions, AuthService authService) {
+                          SubscriptionRepository subscriptions,
+                          PaymentTransactionRepository paymentTransactions,
+                          AuthService authService) {
         this.users = users;
         this.companies = companies;
         this.subscriptions = subscriptions;
+        this.paymentTransactions = paymentTransactions;
         this.authService = authService;
     }
 
@@ -77,12 +86,13 @@ public class BillingService {
     }
 
     @Transactional
-    public Map<String, Object> createOrder(Long companyId, Long userId, String plan) {
+    public Map<String, Object> createOrder(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount) {
         if (companyId == null || userId == null) {
             throw new BadRequestException("A company and user are required for checkout.");
         }
 
         String normalizedPlan = normalizePlan(plan);
+        String normalizedCycle = normalizeBillingCycle(billingCycle);
         PlanSpec spec = PLAN_PRICING.get(normalizedPlan);
         if (spec == null) {
             throw new BadRequestException("Plan not found.");
@@ -93,31 +103,57 @@ public class BillingService {
         User user = users.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found."));
 
+        if (user.getCompany() != null && !Objects.equals(user.getCompany().getId(), companyId)) {
+            throw new BadRequestException("Company mismatch for payment checkout.");
+        }
+
         if (razorpayKeyId == null || razorpayKeyId.isBlank() || razorpayKeySecret == null || razorpayKeySecret.isBlank()) {
             throw new BadRequestException("Payment is temporarily unavailable. Add Razorpay credentials to the backend environment.");
         }
 
+        BigDecimal amount = calculateAmount(employeeCount, normalizedCycle);
+
         try {
             RazorpayClient client = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
             JSONObject orderRequest = new JSONObject();
-            orderRequest.put("amount", spec.amount().multiply(new BigDecimal("100")).intValueExact());
+            int amountPaise = amount.multiply(new BigDecimal("100")).intValueExact();
+            orderRequest.put("amount", amountPaise);
             orderRequest.put("currency", razorpayCurrency);
             orderRequest.put("receipt", "vettri-" + company.getId() + "-" + System.currentTimeMillis());
             orderRequest.put("notes", new JSONObject(Map.of(
                     "companyId", String.valueOf(company.getId()),
                     "userId", String.valueOf(user.getId()),
                     "plan", normalizedPlan,
+                    "billingCycle", normalizedCycle,
+                    "employeeCount", String.valueOf(employeeCount == null || employeeCount < 1 ? 1 : employeeCount),
                     "organizationName", company.getName(),
                     "customerEmail", user.getEmail()
             )));
 
             Order order = client.orders.create(orderRequest);
+            String razorpayOrderId = order.get("id");
+
+            PaymentTransaction tx = paymentTransactions.findByRazorpayOrderId(razorpayOrderId)
+                    .orElseGet(PaymentTransaction::new);
+            tx.setCompany(company);
+            tx.setPlan(normalizedPlan);
+            tx.setRazorpayOrderId(razorpayOrderId);
+            tx.setRazorpayPaymentId(null);
+            tx.setCurrency(razorpayCurrency);
+            tx.setAmount(amount);
+            tx.setStatus(PaymentTransactionStatus.CREATED);
+            tx.setPaymentMethod(null);
+            tx.setPaidAt(null);
+            paymentTransactions.save(tx);
+
             return Map.of(
                     "key", razorpayKeyId,
-                    "orderId", order.get("id"),
-                    "amount", order.get("amount"),
-                    "currency", order.get("currency"),
+                    "orderId", razorpayOrderId,
+                    "amount", amountPaise,
+                    "currency", razorpayCurrency,
                     "plan", normalizedPlan,
+                    "billingCycle", normalizedCycle,
+                    "employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount,
                     "companyId", company.getId(),
                     "userId", user.getId(),
                     "organizationName", company.getName(),
@@ -130,12 +166,14 @@ public class BillingService {
     }
 
     @Transactional
-    public Map<String, Object> verifyPayment(Long companyId, Long userId, String plan, String razorpayPaymentId, String razorpayOrderId, String razorpaySignature) {
+    public Map<String, Object> verifyPayment(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount,
+                                            String razorpayPaymentId, String razorpayOrderId, String razorpaySignature) {
         if (companyId == null || userId == null) {
             throw new BadRequestException("Payment verification is missing a user or company.");
         }
 
         String normalizedPlan = normalizePlan(plan);
+        String normalizedCycle = normalizeBillingCycle(billingCycle);
         if (normalizedPlan == null) {
             throw new BadRequestException("Plan not found.");
         }
@@ -144,6 +182,10 @@ public class BillingService {
                 .orElseThrow(() -> new BadRequestException("Company not found."));
         User user = users.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found."));
+
+        if (user.getCompany() != null && !Objects.equals(user.getCompany().getId(), companyId)) {
+            throw new BadRequestException("Company mismatch for payment verification.");
+        }
 
         if (razorpayPaymentId == null || razorpayOrderId == null || razorpaySignature == null || razorpaySignature.isBlank()) {
             throw new BadRequestException("Payment verification failed. Missing Razorpay data.");
@@ -154,16 +196,106 @@ public class BillingService {
             throw new BadRequestException("Payment verification failed. Signature mismatch.");
         }
 
-        Optional<Subscription> existing = subscriptions.findByCompany_IdAndDeletedFalse(companyId);
-        if (existing.isPresent()) {
-            Subscription sub = existing.get();
-            sub.setStatus(SubscriptionStatus.ACTIVE);
-            sub.setPlan(Plan.valueOf(normalizedPlan));
-            sub.setAmount(PLAN_PRICING.get(normalizedPlan).amount());
-            sub.setStartDate(LocalDate.now());
-            sub.setRenewalDate(LocalDate.now().plusDays(30));
-            subscriptions.save(sub);
+        PlanSpec spec = PLAN_PRICING.get(normalizedPlan);
+        if (spec == null) {
+            throw new BadRequestException("Plan not found.");
         }
+
+        RazorpayClient client;
+        Order orderRecord;
+        try {
+            client = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
+            orderRecord = client.orders.fetch(razorpayOrderId);
+        } catch (RazorpayException ex) {
+            throw new BadRequestException("Razorpay order not found for verification.");
+        }
+
+        JSONObject orderJson = new JSONObject(orderRecord.toString());
+        if (orderJson.has("notes")) {
+            JSONObject notes = orderJson.optJSONObject("notes");
+            if (notes != null) {
+                String orderCompanyId = notes.optString("companyId", "");
+                String orderUserId = notes.optString("userId", "");
+                String orderPlan = notes.optString("plan", "");
+                if (!orderCompanyId.equals(String.valueOf(companyId)) || !orderUserId.equals(String.valueOf(userId)) || !orderPlan.equals(normalizedPlan)) {
+                    throw new BadRequestException("Payment order does not belong to the current company or user.");
+                }
+            }
+        }
+
+        BigDecimal expectedAmount = calculateAmount(employeeCount, normalizedCycle);
+        int expectedAmountPaise = expectedAmount.multiply(new BigDecimal("100")).intValueExact();
+        int orderAmountPaise = orderJson.optInt("amount", 0);
+        if (orderAmountPaise != expectedAmountPaise) {
+            throw new BadRequestException("Payment amount mismatch for this plan and billing cycle.");
+        }
+
+        PaymentTransaction paymentTransaction = paymentTransactions.findByRazorpayOrderId(razorpayOrderId)
+                .or(() -> paymentTransactions.findByRazorpayPaymentId(razorpayPaymentId))
+                .orElseGet(PaymentTransaction::new);
+
+        if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())) {
+            return Map.of(
+                    "status", "verified",
+                    "alreadyProcessed", true,
+                    "companyId", company.getId(),
+                    "userId", user.getId(),
+                    "plan", normalizedPlan,
+                    "billingCycle", normalizedCycle,
+                    "message", "Payment already verified and subscription is active.");
+        }
+
+        String paymentMethod = null;
+        try {
+            Payment payment = client.payments.fetch(razorpayPaymentId);
+            paymentMethod = payment.get("method") != null ? String.valueOf(payment.get("method")) : null;
+            if (payment.get("status") != null && "failed".equalsIgnoreCase(String.valueOf(payment.get("status")))) {
+                throw new BadRequestException("Payment failed in Razorpay.");
+            }
+        } catch (RazorpayException ex) {
+            throw new BadRequestException("Razorpay payment not found or inaccessible.");
+        }
+
+        Optional<Subscription> existing = subscriptions.findByCompany_IdAndDeletedFalse(companyId);
+        Subscription subscription = existing.orElseGet(() -> {
+            Subscription created = new Subscription();
+            created.setCompany(company);
+            created.setPlan(Plan.valueOf(normalizedPlan));
+            created.setStatus(SubscriptionStatus.PENDING_PAYMENT);
+            created.setEmployeeLimit(spec.employeeLimit());
+            created.setDeviceLimit(spec.deviceLimit());
+            created.setBillingCycle(normalizedCycle);
+            created.setBillableEmployeeCount(employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+            created.setStartDate(LocalDate.now());
+            created.setRenewalDate(LocalDate.now().plusDays(30));
+            created.setAmount(expectedAmount);
+            return created;
+        });
+
+        subscription.setCompany(company);
+        subscription.setPlan(Plan.valueOf(normalizedPlan));
+        subscription.setStatus(SubscriptionStatus.ACTIVE);
+        subscription.setAmount(expectedAmount);
+        subscription.setEmployeeLimit(spec.employeeLimit());
+        subscription.setDeviceLimit(spec.deviceLimit());
+        subscription.setBillingCycle(normalizedCycle);
+        subscription.setBillableEmployeeCount(employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+        subscription.setStartDate(LocalDate.now());
+        subscription.setRenewalDate(LocalDate.now().plusDays(30));
+        subscriptions.save(subscription);
+
+        paymentTransaction.setCompany(company);
+        paymentTransaction.setSubscription(subscription);
+        paymentTransaction.setPlan(normalizedPlan);
+        paymentTransaction.setRazorpayOrderId(razorpayOrderId);
+        paymentTransaction.setRazorpayPaymentId(razorpayPaymentId);
+        paymentTransaction.setRazorpaySignature(razorpaySignature);
+        paymentTransaction.setCurrency(razorpayCurrency);
+        paymentTransaction.setAmount(expectedAmount);
+        paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
+        paymentTransaction.setPaymentMethod(paymentMethod);
+        paymentTransaction.setPaidAt(LocalDateTime.now());
+        paymentTransactions.save(paymentTransaction);
 
         user.setAccountStatus("ACTIVE");
         user.setActive(true);
@@ -174,7 +306,74 @@ public class BillingService {
                 "companyId", company.getId(),
                 "userId", user.getId(),
                 "plan", normalizedPlan,
+                "billingCycle", normalizedCycle,
+                "employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount,
                 "message", "Payment verified and company activated.");
+    }
+
+    @Transactional
+    public void processWebhookEvent(String rawPayload, String signature) {
+        if (rawPayload == null || rawPayload.isBlank()) {
+            throw new BadRequestException("Missing Razorpay webhook payload.");
+        }
+        if (signature == null || signature.isBlank()) {
+            throw new BadRequestException("Missing Razorpay webhook signature.");
+        }
+        if (razorpayWebhookSecret == null || razorpayWebhookSecret.isBlank()) {
+            throw new BadRequestException("Razorpay webhook secret is not configured.");
+        }
+
+        String expectedSignature = generateSignature(rawPayload, razorpayWebhookSecret);
+        if (!expectedSignature.equalsIgnoreCase(signature)) {
+            throw new BadRequestException("Invalid Razorpay webhook signature.");
+        }
+
+        JSONObject payload = new JSONObject(rawPayload);
+        String event = payload.optString("event", "");
+        JSONObject paymentPayload = payload.optJSONObject("payload");
+        JSONObject paymentData = paymentPayload != null ? paymentPayload.optJSONObject("payment") : null;
+        JSONObject paymentEntity = paymentData != null ? paymentData.optJSONObject("entity") : null;
+
+        if (paymentEntity == null) {
+            return;
+        }
+
+        String paymentId = paymentEntity.optString("id", "");
+        String orderId = paymentEntity.optString("order_id", "");
+
+        if (paymentId.isBlank() || orderId.isBlank()) {
+            return;
+        }
+
+        Optional<PaymentTransaction> existing = paymentTransactions.findByRazorpayOrderId(orderId);
+        if (existing.isEmpty()) {
+            existing = paymentTransactions.findByRazorpayPaymentId(paymentId);
+        }
+
+        PaymentTransaction paymentTransaction = existing.orElseGet(PaymentTransaction::new);
+        if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())
+                && ("payment.captured".equalsIgnoreCase(event) || "payment.authorized".equalsIgnoreCase(event))) {
+            return;
+        }
+
+        paymentTransaction.setRazorpayOrderId(orderId);
+        paymentTransaction.setRazorpayPaymentId(paymentId);
+        paymentTransaction.setWebhookEvent(event);
+
+        if ("payment.captured".equalsIgnoreCase(event) || "payment.authorized".equalsIgnoreCase(event)) {
+            if (paymentTransaction.getCompany() != null && paymentTransaction.getSubscription() != null) {
+                Subscription subscription = paymentTransaction.getSubscription();
+                subscription.setStatus(SubscriptionStatus.ACTIVE);
+                subscriptions.save(subscription);
+            }
+            paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
+            paymentTransaction.setPaidAt(LocalDateTime.now());
+            paymentTransactions.save(paymentTransaction);
+        } else if ("payment.failed".equalsIgnoreCase(event)) {
+            paymentTransaction.setStatus(PaymentTransactionStatus.FAILED);
+            paymentTransaction.setPaidAt(LocalDateTime.now());
+            paymentTransactions.save(paymentTransaction);
+        }
     }
 
     public LoginResponse loginAfterPayment(Long userId, String password) {
@@ -187,12 +386,16 @@ public class BillingService {
     }
 
     private String generateSignature(String payload) {
-        if (razorpayKeySecret == null || razorpayKeySecret.isBlank()) {
+        return generateSignature(payload, razorpayKeySecret);
+    }
+
+    private String generateSignature(String payload, String secret) {
+        if (secret == null || secret.isBlank()) {
             throw new BadRequestException("Razorpay is not configured yet.");
         }
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
-            mac.init(new javax.crypto.spec.SecretKeySpec(razorpayKeySecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] bytes = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(bytes.length * 2);
             for (byte b : bytes) {
@@ -207,7 +410,31 @@ public class BillingService {
     private String normalizePlan(String plan) {
         if (plan == null) return null;
         String normalized = plan.trim().toUpperCase(Locale.ROOT);
-        return PLAN_PRICING.containsKey(normalized) ? normalized : null;
+        return switch (normalized) {
+            case "VETTRI_HRMS", "VETTRI", "HRMS" -> "VETTRI_HRMS";
+            default -> PLAN_PRICING.containsKey(normalized) ? normalized : null;
+        };
+    }
+
+    private String normalizeBillingCycle(String billingCycle) {
+        if (billingCycle == null || billingCycle.isBlank()) {
+            return "MONTHLY";
+        }
+        return switch (billingCycle.trim().toUpperCase(Locale.ROOT)) {
+            case "MONTHLY", "QUARTERLY", "ANNUAL" -> billingCycle.trim().toUpperCase(Locale.ROOT);
+            default -> "MONTHLY";
+        };
+    }
+
+    private BigDecimal calculateAmount(Integer employeeCount, String billingCycle) {
+        int normalizedEmployees = employeeCount == null || employeeCount < 1 ? 1 : employeeCount;
+        BigDecimal baseRate = new BigDecimal("199");
+        BigDecimal monthlyAmount = baseRate.multiply(BigDecimal.valueOf(normalizedEmployees));
+        return switch (billingCycle) {
+            case "QUARTERLY" -> monthlyAmount.multiply(new BigDecimal("3")).setScale(2, java.math.RoundingMode.HALF_UP);
+            case "ANNUAL" -> monthlyAmount.multiply(new BigDecimal("12")).multiply(new BigDecimal("0.9")).setScale(2, java.math.RoundingMode.HALF_UP);
+            default -> monthlyAmount.setScale(2, java.math.RoundingMode.HALF_UP);
+        };
     }
 
     private record PlanSpec(Plan plan, String label, BigDecimal amount, Integer employeeLimit, Integer deviceLimit) {

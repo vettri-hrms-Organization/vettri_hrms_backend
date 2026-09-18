@@ -28,6 +28,12 @@ public class Subscription extends BaseEntity {
     @Column(name = "device_limit")
     private Integer deviceLimit;
 
+    @Column(name = "billing_cycle", length = 20)
+    private String billingCycle;
+
+    @Column(name = "billable_employee_count")
+    private Integer billableEmployeeCount;
+
     @Column(name = "start_date")
     private LocalDate startDate;
 
@@ -75,6 +81,22 @@ public class Subscription extends BaseEntity {
 
     public void setDeviceLimit(Integer deviceLimit) {
         this.deviceLimit = deviceLimit;
+    }
+
+    public String getBillingCycle() {
+        return billingCycle;
+    }
+
+    public void setBillingCycle(String billingCycle) {
+        this.billingCycle = billingCycle;
+    }
+
+    public Integer getBillableEmployeeCount() {
+        return billableEmployeeCount;
+    }
+
+    public void setBillableEmployeeCount(Integer billableEmployeeCount) {
+        this.billableEmployeeCount = billableEmployeeCount;
     }
 
     public LocalDate getStartDate() {
