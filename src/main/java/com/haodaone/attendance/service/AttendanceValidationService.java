@@ -12,6 +12,8 @@ import com.haodaone.company.entity.Company;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ import java.util.Objects;
 @Service
 public class AttendanceValidationService {
 
+    private static final Logger log = LoggerFactory.getLogger(AttendanceValidationService.class);
     private static final double MAX_ACCEPTABLE_ACCURACY_METERS = 50.0;
     private static final long MAX_LOCATION_AGE_MILLIS = 120_000L;
 
@@ -61,6 +64,9 @@ public class AttendanceValidationService {
 
     public void validateLocation(Double latitude, Double longitude, Double accuracy, Long timestamp,
                                  OfficeLocation officeLocation, String source) {
+        double distanceMeters = 0.0;
+        double effectiveRequiredAccuracyMeters = MAX_ACCEPTABLE_ACCURACY_METERS;
+
         if (latitude == null || longitude == null || !Double.isFinite(latitude) || !Double.isFinite(longitude)
                 || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
             throw locationError("LOCATION_UNAVAILABLE", "Location coordinates are unavailable.", accuracy, null, null, null, "COORDINATES", source);
@@ -69,18 +75,20 @@ public class AttendanceValidationService {
             throw locationError("LOCATION_STALE", "The location fix is too old to verify this check-in.", accuracy, null, null, null, "FRESHNESS", source);
         }
         if (accuracy == null || !Double.isFinite(accuracy) || accuracy < 0) {
-            throw locationError("LOCATION_UNAVAILABLE", "Location accuracy is unavailable.", accuracy, MAX_ACCEPTABLE_ACCURACY_METERS, null, null, "ACCURACY", source);
+            throw locationError("LOCATION_UNAVAILABLE", "Location accuracy is unavailable.", accuracy, effectiveRequiredAccuracyMeters, null, null, "ACCURACY", source);
         }
         if (accuracy > MAX_ACCEPTABLE_ACCURACY_METERS) {
-            throw locationError("LOCATION_INACCURATE", "Your device could not determine your location accurately enough to check in.", accuracy, MAX_ACCEPTABLE_ACCURACY_METERS, null, null, "ACCURACY", source);
+            throw locationError("LOCATION_INACCURATE", "Your device could not determine your location accurately enough to check in.", accuracy, effectiveRequiredAccuracyMeters, null, null, "ACCURACY", source);
         }
         if (officeLocation == null) {
             throw new BadRequestException("NO_ACTIVE_OFFICE");
         }
-        double distance = calculateDistance(latitude, longitude, officeLocation.getLatitude(), officeLocation.getLongitude());
-        if (distance > officeLocation.getAllowedRadiusMeters()) {
+        distanceMeters = calculateDistance(latitude, longitude, officeLocation.getLatitude(), officeLocation.getLongitude());
+        log.warn("CHECK-IN LOCATION VALIDATION receivedLatitude={} receivedLongitude={} receivedAccuracyMeters={} requiredAccuracyMeters={} officeLatitude={} officeLongitude={} allowedRadiusMeters={} distanceMeters={} source={}",
+                latitude, longitude, accuracy, effectiveRequiredAccuracyMeters, officeLocation.getLatitude(), officeLocation.getLongitude(), officeLocation.getAllowedRadiusMeters(), distanceMeters, source);
+        if (distanceMeters > officeLocation.getAllowedRadiusMeters()) {
             throw locationError("OUTSIDE_GEOFENCE", "You are outside the allowed office check-in area.", accuracy,
-                    MAX_ACCEPTABLE_ACCURACY_METERS, distance, officeLocation.getAllowedRadiusMeters(), "GEOFENCE", source);
+                    effectiveRequiredAccuracyMeters, distanceMeters, officeLocation.getAllowedRadiusMeters(), "GEOFENCE", source);
         }
     }
 

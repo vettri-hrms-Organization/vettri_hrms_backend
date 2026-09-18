@@ -18,6 +18,8 @@ import com.haodaone.leave.repository.HolidayRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.tenant.TenantContext;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -37,6 +39,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/attendance")
 public class AttendanceController {
+
+    private static final Logger log = LoggerFactory.getLogger(AttendanceController.class);
 
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final AttendanceSessionRepository attendanceSessionRepository;
@@ -153,6 +157,8 @@ public class AttendanceController {
 
         String normalizedSource = attendanceValidationService.normalizeSource(request.getSource());
         boolean wfh = Boolean.TRUE.equals(request.getWfh()) || "WFH".equalsIgnoreCase(request.getWorkingMode());
+        log.info("CHECK-IN LOCATION REQUEST received source={} workingMode={} latitude={} longitude={} accuracy={} timestamp={} officeLocationId={}",
+                normalizedSource, request.getWorkingMode(), request.getLatitude(), request.getLongitude(), request.getAccuracy(), request.getTimestamp(), request.getOfficeLocationId());
         attendanceValidationService.validateManagedDevice(employee, request.getDeviceId(), normalizedSource);
 
         AttendanceSession session = new AttendanceSession();
