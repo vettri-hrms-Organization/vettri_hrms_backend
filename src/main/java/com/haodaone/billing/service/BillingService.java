@@ -146,20 +146,20 @@ public class BillingService {
             tx.setPaidAt(null);
             paymentTransactions.save(tx);
 
-            return Map.of(
-                    "key", razorpayKeyId,
-                    "orderId", razorpayOrderId,
-                    "amount", amountPaise,
-                    "currency", razorpayCurrency,
-                    "plan", normalizedPlan,
-                    "billingCycle", normalizedCycle,
-                    "employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount,
-                    "companyId", company.getId(),
-                    "userId", user.getId(),
-                    "organizationName", company.getName(),
-                    "customerName", user.getFullName(),
-                    "customerEmail", user.getEmail()
-            );
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("key", razorpayKeyId);
+            response.put("orderId", razorpayOrderId);
+            response.put("amount", amountPaise);
+            response.put("currency", razorpayCurrency);
+            response.put("plan", normalizedPlan);
+            response.put("billingCycle", normalizedCycle);
+            response.put("employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+            response.put("companyId", company.getId());
+            response.put("userId", user.getId());
+            response.put("organizationName", company.getName());
+            response.put("customerName", user.getFullName());
+            response.put("customerEmail", user.getEmail());
+            return response;
         } catch (RazorpayException ex) {
             throw new BadRequestException("Unable to create a Razorpay order: " + ex.getMessage());
         }
@@ -235,14 +235,15 @@ public class BillingService {
                 .orElseGet(PaymentTransaction::new);
 
         if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())) {
-            return Map.of(
-                    "status", "verified",
-                    "alreadyProcessed", true,
-                    "companyId", company.getId(),
-                    "userId", user.getId(),
-                    "plan", normalizedPlan,
-                    "billingCycle", normalizedCycle,
-                    "message", "Payment already verified and subscription is active.");
+            Map<String, Object> response = new java.util.LinkedHashMap<>();
+            response.put("status", "verified");
+            response.put("alreadyProcessed", true);
+            response.put("companyId", company.getId());
+            response.put("userId", user.getId());
+            response.put("plan", normalizedPlan);
+            response.put("billingCycle", normalizedCycle);
+            response.put("message", "Payment already verified and subscription is active.");
+            return response;
         }
 
         String paymentMethod = null;
@@ -301,14 +302,15 @@ public class BillingService {
         user.setActive(true);
         users.save(user);
 
-        return Map.of(
-                "status", "verified",
-                "companyId", company.getId(),
-                "userId", user.getId(),
-                "plan", normalizedPlan,
-                "billingCycle", normalizedCycle,
-                "employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount,
-                "message", "Payment verified and company activated.");
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("status", "verified");
+        response.put("companyId", company.getId());
+        response.put("userId", user.getId());
+        response.put("plan", normalizedPlan);
+        response.put("billingCycle", normalizedCycle);
+        response.put("employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+        response.put("message", "Payment verified and company activated.");
+        return response;
     }
 
     @Transactional
