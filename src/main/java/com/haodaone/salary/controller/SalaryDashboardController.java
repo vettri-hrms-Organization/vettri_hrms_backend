@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Salary Dashboard + Salary Reports data source. */
 @RestController
 @RequestMapping("/api/salary/dashboard")
-@PreAuthorize("hasAuthority('SALARY_VIEW')")
+@PreAuthorize("hasAuthority('SALARY_VIEW') and @authorizationService.hasOrganizationScope('SALARY_VIEW')")
 public class SalaryDashboardController {
 
     private final SalaryDashboardService salaryDashboardService;

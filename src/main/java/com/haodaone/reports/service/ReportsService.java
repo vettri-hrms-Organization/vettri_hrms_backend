@@ -178,16 +178,24 @@ public class ReportsService {
 
     /** Active, idle, and productivity totals grouped directly by department. */
     public List<Map<String,Object>> departmentComparison(Long companyId, LocalDate from, LocalDate to) {
+        return departmentComparison(companyId, from, to, null);
+    }
+
+    public List<Map<String,Object>> departmentComparison(Long companyId, LocalDate from, LocalDate to, java.util.Set<Long> employeeIds) {
         String sql = "SELECT coalesce(d.name, 'Unassigned') as department, " +
                 "sum(CASE WHEN s.is_idle_session = false THEN s.duration_seconds ELSE 0 END) as active_seconds, " +
                 "sum(CASE WHEN s.is_idle_session = true THEN s.duration_seconds ELSE 0 END) as idle_seconds " +
                 "FROM activity_session s LEFT JOIN employee e ON e.id = s.employee_id " +
                 "LEFT JOIN department d ON d.id = e.department_id WHERE s.deleted = false " +
                 (companyId != null ? " AND s.company_id = ? " : "") +
+                (employeeIds != null ? " AND e.id IN (" + String.join(",", employeeIds.stream().map(id -> "?").toList()) + ") " : "") +
                 " AND s.start_time >= ? AND s.start_time < ? GROUP BY d.name ORDER BY active_seconds DESC";
-        Object[] params = companyId != null
-                ? new Object[]{companyId, from.atStartOfDay(), to.plusDays(1).atStartOfDay()}
-                : new Object[]{from.atStartOfDay(), to.plusDays(1).atStartOfDay()};
+            java.util.List<Object> parameterList = new java.util.ArrayList<>();
+            if (companyId != null) parameterList.add(companyId);
+            if (employeeIds != null) parameterList.addAll(employeeIds);
+            parameterList.add(from.atStartOfDay());
+            parameterList.add(to.plusDays(1).atStartOfDay());
+            Object[] params = parameterList.toArray();
         return jdbc.query(sql, params, (rs, rowNum) -> {
             long active = rs.getLong("active_seconds");
             long idle = rs.getLong("idle_seconds");

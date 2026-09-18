@@ -20,7 +20,7 @@ public class GoalController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAuthority('PERFORMANCE_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('PERFORMANCE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<GoalDTO> byEmployee(@PathVariable Long employeeId) {
         return goalService.byEmployee(employeeId);
     }

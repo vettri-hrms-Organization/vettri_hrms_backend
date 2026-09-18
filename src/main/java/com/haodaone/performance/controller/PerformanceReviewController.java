@@ -26,7 +26,7 @@ public class PerformanceReviewController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAuthority('PERFORMANCE_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('PERFORMANCE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<PerformanceReviewDTO> byEmployee(@PathVariable Long employeeId) {
         return performanceReviewService.byEmployee(employeeId);
     }

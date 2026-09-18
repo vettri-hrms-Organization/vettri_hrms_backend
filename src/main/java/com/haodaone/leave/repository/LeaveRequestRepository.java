@@ -7,8 +7,10 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
+    java.util.Optional<LeaveRequest> findByIdAndCompany_Id(Long id, Long companyId);
     List<LeaveRequest> findAllByCompany_IdOrderByStartDateDesc(Long companyId);
     List<LeaveRequest> findAllByCompany_IdAndStatusOrderByStartDateAsc(Long companyId, String status);
 
@@ -46,6 +48,14 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     List<LeaveRequest> findActiveOn(@Param("today") LocalDate today);
 
     long countByStatusAndStartDateBetween(String status, LocalDate start, LocalDate end);
+
+    long countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(Long companyId, Set<Long> employeeIds, String status, LocalDate start, LocalDate end);
+
+    @Query("select lr.leaveType.name, coalesce(sum(lr.days), 0) from LeaveRequest lr where lr.company.id = :companyId and lr.employee.id in :employeeIds and lr.status = 'APPROVED' and year(lr.startDate) = :year group by lr.leaveType.name")
+    List<Object[]> sumApprovedDaysByLeaveTypeScoped(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds, @Param("year") int year);
+
+    @Query("select lr.employee.department.name, coalesce(sum(lr.days), 0) from LeaveRequest lr where lr.company.id = :companyId and lr.employee.id in :employeeIds and lr.status = 'APPROVED' and year(lr.startDate) = :year and lr.employee.department is not null group by lr.employee.department.name")
+    List<Object[]> sumApprovedDaysByDepartmentScoped(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds, @Param("year") int year);
 
     @Query("select lr.leaveType.name, coalesce(sum(lr.days), 0) from LeaveRequest lr " +
             "where lr.status = 'APPROVED' and year(lr.startDate) = :year group by lr.leaveType.name")

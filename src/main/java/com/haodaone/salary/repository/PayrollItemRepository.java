@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -28,6 +29,9 @@ public interface PayrollItemRepository extends JpaRepository<PayrollItem, Long> 
     List<PayrollItem> findByPayrollRunIdAndDeletedFalseOrderByEmployee_FirstNameAsc(
             Long payrollRunId
     );
+
+    List<PayrollItem> findByPayrollRun_Company_IdAndPayrollRunIdAndEmployeeIdInAndDeletedFalseOrderByEmployee_FirstNameAsc(
+            Long companyId, Long payrollRunId, Set<Long> employeeIds);
 
     Optional<PayrollItem> findByPayrollRunIdAndEmployeeIdAndDeletedFalse(
             Long payrollRunId,

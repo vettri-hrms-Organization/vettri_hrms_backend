@@ -7,11 +7,16 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 
 public interface AttendanceRecordRepository extends JpaRepository<AttendanceRecord, Long> {
 
     List<AttendanceRecord> findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(Long companyId, LocalDateTime start, LocalDateTime end);
+
+        @Query("select a from AttendanceRecord a where a.company.id = :companyId and a.employee.id in :employeeIds and a.punchTime between :start and :end order by a.punchTime desc")
+        List<AttendanceRecord> findScopedByCompanyAndEmployees(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds,
+                                                                                                                        @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     List<AttendanceRecord> findAllByEmployeeIdOrderByPunchTimeDesc(Long employeeId);
 
@@ -28,6 +33,18 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
     long countDistinctEmployeesPunchedBetweenForCompany(@Param("companyId") Long companyId, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     long countByCompany_IdAndPunchTimeBetween(Long companyId, LocalDateTime start, LocalDateTime end);
+
+        @Query("select count(a) from AttendanceRecord a where a.company.id = :companyId and a.employee.id in :employeeIds and a.punchTime between :start and :end")
+        long countScopedByCompanyAndEmployees(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds,
+                                                                                  @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+        @Query("select count(distinct a.employee.id) from AttendanceRecord a where a.company.id = :companyId and a.employee.id in :employeeIds and a.punchTime between :start and :end")
+        long countDistinctScopedByCompanyAndEmployees(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds,
+                                                                                                 @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+        @Query("select a.employee.department.name, count(a) from AttendanceRecord a where a.company.id = :companyId and a.employee.id in :employeeIds and a.employee.department is not null and a.punchTime between :start and :end group by a.employee.department.name")
+        List<Object[]> countByDepartmentBetweenForCompanyAndEmployees(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds,
+                                                                      @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     @Query("select a.employee.department.name, count(a) from AttendanceRecord a " +
             "where a.company.id = :companyId and a.employee is not null and a.employee.department is not null and a.punchTime between :start and :end " +

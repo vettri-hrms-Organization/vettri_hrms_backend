@@ -48,13 +48,13 @@ public class LeaveRequestController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_APPLY') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('LEAVE_VIEW', 'EMPLOYEE', #employeeId) or hasAuthority('LEAVE_APPLY') and @authorizationService.isAllowed('LEAVE_APPLY', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<LeaveRequestDTO> byEmployee(@PathVariable Long employeeId) {
         return leaveRequestService.listByEmployee(employeeId);
     }
 
     @GetMapping("/employee/{employeeId}/balance")
-    @PreAuthorize("hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_APPLY') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('LEAVE_VIEW', 'EMPLOYEE', #employeeId) or hasAuthority('LEAVE_APPLY') and @authorizationService.isAllowed('LEAVE_APPLY', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<LeaveBalanceDTO> balance(@PathVariable Long employeeId,
                                           @RequestParam(required = false) Integer year) {
         return leaveRequestService.getBalances(employeeId, year != null ? year : LocalDate.now().getYear());
@@ -75,13 +75,13 @@ public class LeaveRequestController {
     }
 
     @PatchMapping("/{id}/approve")
-    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedLeaveRequest('LEAVE_APPROVE', #id)")
     public LeaveRequestDTO approve(@PathVariable Long id, @RequestBody(required = false) LeaveDecisionRequest request) {
         return leaveRequestService.decide(id, true, request != null ? request.getNote() : null);
     }
 
     @PatchMapping("/{id}/reject")
-    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedLeaveRequest('LEAVE_APPROVE', #id)")
     public LeaveRequestDTO reject(@PathVariable Long id, @RequestBody(required = false) LeaveDecisionRequest request) {
         return leaveRequestService.decide(id, false, request != null ? request.getNote() : null);
     }

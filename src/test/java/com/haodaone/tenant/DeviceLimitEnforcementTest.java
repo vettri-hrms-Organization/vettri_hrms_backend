@@ -8,6 +8,7 @@ import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import com.haodaone.monitoring.service.DeviceEnrollmentService;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.company.repository.SubscriptionService;
+import com.haodaone.security.AuthorizationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,12 +23,13 @@ public class DeviceLimitEnforcementTest {
     private AuditLogService auditLogService = Mockito.mock(AuditLogService.class);
     private CompanyRepository companyRepository = Mockito.mock(CompanyRepository.class);
     private SubscriptionService subscriptionService = Mockito.mock(SubscriptionService.class);
+    private AuthorizationService authorizationService = Mockito.mock(AuthorizationService.class);
 
     private DeviceEnrollmentService deviceEnrollmentService;
 
     @BeforeEach
     void setup() {
-        deviceEnrollmentService = new DeviceEnrollmentService(deviceRepository, employeeRepository, auditLogService, companyRepository, subscriptionService);
+        deviceEnrollmentService = new DeviceEnrollmentService(deviceRepository, employeeRepository, auditLogService, companyRepository, subscriptionService, authorizationService);
     }
 
     @Test

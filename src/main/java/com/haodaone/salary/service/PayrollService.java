@@ -36,25 +36,37 @@ public class PayrollService {
     private final SalaryStructureRepository salaryStructureRepository;
     private final AuditLogService auditLogService;
     private final CompanyRepository companyRepository;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public PayrollService(PayrollRunRepository payrollRunRepository, PayrollItemRepository payrollItemRepository,
                            SalaryStructureRepository salaryStructureRepository, AuditLogService auditLogService,
-                           CompanyRepository companyRepository) {
+                           CompanyRepository companyRepository,
+                           com.haodaone.security.AuthorizationService authorizationService) {
         this.payrollRunRepository = payrollRunRepository;
         this.payrollItemRepository = payrollItemRepository;
         this.salaryStructureRepository = salaryStructureRepository;
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
+        this.authorizationService = authorizationService;
     }
 
     public List<PayrollRunSummaryDTO> listRuns() {
-        return payrollRunRepository.findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(requiredTenant())
+        Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("SALARY_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var runs = scope.isEmpty() ? payrollRunRepository.findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(companyId)
+            : payrollRunRepository.findAllScoped(companyId, scope.get());
+        return runs
                 .stream().map(PayrollRunSummaryDTO::from).toList();
     }
 
     public PayrollRunDTO getRun(Long runId) {
         PayrollRun run = findRunOrThrow(runId);
-        List<PayrollItem> items = payrollItemRepository.findByPayrollRunIdAndDeletedFalseOrderByEmployee_FirstNameAsc(runId);
+        var scope = authorizationService.resolveEmployeeIds("SALARY_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return PayrollRunDTO.of(run, List.of());
+        List<PayrollItem> items = scope.isEmpty()
+            ? payrollItemRepository.findByPayrollRunIdAndDeletedFalseOrderByEmployee_FirstNameAsc(runId)
+            : payrollItemRepository.findByPayrollRun_Company_IdAndPayrollRunIdAndEmployeeIdInAndDeletedFalseOrderByEmployee_FirstNameAsc(requiredTenant(), runId, scope.get());
         return PayrollRunDTO.of(run, items);
     }
 

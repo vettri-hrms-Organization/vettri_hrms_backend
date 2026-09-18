@@ -131,7 +131,7 @@ public class WorkSessionController {
     }
 
     @GetMapping
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
     public List<WorkSessionDTO> list(@RequestParam(required = false) String date,
                                      @RequestParam(required = false) String mode) {
         LocalDate target = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);

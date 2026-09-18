@@ -73,7 +73,8 @@ public class CustomUserPrincipal implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return user.getLockedUntil() == null || user.getLockedUntil().isBefore(java.time.LocalDateTime.now());
+        return "ACTIVE".equalsIgnoreCase(user.getAccountStatus())
+            && (user.getLockedUntil() == null || user.getLockedUntil().isBefore(java.time.LocalDateTime.now()));
     }
 
     @Override
@@ -83,6 +84,6 @@ public class CustomUserPrincipal implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return user.isActive();
+        return user.isActive() && "ACTIVE".equalsIgnoreCase(user.getAccountStatus());
     }
 }

@@ -5,9 +5,10 @@ import jakarta.persistence.*;
 
 import java.util.HashSet;
 import java.util.Set;
+import com.haodaone.company.entity.Company;
 
 @Entity
-@Table(name = "role", uniqueConstraints = @UniqueConstraint(columnNames = "name"))
+@Table(name = "role")
 public class Role extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 60)
@@ -28,6 +29,10 @@ public class Role extends BaseEntity {
     @Column(name = "system_defined", nullable = false)
     private boolean systemDefined = false;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id")
+    private Company company;
+
     /**
      * EAGER, not LAZY: CustomUserPrincipal.getAuthorities() reads this on
      * every single authenticated request (JwtAuthenticationFilter runs
@@ -45,6 +50,9 @@ public class Role extends BaseEntity {
             joinColumns = @JoinColumn(name = "role_id"),
             inverseJoinColumns = @JoinColumn(name = "permission_id"))
     private Set<Permission> permissions = new HashSet<>();
+
+    @OneToMany(mappedBy = "role", fetch = FetchType.EAGER, cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<RolePermissionScope> permissionScopes = new HashSet<>();
 
     public String getName() {
         return name;
@@ -78,6 +86,9 @@ public class Role extends BaseEntity {
         this.systemDefined = systemDefined;
     }
 
+    public Company getCompany() { return company; }
+    public void setCompany(Company company) { this.company = company; }
+
     public Set<Permission> getPermissions() {
         return permissions;
     }
@@ -85,4 +96,7 @@ public class Role extends BaseEntity {
     public void setPermissions(Set<Permission> permissions) {
         this.permissions = permissions;
     }
+
+    public Set<RolePermissionScope> getPermissionScopes() { return permissionScopes; }
+    public void setPermissionScopes(Set<RolePermissionScope> permissionScopes) { this.permissionScopes = permissionScopes; }
 }

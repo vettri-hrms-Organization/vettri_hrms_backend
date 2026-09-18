@@ -43,7 +43,7 @@ public class EmployeeSalaryController {
      * has no self-bypass since "my own record" isn't "everyone's".
      */
     @GetMapping("/{employeeId}")
-    @PreAuthorize("hasAuthority('SALARY_VIEW') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('SALARY_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public EmployeeSalaryDetailDTO getDetail(@PathVariable Long employeeId) {
         return employeeSalaryService.getDetail(employeeId);
     }

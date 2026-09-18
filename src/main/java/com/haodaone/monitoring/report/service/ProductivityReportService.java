@@ -50,11 +50,14 @@ public class ProductivityReportService {
     private final ActivitySessionRepository activitySessionRepository;
     private final CompanyRepository companyRepository;
     private final WorkSessionRepository workSessionRepository;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
-    public ProductivityReportService(ActivitySessionRepository activitySessionRepository, CompanyRepository companyRepository, WorkSessionRepository workSessionRepository) {
+    public ProductivityReportService(ActivitySessionRepository activitySessionRepository, CompanyRepository companyRepository, WorkSessionRepository workSessionRepository,
+                                     com.haodaone.security.AuthorizationService authorizationService) {
         this.activitySessionRepository = activitySessionRepository;
         this.companyRepository = companyRepository;
         this.workSessionRepository = workSessionRepository;
+        this.authorizationService = authorizationService;
     }
 
     /** Every row of the filtered report, one per employee/device/day - backs both the Activity Report table and the Productivity Summary table. */
@@ -150,7 +153,9 @@ public class ProductivityReportService {
         String employeeNamePattern = toPattern(filter.getEmployeeName());
         String deviceNamePattern = toPattern(filter.getDeviceName());
         String applicationNamePattern = toPattern(filter.getApplicationName());
-        List<ActivitySession> sessions = activitySessionRepository.search(from, to, companyId, filter.getEmployeeId(), filter.getEmployeeCode(),
+        var scope = authorizationService.resolveEmployeeIds("MONITORING_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        List<ActivitySession> sessions = activitySessionRepository.search(from, to, companyId, filter.getEmployeeId(), scope.orElse(null), filter.getEmployeeCode(),
             employeeNamePattern, filter.getDepartmentId(), filter.getDeviceId(), deviceNamePattern, applicationNamePattern);
         return filterByWorkingMode(sessions, filter, companyId);
     }
@@ -163,8 +168,11 @@ public class ProductivityReportService {
         if (filter.getToTime() == null) to = to.plusNanos(1);
         Map<String, List<ApplicationUsageProjection>> grouped = new LinkedHashMap<>();
         Set<String> allowedEmployeeDates = allowedEmployeeDates(filter, companyId);
+        var scope = authorizationService.resolveEmployeeIds("MONITORING_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return Map.of();
+        Long[] employeeIds = scope.isEmpty() ? null : scope.get().toArray(Long[]::new);
         for (ApplicationUsageProjection row : activitySessionRepository.searchApplicationUsageGrouped(from, to, companyId,
-                filter.getEmployeeId(), filter.getEmployeeCode(), toPattern(filter.getEmployeeName()), filter.getDepartmentId(),
+            filter.getEmployeeId(), employeeIds, filter.getEmployeeCode(), toPattern(filter.getEmployeeName()), filter.getDepartmentId(),
                 filter.getDeviceId(), toPattern(filter.getDeviceName()), toPattern(filter.getApplicationName()))) {
             if (filter.getWorkingMode() == null || allowedEmployeeDates.contains(row.getEmployeeId() + "|" + row.getUsageDate())) {
                 grouped.computeIfAbsent(row.getEmployeeId() + "|" + row.getDeviceId() + "|" + row.getUsageDate(), key -> new ArrayList<>()).add(row);

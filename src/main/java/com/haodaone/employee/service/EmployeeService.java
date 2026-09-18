@@ -41,11 +41,13 @@ public class EmployeeService {
     private final UserRepository userRepository;
     private final com.haodaone.company.repository.CompanyRepository companyRepository;
     private final com.haodaone.company.repository.SubscriptionService subscriptionService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public EmployeeService(EmployeeRepository employeeRepository, DepartmentRepository departmentRepository,
                             DesignationRepository designationRepository, TeamRepository teamRepository,
                             AuditLogService auditLogService, UserRepository userRepository, com.haodaone.company.repository.CompanyRepository companyRepository,
-                            com.haodaone.company.repository.SubscriptionService subscriptionService) {
+                            com.haodaone.company.repository.SubscriptionService subscriptionService,
+                            com.haodaone.security.AuthorizationService authorizationService) {
         this.employeeRepository = employeeRepository;
         this.departmentRepository = departmentRepository;
         this.designationRepository = designationRepository;
@@ -54,14 +56,19 @@ public class EmployeeService {
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
         this.subscriptionService = subscriptionService;
+        this.authorizationService = authorizationService;
     }
 
     @Transactional(readOnly = true)
     public List<EmployeeSummaryDTO> listAll(String search) {
         Long companyId = requiredTenant();
-        List<Employee> employees = (search == null || search.isBlank())
+        var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        List<Employee> employees = scope.isEmpty()
+            ? ((search == null || search.isBlank())
                 ? employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId)
-                : employeeRepository.searchForPayroll(companyId, search.trim(), null, null);
+                : employeeRepository.searchForPayroll(companyId, search.trim(), null, null))
+            : employeeRepository.searchForPayrollInScope(companyId, scope.get(), search == null ? "" : search.trim(), null, null);
         return employees.stream().map(EmployeeSummaryDTO::from).toList();
     }
 
@@ -80,9 +87,12 @@ public class EmployeeService {
         var pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "firstName"));
 
         String term = (search == null) ? "" : search.trim();
-        var result = departmentId != null
+        var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return new PageResponse<>(List.of(), safePage, safeSize, 0, 0);
+        var result = scope.isEmpty() && departmentId != null
                 ? employeeRepository.searchPagedByDepartmentForCompany(companyId, term, departmentId, pageable)
-                : (term.isEmpty() ? employeeRepository.findAllByCompany_IdAndDeletedFalse(companyId, pageable) : employeeRepository.searchPagedForCompany(companyId, term, pageable));
+            : (scope.isEmpty() ? (term.isEmpty() ? employeeRepository.findAllByCompany_IdAndDeletedFalse(companyId, pageable) : employeeRepository.searchPagedForCompany(companyId, term, pageable))
+                : new org.springframework.data.domain.PageImpl<>(employeeRepository.searchForPayrollInScope(companyId, scope.get(), term, departmentId, null), pageable));
 
         return PageResponse.from(result, EmployeeSummaryDTO::from);
     }

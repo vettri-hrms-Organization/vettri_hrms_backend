@@ -20,13 +20,16 @@ public class MonitoringQueryService {
 
     private final ActivitySessionRepository activitySessionRepository;
     private final MonitoredDeviceRepository deviceRepository;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public MonitoringQueryService(
             ActivitySessionRepository activitySessionRepository,
-            MonitoredDeviceRepository deviceRepository) {
+            MonitoredDeviceRepository deviceRepository,
+            com.haodaone.security.AuthorizationService authorizationService) {
 
         this.activitySessionRepository = activitySessionRepository;
         this.deviceRepository = deviceRepository;
+        this.authorizationService = authorizationService;
     }
 
     /**
@@ -57,9 +60,11 @@ public class MonitoringQueryService {
                 ? null
                 : "%" + windowTitle.trim() + "%";
         Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("MONITORING_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return Page.empty(pageable);
 
         return activitySessionRepository
-            .searchPaged(from, to, companyId, employeeId, trimmedCode, deviceId, windowTitlePattern, pageable)
+            .searchPaged(from, to, companyId, employeeId, trimmedCode, deviceId, windowTitlePattern, scope.orElse(null), pageable)
                 .map(ActivitySessionDTO::from);
     }
 
@@ -76,10 +81,14 @@ public class MonitoringQueryService {
         }
 
         Long companyId = requiredTenant();
-        if (!deviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, companyId).isPresent()) {
+        var device = deviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, companyId);
+        if (device.isEmpty()) {
             throw new ResourceNotFoundException(
                     "Monitored device not found: " + deviceId
             );
+        }
+        if (device.get().getEmployee() != null && !authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", device.get().getEmployee().getId())) {
+            return Page.empty(createPageable(page, size));
         }
 
         Pageable pageable = createPageable(page, size);
@@ -103,6 +112,7 @@ public class MonitoringQueryService {
 
         Pageable pageable = createPageable(page, size);
         Long companyId = requiredTenant();
+        if (!authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", employeeId)) return Page.empty(pageable);
 
         return activitySessionRepository
             .findByEmployee_IdAndCompany_IdOrderByStartTimeDesc(employeeId, companyId, pageable)
@@ -134,14 +144,14 @@ public class MonitoringQueryService {
 
         Pageable pageable = createPageable(page, size);
         Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("MONITORING_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return Page.empty(pageable);
 
-        return activitySessionRepository
-                .findByStartTimeBetweenOrderByStartTimeDesc(
+        return (scope.isEmpty() ? activitySessionRepository.findByStartTimeBetweenOrderByStartTimeDesc(
                         from,
                         to,
                         companyId,
-                        pageable
-                )
+                pageable) : activitySessionRepository.findByStartTimeBetweenScoped(from, to, companyId, scope.get(), pageable))
                 .map(ActivitySessionDTO::from);
     }
 

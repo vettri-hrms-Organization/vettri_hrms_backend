@@ -28,11 +28,14 @@ public class WfhRequestController {
     private final WfhRequestRepository wfhRequestRepository;
     private final EmployeeRepository employeeRepository;
     private final Clock applicationClock;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
-    public WfhRequestController(WfhRequestRepository wfhRequestRepository, EmployeeRepository employeeRepository, Clock applicationClock) {
+    public WfhRequestController(WfhRequestRepository wfhRequestRepository, EmployeeRepository employeeRepository, Clock applicationClock,
+                                com.haodaone.security.AuthorizationService authorizationService) {
         this.wfhRequestRepository = wfhRequestRepository;
         this.employeeRepository = employeeRepository;
         this.applicationClock = applicationClock;
+        this.authorizationService = authorizationService;
     }
 
     @PostMapping("/wfh/request")
@@ -74,12 +77,17 @@ public class WfhRequestController {
     @PreAuthorize("hasAuthority('LEAVE_APPROVE') or hasAuthority('ATTENDANCE_VIEW')")
     public List<WfhRequestDTO> teamWfhRequests() {
         Long companyId = requireCompany(currentEmployee()).getId();
-        return wfhRequestRepository.findAllByCompany_IdAndStatusAndDeletedFalseOrderByWorkDateDesc(companyId, "PENDING")
+        var scope = authorizationService.resolveEmployeeIds("LEAVE_APPROVE");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var rows = scope.isEmpty()
+            ? wfhRequestRepository.findAllByCompany_IdAndStatusAndDeletedFalseOrderByWorkDateDesc(companyId, "PENDING")
+            : wfhRequestRepository.findAllByCompany_IdAndEmployee_IdInAndStatusAndDeletedFalseOrderByWorkDateDesc(companyId, scope.get(), "PENDING");
+        return rows
                 .stream().map(this::toDto).toList();
     }
 
     @PatchMapping("/wfh/{id}/approve")
-    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedWfhRequest(#id)")
     @Transactional
     public ResponseEntity<WfhRequestDTO> approve(@PathVariable Long id, @RequestParam(required = false) String note) {
         WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
@@ -95,7 +103,7 @@ public class WfhRequestController {
     }
 
     @PatchMapping("/wfh/{id}/reject")
-    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedWfhRequest(#id)")
     @Transactional
     public ResponseEntity<WfhRequestDTO> reject(@PathVariable Long id, @RequestParam(required = false) String note) {
         WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));

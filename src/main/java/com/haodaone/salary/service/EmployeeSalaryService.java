@@ -45,19 +45,25 @@ public class EmployeeSalaryService {
     private final EmployeeRepository employeeRepository;
     private final SalaryStructureRepository salaryStructureRepository;
     private final PayrollItemRepository payrollItemRepository;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public EmployeeSalaryService(EmployeeRepository employeeRepository, SalaryStructureRepository salaryStructureRepository,
-                                  PayrollItemRepository payrollItemRepository) {
+                                  PayrollItemRepository payrollItemRepository,
+                                  com.haodaone.security.AuthorizationService authorizationService) {
         this.employeeRepository = employeeRepository;
         this.salaryStructureRepository = salaryStructureRepository;
         this.payrollItemRepository = payrollItemRepository;
+        this.authorizationService = authorizationService;
     }
 
     @Transactional(readOnly = true)
     public Page<EmployeeSalarySummaryDTO> list(String search, Long departmentId, String status, String sortBy, String sortDir, Pageable pageable) {
         Long companyId = requiredTenant();
-        List<Employee> employees = employeeRepository.searchForPayroll(companyId,
-            (search == null || search.isBlank()) ? "" : search.trim(), departmentId, status);
+        var scope = authorizationService.resolveEmployeeIds("SALARY_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return Page.empty(pageable);
+        List<Employee> employees = scope.isEmpty()
+            ? employeeRepository.searchForPayroll(companyId, (search == null || search.isBlank()) ? "" : search.trim(), departmentId, status)
+            : employeeRepository.searchForPayrollInScope(companyId, scope.get(), (search == null || search.isBlank()) ? "" : search.trim(), departmentId, status);
 
         Map<Long, SalaryStructure> structuresByEmployee = salaryStructureRepository.findAllActiveByEmployeeId(companyId);
         Map<Long, PayrollItem> latestItemByEmployee = payrollItemRepository.findLatestByEmployeeId(companyId);

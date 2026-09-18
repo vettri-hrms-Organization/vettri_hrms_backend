@@ -95,13 +95,13 @@
                                     "/api/auth/invitation/**", "/api/auth/activate", "/api/auth/activate/**").permitAll()
                             .requestMatchers("/api/interviews/my").authenticated()
                                     .requestMatchers("/api/holidays").authenticated()
-                            .requestMatchers("/api/monitoring/**", "/api/audit/**",
+                                .requestMatchers("/api/monitoring/**", "/api/audit/**",
                                     "/api/departments/**", "/api/designations/**", "/api/teams/**",
                                     "/api/candidates/**", "/api/interviews/**", "/api/job-openings/**",
                                     "/api/recruitment/**", "/api/reports/**", "/api/users/**", "/api/devices/**",
                                     "/api/goals/**", "/api/performance-reviews/**",
                                     "/api/roles/**", "/api/permissions/**", "/api/holidays/**", "/api/leave-types/**")
-                                .hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_HR_ADMIN", "ROLE_COMPANY_ADMIN", "ROLE_MANAGER")
+                                .authenticated()
                             .requestMatchers("/api/careers/**").permitAll()
                             .requestMatchers("/api/agent/**").authenticated()
                             .requestMatchers("/agent/**").permitAll()

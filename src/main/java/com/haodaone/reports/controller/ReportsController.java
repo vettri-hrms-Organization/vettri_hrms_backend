@@ -23,6 +23,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Real aggregate queries against the same repositories every other module
@@ -49,11 +50,13 @@ public class ReportsController {
     private final JobOpeningRepository jobOpeningRepository;
     private final CandidateRepository candidateRepository;
         private final ReportsService reportsService;
+        private final com.haodaone.security.AuthorizationService authorizationService;
 
     public ReportsController(EmployeeRepository employeeRepository, DepartmentRepository departmentRepository,
                               AttendanceRecordRepository attendanceRecordRepository,
                               LeaveRequestRepository leaveRequestRepository,
-                              JobOpeningRepository jobOpeningRepository, CandidateRepository candidateRepository, ReportsService reportsService) {
+                              JobOpeningRepository jobOpeningRepository, CandidateRepository candidateRepository, ReportsService reportsService,
+                              com.haodaone.security.AuthorizationService authorizationService) {
         this.employeeRepository = employeeRepository;
         this.departmentRepository = departmentRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
@@ -61,31 +64,35 @@ public class ReportsController {
         this.jobOpeningRepository = jobOpeningRepository;
         this.candidateRepository = candidateRepository;
         this.reportsService = reportsService;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping("/employees")
     @PreAuthorize("hasAuthority('REPORTS_VIEW')")
     public EmployeeReportDTO employeeReport() {
         Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("REPORTS_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return new EmployeeReportDTO(0, Map.of(), Map.of(), List.of(), 0, 0, 0);
+        Set<Long> ids = scope.orElse(Set.of());
         Map<String, Long> byStatus = new LinkedHashMap<>();
-        EMPLOYEE_STATUSES.forEach(s -> byStatus.put(s, countStatus(companyId, s)));
+        EMPLOYEE_STATUSES.forEach(s -> byStatus.put(s, scope.isEmpty() ? countStatus(companyId, s) : employeeRepository.countByCompany_IdAndStatusAndIdInAndDeletedFalse(companyId, s, ids)));
 
         Map<String, Long> byEmploymentType = new LinkedHashMap<>();
-        EMPLOYMENT_TYPES.forEach(t -> byEmploymentType.put(t, employeeRepository.countByCompany_IdAndEmploymentTypeAndDeletedFalse(companyId, t)));
+        EMPLOYMENT_TYPES.forEach(t -> byEmploymentType.put(t, scope.isEmpty() ? employeeRepository.countByCompany_IdAndEmploymentTypeAndDeletedFalse(companyId, t) : employeeRepository.countByCompany_IdAndEmploymentTypeAndIdInAndDeletedFalse(companyId, t, ids)));
 
         List<EmployeeReportDTO.DepartmentCount> byDepartment = departmentRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream()
-                .map(d -> new EmployeeReportDTO.DepartmentCount(d.getId(), d.getName(), employeeRepository.countByDepartmentIdAndDeletedFalse(d.getId())))
+                .map(d -> new EmployeeReportDTO.DepartmentCount(d.getId(), d.getName(), scope.isEmpty() ? employeeRepository.countByDepartmentIdAndDeletedFalse(d.getId()) : employeeRepository.countByCompany_IdAndDepartment_IdAndIdInAndDeletedFalse(companyId, d.getId(), ids)))
                 .filter(dc -> dc.getCount() > 0)
                 .toList();
 
         LocalDate now = LocalDate.now();
         return new EmployeeReportDTO(
-                employeeRepository.countByCompany_IdAndDeletedFalse(companyId),
+                scope.isEmpty() ? employeeRepository.countByCompany_IdAndDeletedFalse(companyId) : employeeRepository.countByCompany_IdAndIdInAndDeletedFalse(companyId, ids),
                 byStatus,
                 byEmploymentType,
                 byDepartment,
-                employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(30)),
-                employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(90)),
+                scope.isEmpty() ? employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(30)) : employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndIdInAndDeletedFalse(companyId, now.minusDays(30), ids),
+                scope.isEmpty() ? employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(90)) : employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndIdInAndDeletedFalse(companyId, now.minusDays(90), ids),
                 employeeRepository.countSeparationsSinceForCompany(companyId, LocalDateTime.now().minusDays(90))
         );
     }
@@ -95,28 +102,32 @@ public class ReportsController {
     public AttendanceReportDTO attendanceReport(@RequestParam(required = false) String startDate,
                                                  @RequestParam(required = false) String endDate) {
         Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("REPORTS_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return new AttendanceReportDTO(startDate == null ? LocalDate.now().minusDays(6) : LocalDate.parse(startDate), endDate == null ? LocalDate.now() : LocalDate.parse(endDate), 0, 0, 0, List.of(), List.of());
         LocalDate end = endDate != null ? LocalDate.parse(endDate) : LocalDate.now();
         LocalDate start = startDate != null ? LocalDate.parse(startDate) : end.minusDays(6);
         LocalDateTime startDateTime = start.atStartOfDay();
         LocalDateTime endDateTime = end.plusDays(1).atStartOfDay();
+        Set<Long> employeeIds = scope.orElse(Set.of());
 
         // Bounded to a reasonable report window (callers pass sensible ranges;
         // the daily breakdown loop below is O(days), fine for weekly/monthly
         // reports but not intended for multi-year ranges).
         List<AttendanceReportDTO.DailyCount> daily = start.datesUntil(end.plusDays(1))
                 .map(date -> new AttendanceReportDTO.DailyCount(date,
-                        attendanceRecordRepository.countDistinctEmployeesPunchedBetweenForCompany(companyId, date.atStartOfDay(), date.plusDays(1).atStartOfDay())))
+                        scope.isEmpty() ? attendanceRecordRepository.countDistinctEmployeesPunchedBetweenForCompany(companyId, date.atStartOfDay(), date.plusDays(1).atStartOfDay()) : attendanceRecordRepository.countDistinctScopedByCompanyAndEmployees(companyId, employeeIds, date.atStartOfDay(), date.plusDays(1).atStartOfDay())))
                 .toList();
 
-        List<AttendanceReportDTO.DepartmentPunchCount> byDepartment = attendanceRecordRepository
-                .countByDepartmentBetweenForCompany(companyId, startDateTime, endDateTime).stream()
+        List<AttendanceReportDTO.DepartmentPunchCount> byDepartment = (scope.isEmpty()
+                ? attendanceRecordRepository.countByDepartmentBetweenForCompany(companyId, startDateTime, endDateTime)
+                : attendanceRecordRepository.countByDepartmentBetweenForCompanyAndEmployees(companyId, employeeIds, startDateTime, endDateTime)).stream()
                 .map(row -> new AttendanceReportDTO.DepartmentPunchCount((String) row[0], (Long) row[1]))
                 .toList();
 
         return new AttendanceReportDTO(
                 start, end,
-                attendanceRecordRepository.countByCompany_IdAndPunchTimeBetween(companyId, startDateTime, endDateTime),
-                attendanceRecordRepository.countDistinctEmployeesPunchedBetweenForCompany(companyId, startDateTime, endDateTime),
+                scope.isEmpty() ? attendanceRecordRepository.countByCompany_IdAndPunchTimeBetween(companyId, startDateTime, endDateTime) : attendanceRecordRepository.countScopedByCompanyAndEmployees(companyId, employeeIds, startDateTime, endDateTime),
+                scope.isEmpty() ? attendanceRecordRepository.countDistinctEmployeesPunchedBetweenForCompany(companyId, startDateTime, endDateTime) : attendanceRecordRepository.countDistinctScopedByCompanyAndEmployees(companyId, employeeIds, startDateTime, endDateTime),
                 countStatus(companyId, EmploymentStatus.ACTIVE),
                 daily,
                 byDepartment
@@ -126,22 +137,25 @@ public class ReportsController {
     @GetMapping("/leave")
     @PreAuthorize("hasAuthority('REPORTS_VIEW')")
     public LeaveReportDTO leaveReport(@RequestParam(required = false) Integer year) {
+                Long companyId = requiredTenant();
+                var scope = authorizationService.resolveEmployeeIds("REPORTS_VIEW");
         int targetYear = year != null ? year : LocalDate.now().getYear();
         LocalDate yearStart = LocalDate.of(targetYear, 1, 1);
         LocalDate yearEnd = LocalDate.of(targetYear, 12, 31);
 
-        List<LeaveReportDTO.LeaveTypeUsage> byLeaveType = leaveRequestRepository.sumApprovedDaysByLeaveType(targetYear).stream()
+        Set<Long> employeeIds = scope.orElse(Set.of());
+        List<LeaveReportDTO.LeaveTypeUsage> byLeaveType = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByLeaveType(targetYear) : leaveRequestRepository.sumApprovedDaysByLeaveTypeScoped(companyId, employeeIds, targetYear)).stream()
                 .map(row -> new LeaveReportDTO.LeaveTypeUsage((String) row[0], ((Number) row[1]).doubleValue()))
                 .toList();
 
-        List<LeaveReportDTO.DepartmentUsage> byDepartment = leaveRequestRepository.sumApprovedDaysByDepartment(targetYear).stream()
+        List<LeaveReportDTO.DepartmentUsage> byDepartment = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByDepartment(targetYear) : leaveRequestRepository.sumApprovedDaysByDepartmentScoped(companyId, employeeIds, targetYear)).stream()
                 .map(row -> new LeaveReportDTO.DepartmentUsage((String) row[0], ((Number) row[1]).doubleValue()))
                 .toList();
 
-        long approved = leaveRequestRepository.countByStatusAndStartDateBetween("APPROVED", yearStart, yearEnd);
-        long rejected = leaveRequestRepository.countByStatusAndStartDateBetween("REJECTED", yearStart, yearEnd);
-        long pending = leaveRequestRepository.countByStatusAndStartDateBetween("PENDING", yearStart, yearEnd);
-        long cancelled = leaveRequestRepository.countByStatusAndStartDateBetween("CANCELLED", yearStart, yearEnd);
+        long approved = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("APPROVED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "APPROVED", yearStart, yearEnd);
+        long rejected = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("REJECTED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "REJECTED", yearStart, yearEnd);
+        long pending = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("PENDING", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "PENDING", yearStart, yearEnd);
+        long cancelled = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("CANCELLED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "CANCELLED", yearStart, yearEnd);
 
         return new LeaveReportDTO(targetYear, approved + rejected + pending + cancelled, approved, rejected, pending, cancelled,
                 byLeaveType, byDepartment);
@@ -178,7 +192,9 @@ public class ReportsController {
                 Long companyId = requiredTenant();
                 LocalDate end = endDate != null ? LocalDate.parse(endDate) : LocalDate.now();
                 LocalDate start = startDate != null ? LocalDate.parse(startDate) : end.minusDays(29);
-                return reportsService.departmentComparison(companyId, start, end);
+                var scope = authorizationService.resolveEmployeeIds("REPORTS_VIEW");
+                if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+                return reportsService.departmentComparison(companyId, start, end, scope.orElse(null));
         }
 
         private Long requiredTenant() {

@@ -21,16 +21,22 @@ public class PerformanceReviewService {
     private final PerformanceReviewRepository performanceReviewRepository;
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public PerformanceReviewService(PerformanceReviewRepository performanceReviewRepository,
-                                     EmployeeRepository employeeRepository, AuditLogService auditLogService) {
+                                     EmployeeRepository employeeRepository, AuditLogService auditLogService,
+                                     com.haodaone.security.AuthorizationService authorizationService) {
         this.performanceReviewRepository = performanceReviewRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
+        this.authorizationService = authorizationService;
     }
 
     public List<PerformanceReviewDTO> listAll() {
-        return performanceReviewRepository.findAllByCompany_IdAndDeletedFalseOrderByCreatedAtDesc(requiredTenant()).stream()
+        var scope = authorizationService.resolveEmployeeIds("PERFORMANCE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var rows = scope.isEmpty() ? performanceReviewRepository.findAllByCompany_IdAndDeletedFalseOrderByCreatedAtDesc(requiredTenant()) : performanceReviewRepository.findAllByCompany_IdAndEmployeeIdInAndDeletedFalseOrderByCreatedAtDesc(requiredTenant(), scope.get());
+        return rows.stream()
                 .map(PerformanceReviewDTO::from)
                 .toList();
     }

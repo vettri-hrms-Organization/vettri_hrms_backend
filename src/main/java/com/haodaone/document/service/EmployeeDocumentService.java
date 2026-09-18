@@ -35,12 +35,15 @@ public class EmployeeDocumentService {
     private final EmployeeDocumentRepository documentRepository;
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public EmployeeDocumentService(EmployeeDocumentRepository documentRepository, EmployeeRepository employeeRepository,
-                                    AuditLogService auditLogService) {
+                                    AuditLogService auditLogService,
+                                    com.haodaone.security.AuthorizationService authorizationService) {
         this.documentRepository = documentRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
+        this.authorizationService = authorizationService;
     }
 
     public List<EmployeeDocumentDTO> byEmployee(Long employeeId) {
@@ -54,7 +57,12 @@ public class EmployeeDocumentService {
     public List<EmployeeDocumentDTO> expiringSoon(Integer lookaheadDays) {
         int days = lookaheadDays != null ? lookaheadDays : DEFAULT_LOOKAHEAD_DAYS;
         LocalDate today = LocalDate.now();
-        return documentRepository.findAllByCompany_IdAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(requiredTenant(), today, today.plusDays(days)).stream()
+        var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var rows = scope.isEmpty()
+            ? documentRepository.findAllByCompany_IdAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(requiredTenant(), today, today.plusDays(days))
+            : documentRepository.findAllByCompany_IdAndEmployeeIdInAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(requiredTenant(), scope.get(), today, today.plusDays(days));
+        return rows.stream()
                 .map(EmployeeDocumentDTO::from)
                 .toList();
     }

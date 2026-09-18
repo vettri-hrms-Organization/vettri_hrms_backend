@@ -37,20 +37,26 @@ public class LeaveRequestService {
     private final HolidayRepository holidayRepository;
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public LeaveRequestService(LeaveRequestRepository leaveRequestRepository, LeaveTypeRepository leaveTypeRepository,
                                 LeaveBalanceRepository leaveBalanceRepository, HolidayRepository holidayRepository,
-                                EmployeeRepository employeeRepository, AuditLogService auditLogService) {
+                                EmployeeRepository employeeRepository, AuditLogService auditLogService,
+                                com.haodaone.security.AuthorizationService authorizationService) {
         this.leaveRequestRepository = leaveRequestRepository;
         this.leaveTypeRepository = leaveTypeRepository;
         this.leaveBalanceRepository = leaveBalanceRepository;
         this.holidayRepository = holidayRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
+        this.authorizationService = authorizationService;
     }
 
     public List<LeaveRequestDTO> listAll(String status) {
         Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIdsForAny("LEAVE_VIEW", "LEAVE_APPROVE");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        if (scope.isPresent()) return listForEmployees(scope.get(), status);
         List<LeaveRequest> requests = (status == null || status.isBlank())
                 ? leaveRequestRepository.findAllByCompany_IdOrderByStartDateDesc(companyId)
             : leaveRequestRepository.findAllByCompany_IdAndStatusOrderByStartDateAsc(companyId, status.toUpperCase());

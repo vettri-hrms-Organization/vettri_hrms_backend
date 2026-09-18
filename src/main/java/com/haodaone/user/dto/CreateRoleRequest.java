@@ -3,6 +3,8 @@ package com.haodaone.user.dto;
 import jakarta.validation.constraints.NotBlank;
 
 import java.util.Set;
+import java.util.Map;
+import com.haodaone.user.entity.PermissionScope;
 
 public class CreateRoleRequest {
 
@@ -13,6 +15,8 @@ public class CreateRoleRequest {
 
     /** Permission codes to attach, e.g. ["EMPLOYEE_VIEW", "ATTENDANCE_APPROVE"]. */
     private Set<String> permissionCodes = Set.of();
+
+    private Map<String, PermissionScope> permissionScopes = Map.of();
 
     public String getName() {
         return name;
@@ -37,4 +41,7 @@ public class CreateRoleRequest {
     public void setPermissionCodes(Set<String> permissionCodes) {
         this.permissionCodes = permissionCodes;
     }
+
+    public Map<String, PermissionScope> getPermissionScopes() { return permissionScopes; }
+    public void setPermissionScopes(Map<String, PermissionScope> permissionScopes) { this.permissionScopes = permissionScopes; }
 }

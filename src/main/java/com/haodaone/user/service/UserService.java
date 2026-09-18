@@ -63,9 +63,10 @@ public class UserService {
 
         Set<String> requestedRoleNames = request.getRoleNames().isEmpty() ? Set.of("EMPLOYEE") : request.getRoleNames();
         validateRequestedRoles(requestedRoleNames);
+        Long currentTenant = requiredTenant();
         Set<Role> roles = new HashSet<>();
         for (String roleName : requestedRoleNames) {
-            roles.add(roleRepository.findByName(roleName)
+            roles.add(findRoleForTenant(roleName, currentTenant)
                     .orElseThrow(() -> new BadRequestException("Unknown role: " + roleName)));
         }
 
@@ -80,10 +81,7 @@ public class UserService {
         user.setRoles(roles);
 
         // Assign company from context (tenant) if present
-        Long currentTenant = com.haodaone.tenant.TenantContext.getCurrentTenant();
-        if (currentTenant != null) {
-            companyRepository.findById(currentTenant).ifPresent(user::setCompany);
-        }
+        companyRepository.findById(currentTenant).ifPresent(user::setCompany);
 
         User saved = userRepository.save(user);
         if (requestedRoleNames.contains("EMPLOYEE") && currentTenant != null) {
@@ -116,8 +114,9 @@ public class UserService {
         User user = findActiveOrThrow(id);
         validateRequestedRoles(roleNames);
         Set<Role> roles = new HashSet<>();
+        Long companyId = requiredTenant();
         for (String roleName : roleNames) {
-            roles.add(roleRepository.findByName(roleName)
+            roles.add(findRoleForTenant(roleName, companyId)
                     .orElseThrow(() -> new BadRequestException("Unknown role: " + roleName)));
         }
         user.setRoles(roles);
@@ -152,5 +151,10 @@ public class UserService {
                 throw new BadRequestException("Only a Super Admin can assign platform administrator roles.");
             }
         }
+    }
+
+    private java.util.Optional<Role> findRoleForTenant(String roleName, Long companyId) {
+        return roleRepository.findByNameAndCompany_Id(roleName, companyId)
+                .or(() -> roleRepository.findByName(roleName).filter(role -> role.getCompany() == null));
     }
 }

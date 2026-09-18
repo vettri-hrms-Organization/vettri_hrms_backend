@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface PayrollRunRepository extends JpaRepository<PayrollRun, Long> {
 
@@ -22,6 +23,9 @@ public interface PayrollRunRepository extends JpaRepository<PayrollRun, Long> {
     List<PayrollRun> findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(
             Long companyId
     );
+
+    @Query("select distinct r from PayrollRun r join PayrollItem i on i.payrollRun.id = r.id where r.deleted = false and r.company.id = :companyId and i.deleted = false and i.employee.id in :employeeIds order by r.periodYear desc, r.periodMonth desc")
+    List<PayrollRun> findAllScoped(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds);
 
     Optional<PayrollRun> findByIdAndDeletedFalse(Long id);
 

@@ -2,6 +2,7 @@ package com.haodaone.user.controller;
 
 import com.haodaone.user.dto.CreateRoleRequest;
 import com.haodaone.user.dto.RoleDTO;
+import com.haodaone.user.dto.UpdateRolePermissionsRequest;
 import com.haodaone.user.service.RoleService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +38,12 @@ public class RoleController {
     @PreAuthorize("hasAuthority('ROLE_MANAGE')")
     public RoleDTO updatePermissions(@PathVariable Long id, @RequestBody Set<String> permissionCodes) {
         return roleService.updatePermissions(id, permissionCodes);
+    }
+
+    @PutMapping("/{id}/permissions-scopes")
+    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
+    public RoleDTO updatePermissionsAndScopes(@PathVariable Long id, @RequestBody UpdateRolePermissionsRequest request) {
+        return roleService.updatePermissions(id, request);
     }
 
     @DeleteMapping("/{id}")

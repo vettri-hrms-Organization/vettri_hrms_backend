@@ -20,7 +20,7 @@ public class EmployeeDocumentController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAuthority('EMPLOYEE_VIEW') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<EmployeeDocumentDTO> byEmployee(@PathVariable Long employeeId) {
         return documentService.byEmployee(employeeId);
     }

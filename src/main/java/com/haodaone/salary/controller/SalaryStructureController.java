@@ -26,13 +26,13 @@ public class SalaryStructureController {
         this.salaryStructureService = salaryStructureService;
     }
 
-    @PreAuthorize("hasAuthority('SALARY_VIEW') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('SALARY_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     @GetMapping("/employee/{employeeId}/current")
     public SalaryStructureDTO getCurrent(@PathVariable Long employeeId) {
         return salaryStructureService.getCurrent(employeeId);
     }
 
-    @PreAuthorize("hasAuthority('SALARY_VIEW') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('SALARY_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     @GetMapping("/employee/{employeeId}")
     public List<SalaryStructureDTO> getHistory(@PathVariable Long employeeId) {
         return salaryStructureService.getHistory(employeeId);

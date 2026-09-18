@@ -32,16 +32,19 @@ public class DeviceEnrollmentService {
     private final AuditLogService auditLogService;
     private final com.haodaone.company.repository.CompanyRepository companyRepository;
     private final com.haodaone.company.repository.SubscriptionService subscriptionService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public DeviceEnrollmentService(MonitoredDeviceRepository deviceRepository, EmployeeRepository employeeRepository,
                                     AuditLogService auditLogService, com.haodaone.company.repository.CompanyRepository companyRepository,
-                                    com.haodaone.company.repository.SubscriptionService subscriptionService) {
+                                    com.haodaone.company.repository.SubscriptionService subscriptionService,
+                                    com.haodaone.security.AuthorizationService authorizationService) {
         this.deviceRepository = deviceRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
         this.subscriptionService = subscriptionService;
+        this.authorizationService = authorizationService;
     }
     @Transactional(readOnly = true)
     public List<MonitoredDeviceDTO> listAll() {
@@ -49,7 +52,10 @@ public class DeviceEnrollmentService {
         if (currentTenant == null) {
             throw new BadRequestException("Company context is required");
         }
-        return deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(currentTenant).stream()
+        var scope = authorizationService.resolveEmployeeIds("MONITORING_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var devices = scope.isEmpty() ? deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(currentTenant) : deviceRepository.findAllScoped(currentTenant, scope.get());
+        return devices.stream()
                 .map(MonitoredDeviceDTO::from)
                 .toList();
     }

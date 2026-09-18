@@ -53,6 +53,7 @@ public class AttendanceController {
     private final AttendanceValidationService attendanceValidationService;
     private final CompanyRepository companyRepository;
     private final Clock applicationClock;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
                                AttendanceSessionRepository attendanceSessionRepository,
@@ -63,7 +64,8 @@ public class AttendanceController {
                                OfficeLocationRepository officeLocationRepository,
                                AttendanceValidationService attendanceValidationService,
                                CompanyRepository companyRepository,
-                               Clock applicationClock) {
+                               Clock applicationClock,
+                               com.haodaone.security.AuthorizationService authorizationService) {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
@@ -74,22 +76,28 @@ public class AttendanceController {
         this.attendanceValidationService = attendanceValidationService;
         this.companyRepository = companyRepository;
         this.applicationClock = applicationClock;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
     public List<AttendanceRecordDTO> byDate(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
         LocalDateTime start = targetDate.atStartOfDay();
         LocalDateTime end = start.plusDays(1);
-        return attendanceRecordRepository.findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(companyId, start, end).stream()
+        var scope = authorizationService.resolveEmployeeIds("ATTENDANCE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var records = scope.isEmpty()
+            ? attendanceRecordRepository.findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(companyId, start, end)
+            : attendanceRecordRepository.findScopedByCompanyAndEmployees(companyId, scope.get(), start, end);
+        return records.stream()
                 .map(AttendanceRecordDTO::from)
                 .toList();
     }
 
     @GetMapping("/exceptions")
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
     @Transactional(readOnly = true)
     public AttendanceExceptionDTO exceptions(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
@@ -103,8 +111,12 @@ public class AttendanceController {
             return new AttendanceExceptionDTO(targetDate, false, List.of());
         }
 
-        Set<Long> punchedEmployeeIds = attendanceRecordRepository
-                .findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(companyId, targetDate.atStartOfDay(), targetDate.plusDays(1).atStartOfDay())
+        var scope = authorizationService.resolveEmployeeIds("ATTENDANCE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return new AttendanceExceptionDTO(targetDate, true, List.of());
+        var attendanceRows = scope.isEmpty()
+            ? attendanceRecordRepository.findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(companyId, targetDate.atStartOfDay(), targetDate.plusDays(1).atStartOfDay())
+            : attendanceRecordRepository.findScopedByCompanyAndEmployees(companyId, scope.get(), targetDate.atStartOfDay(), targetDate.plusDays(1).atStartOfDay());
+        Set<Long> punchedEmployeeIds = attendanceRows
                 .stream()
                 .filter(r -> r.getEmployee() != null)
                 .map(r -> r.getEmployee().getId())
@@ -114,7 +126,10 @@ public class AttendanceController {
                 .map(lr -> lr.getEmployee().getId())
                 .collect(Collectors.toSet());
 
-        List<EmployeeSummaryDTO> missingPunch = employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId).stream()
+        var visibleEmployees = scope.isEmpty()
+            ? employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId)
+            : employeeRepository.findAllById(scope.get());
+        List<EmployeeSummaryDTO> missingPunch = visibleEmployees.stream()
                 .filter(e -> "Active".equals(e.getStatus()))
                 .filter(e -> !punchedEmployeeIds.contains(e.getId()))
                 .filter(e -> !onApprovedLeaveIds.contains(e.getId()))
@@ -125,7 +140,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('ATTENDANCE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public List<AttendanceRecordDTO> byEmployee(@PathVariable Long employeeId) {
         Long companyId = requiredTenant();
         return attendanceRecordRepository.findAllByCompany_IdAndEmployee_IdOrderByPunchTimeDesc(companyId, employeeId).stream()
@@ -142,7 +157,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/stream")
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
     public SseEmitter stream() {
         requiredTenant();
         return eventPublisher.subscribe();

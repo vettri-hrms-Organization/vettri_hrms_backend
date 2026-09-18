@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
@@ -20,6 +21,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
         List<Employee> findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(Long companyId);
 
     List<Employee> findAllByReportingManagerIdAndDeletedFalse(Long managerId);
+
+    @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.reportingManager.id = :managerId")
+    List<Long> findIdsByCompanyAndReportingManager(@Param("companyId") Long companyId, @Param("managerId") Long managerId);
+
+    @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.department.id = :departmentId")
+    List<Long> findIdsByCompanyAndDepartment(@Param("companyId") Long companyId, @Param("departmentId") Long departmentId);
 
     List<Employee> findAllByDepartmentIdAndDeletedFalse(Long departmentId);
 
@@ -45,6 +52,11 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     long countByDeletedFalse();
 
     long countByCompany_IdAndDeletedFalse(Long companyId);
+    long countByCompany_IdAndIdInAndDeletedFalse(Long companyId, Set<Long> ids);
+    long countByCompany_IdAndDepartment_IdAndIdInAndDeletedFalse(Long companyId, Long departmentId, Set<Long> ids);
+    long countByCompany_IdAndStatusAndIdInAndDeletedFalse(Long companyId, String status, Set<Long> ids);
+    long countByCompany_IdAndEmploymentTypeAndIdInAndDeletedFalse(Long companyId, String employmentType, Set<Long> ids);
+    long countByCompany_IdAndDateOfJoiningGreaterThanEqualAndIdInAndDeletedFalse(Long companyId, LocalDate since, Set<Long> ids);
 
     long countByStatusAndDeletedFalse(String status);
 
@@ -137,6 +149,16 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
         @EntityGraph(attributePaths = {"department", "designation"})
         List<Employee> searchForPayroll(@Param("companyId") Long companyId, @Param("term") String term,
                                                                         @Param("departmentId") Long departmentId, @Param("status") String status);
+
+            @Query("select e from Employee e where e.deleted = false and e.company.id = :companyId " +
+                "and e.id in :employeeIds and (:departmentId is null or e.department.id = :departmentId) " +
+                "and (:status is null or e.status = :status) and (:term = '' or " +
+                "lower(e.firstName) like lower(concat('%', :term, '%')) or lower(e.lastName) like lower(concat('%', :term, '%')) or " +
+                "lower(e.employeeCode) like lower(concat('%', :term, '%')) or lower(e.email) like lower(concat('%', :term, '%')))" )
+            @EntityGraph(attributePaths = {"department", "designation"})
+            List<Employee> searchForPayrollInScope(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds,
+                               @Param("term") String term, @Param("departmentId") Long departmentId,
+                               @Param("status") String status);
 
                 Optional<Employee> findByIdAndCompany_IdAndDeletedFalse(Long id, Long companyId);
 

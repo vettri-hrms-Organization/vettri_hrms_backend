@@ -27,6 +27,7 @@ import java.time.MonthDay;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Powers the Dashboard "Command Center". Deliberately just aggregation
@@ -46,42 +47,47 @@ public class DashboardController {
     private final JobOpeningRepository jobOpeningRepository;
     private final CandidateRepository candidateRepository;
     private final InterviewRepository interviewRepository;
+    private final com.haodaone.security.AuthorizationService authorizationService;
 
     public DashboardController(EmployeeRepository employeeRepository, DepartmentRepository departmentRepository,
                                 LeaveRequestService leaveRequestService, JobOpeningRepository jobOpeningRepository,
-                                CandidateRepository candidateRepository, InterviewRepository interviewRepository) {
+                                CandidateRepository candidateRepository, InterviewRepository interviewRepository,
+                                com.haodaone.security.AuthorizationService authorizationService) {
         this.employeeRepository = employeeRepository;
         this.departmentRepository = departmentRepository;
         this.leaveRequestService = leaveRequestService;
         this.jobOpeningRepository = jobOpeningRepository;
         this.candidateRepository = candidateRepository;
         this.interviewRepository = interviewRepository;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping("/summary")
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("hasAuthority('EMPLOYEE_VIEW')")
     @Transactional(readOnly = true)
     public DashboardSummaryDTO summary() {
         Long companyId = requiredTenant();
-        long total = employeeRepository.countByCompany_IdAndDeletedFalse(companyId);
-        long active = countStatus(companyId, EmploymentStatus.ACTIVE);
-        long onLeave = countStatus(companyId, EmploymentStatus.ON_LEAVE);
-        long noticePeriod = countStatus(companyId, EmploymentStatus.NOTICE_PERIOD);
-        long resigned = countStatus(companyId, EmploymentStatus.RESIGNED);
-        long terminated = countStatus(companyId, EmploymentStatus.TERMINATED);
+        var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW");
+        if (scope.isPresent() && scope.get().isEmpty()) return new DashboardSummaryDTO(0, 0, 0, 0, 0, 0, List.of(), List.of(), List.of());
+        long total = scope.isEmpty() ? employeeRepository.countByCompany_IdAndDeletedFalse(companyId) : employeeRepository.countByCompany_IdAndIdInAndDeletedFalse(companyId, scope.get());
+        long active = countStatus(companyId, EmploymentStatus.ACTIVE, scope);
+        long onLeave = countStatus(companyId, EmploymentStatus.ON_LEAVE, scope);
+        long noticePeriod = countStatus(companyId, EmploymentStatus.NOTICE_PERIOD, scope);
+        long resigned = countStatus(companyId, EmploymentStatus.RESIGNED, scope);
+        long terminated = countStatus(companyId, EmploymentStatus.TERMINATED, scope);
 
         List<DashboardSummaryDTO.DepartmentCount> departmentBreakdown = departmentRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream()
                 .map(dept -> new DashboardSummaryDTO.DepartmentCount(
-                        dept.getName(), employeeRepository.countByDepartmentIdAndDeletedFalse(dept.getId())))
+                dept.getName(), scope.isEmpty() ? employeeRepository.countByDepartmentIdAndDeletedFalse(dept.getId()) : employeeRepository.countByCompany_IdAndDepartment_IdAndIdInAndDeletedFalse(companyId, dept.getId(), scope.get())))
                 .filter(dc -> dc.getCount() > 0)
                 .toList();
 
-        List<EmployeeSummaryDTO> recentJoiners = employeeRepository.findTop5ByCompany_IdAndDeletedFalseOrderByDateOfJoiningDesc(companyId).stream()
+        List<EmployeeSummaryDTO> recentJoiners = (scope.isEmpty() ? employeeRepository.findTop5ByCompany_IdAndDeletedFalseOrderByDateOfJoiningDesc(companyId) : employeeRepository.findAllById(scope.get()).stream().sorted(Comparator.comparing(Employee::getDateOfJoining).reversed()).limit(5).toList()).stream()
                 .map(EmployeeSummaryDTO::from)
                 .toList();
 
         return new DashboardSummaryDTO(total, active, onLeave, noticePeriod, resigned, terminated,
-                departmentBreakdown, recentJoiners, upcomingBirthdays(companyId));
+                departmentBreakdown, recentJoiners, upcomingBirthdays(companyId, scope));
     }
 
     /**
@@ -97,7 +103,7 @@ public class DashboardController {
      * not a failure.
      */
     @GetMapping("/my-team")
-    @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('LEAVE_APPROVE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
     @Transactional(readOnly = true)
     public TeamDashboardDTO myTeam() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -121,10 +127,10 @@ public class DashboardController {
      * is Dec 29th, someone's birthday is Jan 2nd) without special-casing it
      * in SQL.
      */
-    private List<DashboardSummaryDTO.UpcomingBirthday> upcomingBirthdays(Long companyId) {
+    private List<DashboardSummaryDTO.UpcomingBirthday> upcomingBirthdays(Long companyId, java.util.Optional<Set<Long>> scope) {
         LocalDate today = LocalDate.now();
 
-        return employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId).stream()
+        return (scope.isEmpty() ? employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId) : employeeRepository.findAllById(scope.get())).stream()
                 .filter(e -> "Active".equals(e.getStatus()) && e.getDateOfBirth() != null)
                 .map(e -> new Object[]{e, daysUntilNextBirthday(e.getDateOfBirth(), today)})
                 .filter(pair -> (int) pair[1] < BIRTHDAY_LOOKAHEAD_DAYS)
@@ -147,6 +153,10 @@ public class DashboardController {
 
     private long countStatus(Long companyId, String status) {
         return employeeRepository.countByCompany_IdAndStatusInAndDeletedFalse(companyId, EmploymentStatus.aliases(status));
+    }
+
+    private long countStatus(Long companyId, String status, java.util.Optional<Set<Long>> scope) {
+        return scope.isEmpty() ? countStatus(companyId, status) : employeeRepository.countByCompany_IdAndStatusAndIdInAndDeletedFalse(companyId, status, scope.get());
     }
 
     private int daysUntilNextBirthday(LocalDate dateOfBirth, LocalDate today) {

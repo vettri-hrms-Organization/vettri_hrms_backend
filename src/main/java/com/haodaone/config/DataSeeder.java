@@ -5,6 +5,8 @@ import com.haodaone.leave.repository.LeaveTypeRepository;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.User;
+import com.haodaone.user.entity.PermissionScope;
+import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
 import com.haodaone.user.repository.UserRepository;
@@ -66,7 +68,7 @@ public class DataSeeder implements CommandLineRunner {
         seedPermissions();
         Role superAdmin = seedRole("SUPER_ADMIN", "Full platform access", allPermissions());
         seedRole("HR_ADMIN", "HR administration - full platform HR management short of user/role administration",
-                permissionsByCode("USER_VIEW", "ROLE_VIEW", "AUDIT_VIEW",
+                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "AUDIT_VIEW",
                         "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
                         "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
@@ -77,7 +79,7 @@ public class DataSeeder implements CommandLineRunner {
         // functional set as HR_ADMIN but this role is intended to be scoped to a
         // single tenant/company (tenant enforcement is enforced server-side).
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
-                permissionsByCode("USER_VIEW", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                permissionsByCode("USER_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
                         "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
@@ -86,7 +88,15 @@ public class DataSeeder implements CommandLineRunner {
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
                 permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
                         "RECRUITMENT_VIEW", "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "REPORTS_VIEW"));
-        seedRole("EMPLOYEE", "Baseline self-service access - expanded once the ESS module scopes leave/attendance to \"self\"", Set.of());
+        Role employee = seedRole("EMPLOYEE", "Baseline self-service access", permissionsByCode(
+            "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+            "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+
+        syncRoleScopes(superAdmin, PermissionScope.ORGANIZATION);
+        syncRoleScopes(employee, PermissionScope.SELF);
+        syncRoleScopes(roleRepository.findByName("MANAGER").orElseThrow(), PermissionScope.TEAM);
+        syncRoleScopes(roleRepository.findByName("HR_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
+        syncRoleScopes(roleRepository.findByName("COMPANY_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
 
         seedSuperAdminUser(superAdmin);
         seedDefaultLeaveTypes();
@@ -116,6 +126,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"USER_VIEW", "View user accounts", "User Management"},
                 new String[]{"USER_CREATE", "Create user accounts", "User Management"},
                 new String[]{"USER_MANAGE", "Activate, deactivate, and reassign roles for user accounts", "User Management"},
+                new String[]{"ROLE_ASSIGN", "Assign roles to user accounts", "Role Management"},
                 new String[]{"ROLE_VIEW", "View roles and permissions", "Role Management"},
                 new String[]{"ROLE_MANAGE", "Create roles and assign permissions", "Role Management"},
                 new String[]{"AUDIT_VIEW", "View audit logs and login history", "Security"},
@@ -145,6 +156,19 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"SOFTWARE_DEPLOY", "Create and queue software deployments to managed devices", "Software"},
                 new String[]{"SOFTWARE_MANAGE", "Create, edit, and control software packages and installer versions", "Software"}
         );
+
+            permissions = new java.util.ArrayList<>(permissions);
+            permissions.addAll(List.of(
+                new String[]{"SELF_PROFILE_VIEW", "View your own employee profile", "Self Service"},
+                new String[]{"SELF_ATTENDANCE_VIEW", "View your own attendance", "Self Service"},
+                new String[]{"SELF_ATTENDANCE_CHECKIN", "Check in for yourself", "Self Service"},
+                new String[]{"SELF_ATTENDANCE_CHECKOUT", "Check out for yourself", "Self Service"},
+                new String[]{"SELF_LEAVE_VIEW", "View your own leave", "Self Service"},
+                new String[]{"SELF_LEAVE_APPLY", "Apply for your own leave", "Self Service"},
+                new String[]{"SELF_DOCUMENT_VIEW", "View your own documents", "Self Service"},
+                new String[]{"SELF_PAYSLIP_VIEW", "View your own payslips", "Self Service"},
+                new String[]{"SELF_ASSET_VIEW", "View your own assets", "Self Service"}
+            ));
 
         for (String[] p : permissions) {
             if (permissionRepository.findByCode(p[0]).isEmpty()) {
@@ -221,6 +245,22 @@ public class DataSeeder implements CommandLineRunner {
 
     private Set<Permission> allPermissions() {
         return new HashSet<>(permissionRepository.findAllByDeletedFalse());
+    }
+
+    private void syncRoleScopes(Role role, PermissionScope defaultScope) {
+        Set<String> existing = new java.util.HashSet<>();
+        for (RolePermissionScope scope : role.getPermissionScopes()) {
+            existing.add(scope.getPermission().getCode());
+        }
+        for (Permission permission : role.getPermissions()) {
+            if (existing.contains(permission.getCode())) continue;
+            RolePermissionScope scope = new RolePermissionScope();
+            scope.setRole(role);
+            scope.setPermission(permission);
+            scope.setScope(defaultScope);
+            role.getPermissionScopes().add(scope);
+        }
+        roleRepository.save(role);
     }
 
     private Set<Permission> permissionsByCode(String... codes) {

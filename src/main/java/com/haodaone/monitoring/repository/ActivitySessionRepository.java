@@ -47,6 +47,11 @@ public interface ActivitySessionRepository extends JpaRepository<ActivitySession
     @Query("select s from ActivitySession s join s.device d where s.employee.id = :employeeId and d.company.id = :companyId and d.deleted = false order by s.startTime desc")
     Page<ActivitySession> findByEmployee_IdAndCompany_IdOrderByStartTimeDesc(@Param("employeeId") Long employeeId, @Param("companyId") Long companyId, Pageable pageable);
 
+    @Query("select s from ActivitySession s join s.device d where s.startTime between :from and :to and d.company.id = :companyId and s.employee.id in :employeeIds order by s.startTime desc")
+    Page<ActivitySession> findByStartTimeBetweenScoped(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
+                                                        @Param("companyId") Long companyId, @Param("employeeIds") java.util.Set<Long> employeeIds,
+                                                        Pageable pageable);
+
     @Query("select s from ActivitySession s join s.device d where s.startTime between :from and :to and d.company.id = :companyId and d.deleted = false order by s.startTime desc")
     Page<ActivitySession> findByStartTimeBetweenOrderByStartTimeDesc(@Param("from") LocalDateTime from,
                                                                       @Param("to") LocalDateTime to,
@@ -85,6 +90,7 @@ and s.startTime < :to
 and d.deleted = false
 and d.company.id = :companyId
 and (:employeeId is null or e.id = :employeeId)
+and (:employeeIds is null or e.id in :employeeIds)
 and (:employeeCode is null or e.employeeCode = :employeeCode)
 and (:employeeNamePattern is null or concat(e.firstName, ' ', e.lastName) ilike :employeeNamePattern)
 and (:departmentId is null or e.department.id = :departmentId)
@@ -98,6 +104,7 @@ order by s.startTime asc
             @Param("to") LocalDateTime to,
             @Param("companyId") Long companyId,
             @Param("employeeId") Long employeeId,
+            @Param("employeeIds") java.util.Set<Long> employeeIds,
             @Param("employeeCode") String employeeCode,
             @Param("employeeNamePattern") String employeeNamePattern,
             @Param("departmentId") Long departmentId,
@@ -120,6 +127,7 @@ order by s.startTime asc
                             and d.deleted = false
                                                             and d.company_id = :companyId
                               and (cast(:employeeId as bigint) is null or s.employee_id = cast(:employeeId as bigint))
+                                                              and (cast(:employeeIds as bigint[]) is null or s.employee_id = any(cast(:employeeIds as bigint[])))
                               and (cast(:employeeCode as text) is null or e.employee_id = cast(:employeeCode as text))
                               and (cast(:employeeNamePattern as text) is null or concat(e.first_name, ' ', e.last_name) ilike cast(:employeeNamePattern as text))
                               and (cast(:departmentId as bigint) is null or e.department_id = cast(:departmentId as bigint))
@@ -135,6 +143,7 @@ order by s.startTime asc
             @Param("to") LocalDateTime to,
             @Param("companyId") Long companyId,
             @Param("employeeId") Long employeeId,
+            @Param("employeeIds") Long[] employeeIds,
             @Param("employeeCode") String employeeCode,
             @Param("employeeNamePattern") String employeeNamePattern,
             @Param("departmentId") Long departmentId,
@@ -183,6 +192,7 @@ and s.startTime < :to
 and d.deleted = false
 and d.company.id = :companyId
 and (:employeeId is null or e.id = :employeeId)
+            and (:employeeIds is null or e.id in :employeeIds)
 and (:employeeCode is null or e.employeeCode = :employeeCode)
 and (:deviceId is null or d.id = :deviceId)
 and (:windowTitle is null or s.windowTitle ilike :windowTitle)
@@ -192,6 +202,7 @@ and (:windowTitle is null or s.windowTitle ilike :windowTitle)
             @Param("to") LocalDateTime to,
             @Param("companyId") Long companyId,
             @Param("employeeId") Long employeeId,
+            @Param("employeeIds") java.util.Set<Long> employeeIds,
             @Param("employeeCode") String employeeCode,
             @Param("deviceId") Long deviceId,
             @Param("windowTitle") String windowTitle,

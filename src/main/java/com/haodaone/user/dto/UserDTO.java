@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.haodaone.user.entity.PermissionScope;
 
 public class UserDTO {
     private Long id;
@@ -18,6 +19,7 @@ public class UserDTO {
     private List<String> roles;
     private Set<String> permissions;
     private Long employeeId;
+    private java.util.Map<String, Set<PermissionScope>> scopes;
 
     public static UserDTO from(User user) {
         UserDTO dto = new UserDTO();
@@ -36,6 +38,10 @@ public class UserDTO {
                 .flatMap(role -> role.getPermissions().stream())
                 .map(com.haodaone.user.entity.Permission::getCode)
                 .collect(Collectors.toSet());
+            dto.scopes = user.getRoles().stream()
+                .flatMap(role -> role.getPermissionScopes().stream())
+                .collect(Collectors.groupingBy(scope -> scope.getPermission().getCode(),
+                    Collectors.mapping(com.haodaone.user.entity.RolePermissionScope::getScope, Collectors.toSet())));
         return dto;
     }
 
@@ -83,4 +89,6 @@ public class UserDTO {
     public void setEmployeeId(Long employeeId) {
         this.employeeId = employeeId;
     }
+
+    public java.util.Map<String, Set<PermissionScope>> getScopes() { return scopes; }
 }
