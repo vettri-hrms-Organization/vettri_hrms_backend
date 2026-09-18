@@ -177,6 +177,7 @@ and s.startTime < :to
 and d.deleted = false
 and d.company.id = :companyId
 and (:employeeId is null or e.id = :employeeId)
+and (:employeeIds is null or e.id in :employeeIds)
 and (:employeeCode is null or e.employeeCode = :employeeCode)
 and (:deviceId is null or d.id = :deviceId)
 and (:windowTitle is null or s.windowTitle ilike :windowTitle)
@@ -192,7 +193,7 @@ and s.startTime < :to
 and d.deleted = false
 and d.company.id = :companyId
 and (:employeeId is null or e.id = :employeeId)
-            and (:employeeIds is null or e.id in :employeeIds)
+and (:employeeIds is null or e.id in :employeeIds)
 and (:employeeCode is null or e.employeeCode = :employeeCode)
 and (:deviceId is null or d.id = :deviceId)
 and (:windowTitle is null or s.windowTitle ilike :windowTitle)

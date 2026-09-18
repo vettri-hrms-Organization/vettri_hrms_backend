@@ -97,7 +97,10 @@ public class EmployeeService {
                     ? employeeRepository.findAllByCompany_IdAndDeletedFalse(companyId, pageable)
                     : employeeRepository.searchPagedForCompany(companyId, term, pageable);
         } else {
-            result = new org.springframework.data.domain.PageImpl<>(employeeRepository.searchForPayrollInScope(companyId, scope.get(), term, departmentId, null), pageable);
+            result = new org.springframework.data.domain.PageImpl<Employee>(
+                    employeeRepository.searchForPayrollInScope(companyId, scope.get(), term, departmentId, null),
+                    pageable,
+                    employeeRepository.countByCompany_IdAndIdInAndDeletedFalse(companyId, scope.get()));
         }
 
         return PageResponse.from(result, EmployeeSummaryDTO::from);
