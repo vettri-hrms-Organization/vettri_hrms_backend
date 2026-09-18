@@ -59,9 +59,11 @@ public class WfhRequestController {
 
     @GetMapping("/wfh/my")
     @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @Transactional(readOnly = true)
     public List<WfhRequestDTO> myWfhRequests() {
         Employee employee = currentEmployee();
-        return wfhRequestRepository.findAllByEmployee_IdAndDeletedFalseOrderByWorkDateDesc(employee.getId())
+        Company company = requireCompany(employee);
+        return wfhRequestRepository.findAllByEmployee_IdAndCompany_IdAndDeletedFalseOrderByWorkDateDesc(employee.getId(), company.getId())
                 .stream().map(this::toDto).toList();
     }
 
