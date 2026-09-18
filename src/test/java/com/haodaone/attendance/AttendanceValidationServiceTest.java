@@ -9,6 +9,8 @@ import com.haodaone.attendance.service.AttendanceValidationService;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,7 +19,7 @@ import static org.mockito.Mockito.mock;
 class AttendanceValidationServiceTest {
     private final AttendanceValidationService service = new AttendanceValidationService(
             mock(AttendanceSessionRepository.class), mock(OfficeLocationRepository.class),
-            mock(MonitoredDeviceRepository.class), mock(WfhRequestRepository.class));
+            mock(MonitoredDeviceRepository.class), mock(WfhRequestRepository.class), Clock.systemUTC());
 
     @Test
     void acceptsAccurateLocationInsideOffice() {
