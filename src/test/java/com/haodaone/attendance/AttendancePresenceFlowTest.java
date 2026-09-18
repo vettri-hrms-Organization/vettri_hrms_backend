@@ -92,6 +92,7 @@ public class AttendancePresenceFlowTest {
         req.setLatitude(13.0829);
         req.setLongitude(80.2709);
         req.setAccuracy(12.0);
+        req.setTimestamp(System.currentTimeMillis());
         req.setSource("MOBILE");
         req.setOfficeLocationId(location.getId());
 
@@ -148,6 +149,7 @@ public class AttendancePresenceFlowTest {
         req.setLatitude(12.9000);
         req.setLongitude(77.6000);
         req.setAccuracy(15.0);
+        req.setTimestamp(System.currentTimeMillis());
         req.setSource("MOBILE");
         req.setOfficeLocationId(location.getId());
 

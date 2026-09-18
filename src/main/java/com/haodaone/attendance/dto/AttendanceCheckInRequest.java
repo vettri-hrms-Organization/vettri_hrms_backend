@@ -4,6 +4,7 @@ public class AttendanceCheckInRequest {
     private Double latitude;
     private Double longitude;
     private Double accuracy;
+    private Long timestamp;
     private String source;
     private String deviceId;
     private Long officeLocationId;
@@ -32,6 +33,14 @@ public class AttendanceCheckInRequest {
 
     public void setAccuracy(Double accuracy) {
         this.accuracy = accuracy;
+    }
+
+    public Long getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(Long timestamp) {
+        this.timestamp = timestamp;
     }
 
     public String getSource() {

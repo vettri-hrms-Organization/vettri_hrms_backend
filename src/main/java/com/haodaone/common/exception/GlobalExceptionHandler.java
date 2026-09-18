@@ -1,6 +1,7 @@
 package com.haodaone.common.exception;
 
 import com.haodaone.common.dto.ApiError;
+import com.haodaone.attendance.exception.AttendanceLocationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleBadRequest(BadRequestException ex, HttpServletRequest request) {
         log.warn("Bad request: {}", ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(AttendanceLocationException.class)
+    public ResponseEntity<ApiError> handleAttendanceLocation(AttendanceLocationException ex, HttpServletRequest request) {
+        log.warn("Attendance location rejected: code={}, accuracyMeters={}, distanceMeters={}, allowedRadiusMeters={}, validationStage={}, source={}",
+            ex.getCode(), ex.getAccuracyMeters(), ex.getDistanceMeters(), ex.getAllowedRadiusMeters(), ex.getValidationStage(), ex.getSource());
+        ApiError body = buildBody(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage(), request);
+        body.setCode(ex.getCode());
+        body.setAccuracyMeters(ex.getAccuracyMeters());
+        body.setRequiredAccuracyMeters(ex.getRequiredAccuracyMeters());
+        body.setDistanceMeters(ex.getDistanceMeters());
+        body.setAllowedRadiusMeters(ex.getAllowedRadiusMeters());
+        body.setValidationStage(ex.getValidationStage());
+        body.setSource(ex.getSource());
+        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler(ConflictException.class)
@@ -71,7 +87,11 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request) {
-        ApiError body = new ApiError(status.value(), status.getReasonPhrase(), message, request.getRequestURI());
+        ApiError body = buildBody(status, status.getReasonPhrase(), message, request);
         return ResponseEntity.status(status).body(body);
+    }
+
+    private ApiError buildBody(HttpStatus status, String error, String message, HttpServletRequest request) {
+        return new ApiError(status.value(), error, message, request.getRequestURI());
     }
 }

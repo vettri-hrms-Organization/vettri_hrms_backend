@@ -174,7 +174,8 @@ public class AttendanceController {
             session.setAccuracyMeters(request.getAccuracy());
         } else {
             OfficeLocation officeLocation = attendanceValidationService.resolveOffice(company, request.getOfficeLocationId());
-            attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(), officeLocation);
+                attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(),
+                    request.getTimestamp(), officeLocation, normalizedSource);
             double distance = attendanceValidationService.calculateDistance(
                     request.getLatitude(), request.getLongitude(), officeLocation.getLatitude(), officeLocation.getLongitude());
             session.setLocationType("OFFICE");
@@ -207,7 +208,8 @@ public class AttendanceController {
             OfficeLocation officeLocation = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(
                     session.getOfficeLocationId(), company.getId()).orElse(null);
             if (officeLocation != null) {
-                attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(), officeLocation);
+                attendanceValidationService.validateLocation(request.getLatitude(), request.getLongitude(), request.getAccuracy(),
+                    System.currentTimeMillis(), officeLocation, attendanceValidationService.normalizeSource(request.getSource()));
             }
         }
 

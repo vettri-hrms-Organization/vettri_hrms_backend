@@ -3,6 +3,7 @@ package com.haodaone.attendance.service;
 import com.haodaone.attendance.entity.AttendanceSession;
 import com.haodaone.attendance.entity.OfficeLocation;
 import com.haodaone.attendance.entity.WfhRequest;
+import com.haodaone.attendance.exception.AttendanceLocationException;
 import com.haodaone.attendance.repository.AttendanceSessionRepository;
 import com.haodaone.attendance.repository.OfficeLocationRepository;
 import com.haodaone.attendance.repository.WfhRequestRepository;
@@ -22,6 +23,7 @@ import java.util.Objects;
 public class AttendanceValidationService {
 
     private static final double MAX_ACCEPTABLE_ACCURACY_METERS = 50.0;
+    private static final long MAX_LOCATION_AGE_MILLIS = 120_000L;
 
     private final AttendanceSessionRepository attendanceSessionRepository;
     private final OfficeLocationRepository officeLocationRepository;
@@ -57,29 +59,44 @@ public class AttendanceValidationService {
                 .orElseThrow(() -> new BadRequestException("NO_ACTIVE_OFFICE"));
     }
 
-    public void validateLocation(Double latitude, Double longitude, Double accuracy, OfficeLocation officeLocation) {
-        if (latitude == null || longitude == null) {
-            throw new BadRequestException("LOCATION_UNAVAILABLE");
+    public void validateLocation(Double latitude, Double longitude, Double accuracy, Long timestamp,
+                                 OfficeLocation officeLocation, String source) {
+        if (latitude == null || longitude == null || !Double.isFinite(latitude) || !Double.isFinite(longitude)
+                || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            throw locationError("LOCATION_UNAVAILABLE", "Location coordinates are unavailable.", accuracy, null, null, null, "COORDINATES", source);
         }
-        if (accuracy == null || accuracy > MAX_ACCEPTABLE_ACCURACY_METERS) {
-            throw new BadRequestException("LOCATION_INACCURATE");
+        if (timestamp == null || Math.abs(System.currentTimeMillis() - timestamp) > MAX_LOCATION_AGE_MILLIS) {
+            throw locationError("LOCATION_STALE", "The location fix is too old to verify this check-in.", accuracy, null, null, null, "FRESHNESS", source);
+        }
+        if (accuracy == null || !Double.isFinite(accuracy) || accuracy < 0) {
+            throw locationError("LOCATION_UNAVAILABLE", "Location accuracy is unavailable.", accuracy, MAX_ACCEPTABLE_ACCURACY_METERS, null, null, "ACCURACY", source);
+        }
+        if (accuracy > MAX_ACCEPTABLE_ACCURACY_METERS) {
+            throw locationError("LOCATION_INACCURATE", "Your device could not determine your location accurately enough to check in.", accuracy, MAX_ACCEPTABLE_ACCURACY_METERS, null, null, "ACCURACY", source);
         }
         if (officeLocation == null) {
             throw new BadRequestException("NO_ACTIVE_OFFICE");
         }
         double distance = calculateDistance(latitude, longitude, officeLocation.getLatitude(), officeLocation.getLongitude());
         if (distance > officeLocation.getAllowedRadiusMeters()) {
-            throw new BadRequestException("OUTSIDE_GEOFENCE");
+            throw locationError("OUTSIDE_GEOFENCE", "You are outside the allowed office check-in area.", accuracy,
+                    MAX_ACCEPTABLE_ACCURACY_METERS, distance, officeLocation.getAllowedRadiusMeters(), "GEOFENCE", source);
         }
     }
 
+    private AttendanceLocationException locationError(String code, String message, Double accuracy,
+                                                       Double requiredAccuracy, Double distance,
+                                                       Integer radius, String stage, String source) {
+        return new AttendanceLocationException(code, message, accuracy, requiredAccuracy, distance, radius, stage, source);
+    }
+
     public String normalizeSource(String source) {
-        if (source == null || source.isBlank()) return "WEB";
+        if (source == null || source.isBlank()) return "WEB_DESKTOP";
         return switch (source.trim().toUpperCase()) {
             case "MANAGED_DEVICE", "MANAGEDDEVICE", "DEVICE" -> "MANAGED_DEVICE";
-            case "MOBILE" -> "MOBILE";
-            case "WEB" -> "WEB";
-            default -> "WEB";
+            case "WEB_MOBILE", "MOBILE" -> "WEB_MOBILE";
+            case "WEB_DESKTOP", "WEB" -> "WEB_DESKTOP";
+            default -> "WEB_DESKTOP";
         };
     }
 

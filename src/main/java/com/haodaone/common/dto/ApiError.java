@@ -12,6 +12,13 @@ public class ApiError {
     private String message;
     private String path;
     private List<String> details;
+    private String code;
+    private Double accuracyMeters;
+    private Double requiredAccuracyMeters;
+    private Double distanceMeters;
+    private Integer allowedRadiusMeters;
+    private String validationStage;
+    private String source;
 
     public ApiError() {
     }
@@ -66,4 +73,19 @@ public class ApiError {
     public void setDetails(List<String> details) {
         this.details = details;
     }
+
+    public String getCode() { return code; }
+    public void setCode(String code) { this.code = code; }
+    public Double getAccuracyMeters() { return accuracyMeters; }
+    public void setAccuracyMeters(Double accuracyMeters) { this.accuracyMeters = accuracyMeters; }
+    public Double getRequiredAccuracyMeters() { return requiredAccuracyMeters; }
+    public void setRequiredAccuracyMeters(Double requiredAccuracyMeters) { this.requiredAccuracyMeters = requiredAccuracyMeters; }
+    public Double getDistanceMeters() { return distanceMeters; }
+    public void setDistanceMeters(Double distanceMeters) { this.distanceMeters = distanceMeters; }
+    public Integer getAllowedRadiusMeters() { return allowedRadiusMeters; }
+    public void setAllowedRadiusMeters(Integer allowedRadiusMeters) { this.allowedRadiusMeters = allowedRadiusMeters; }
+    public String getValidationStage() { return validationStage; }
+    public void setValidationStage(String validationStage) { this.validationStage = validationStage; }
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
 }
