@@ -16,5 +16,6 @@ public record RegisterRequest(
         @NotBlank(message = "Industry is required") @Size(max = 100) String industry,
         @NotBlank(message = "Company size is required") @Size(max = 30) String companySize,
         @NotBlank(message = "Country is required") @Size(max = 100) String country,
-        List<@Size(max = 100) String> interests
+        List<@Size(max = 100) String> interests,
+        @Size(max = 50) String plan
 ) { }

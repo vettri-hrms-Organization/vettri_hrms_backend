@@ -3,6 +3,7 @@ package com.haodaone.auth.service;
 import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
 import com.haodaone.auth.dto.RegisterRequest;
+import com.haodaone.auth.dto.SignupRegistrationResponse;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.entity.Plan;
@@ -46,7 +47,7 @@ public class RegistrationService {
     }
 
     @Transactional
-    public LoginResponse register(RegisterRequest request, HttpServletRequest httpRequest) {
+    public Object register(RegisterRequest request, HttpServletRequest httpRequest) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         if (users.existsByEmail(email)) {
             throw new BadRequestException("This email is already registered. Try logging in instead.");
@@ -76,9 +77,29 @@ public class RegistrationService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setActive(true);
         user.setMustChangePassword(false);
-        user.setAccountStatus("ACTIVE");
         user.setCompany(savedCompany);
         user.setRoles(new HashSet<>(List.of(companyAdmin)));
+
+        String planName = normalizePlan(request.plan());
+        if (planName != null) {
+            user.setAccountStatus("PENDING_PAYMENT");
+            User savedUser = users.save(user);
+
+            Subscription subscription = new Subscription();
+            subscription.setCompany(savedCompany);
+            subscription.setPlan(Plan.valueOf(planName));
+            subscription.setStatus(SubscriptionStatus.PENDING_PAYMENT);
+            subscription.setEmployeeLimit(planName.equals("STARTER") ? 25 : planName.equals("BUSINESS") ? 100 : 500);
+            subscription.setDeviceLimit(planName.equals("STARTER") ? 2 : planName.equals("BUSINESS") ? 10 : 50);
+            subscription.setStartDate(LocalDate.now());
+            subscription.setRenewalDate(LocalDate.now().plusDays(30));
+            subscription.setAmount(planName.equals("STARTER") ? new java.math.BigDecimal("2999") : planName.equals("BUSINESS") ? new java.math.BigDecimal("5999") : new java.math.BigDecimal("14999"));
+            subscriptions.save(subscription);
+
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", subscription.getAmount(), "Payment required to activate your workspace.");
+        }
+
+        user.setAccountStatus("ACTIVE");
         users.save(user);
 
         LocalDate trialStart = LocalDate.now();
@@ -95,6 +116,15 @@ public class RegistrationService {
         login.setUsername(email);
         login.setPassword(request.password());
         return authService.login(login, httpRequest);
+    }
+
+    private String normalizePlan(String plan) {
+        if (plan == null || plan.isBlank()) return null;
+        String normalized = plan.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "STARTER", "BUSINESS", "ENTERPRISE" -> normalized;
+            default -> null;
+        };
     }
 
     private String normalizeInterests(List<String> interests) {

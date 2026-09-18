@@ -38,8 +38,12 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
-        return ResponseEntity.status(201).body(registrationService.register(request, httpRequest));
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
+        Object response = registrationService.register(request, httpRequest);
+        if (response instanceof LoginResponse loginResponse) {
+            return ResponseEntity.status(201).body(loginResponse);
+        }
+        return ResponseEntity.status(201).body(response);
     }
 
     @PostMapping("/refresh")
