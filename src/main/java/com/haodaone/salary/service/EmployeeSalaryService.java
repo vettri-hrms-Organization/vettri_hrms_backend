@@ -55,7 +55,7 @@ public class EmployeeSalaryService {
     public Page<EmployeeSalarySummaryDTO> list(String search, Long departmentId, String status, String sortBy, String sortDir, Pageable pageable) {
         Long companyId = requiredTenant();
         List<Employee> employees = employeeRepository.searchForPayroll(companyId,
-                (search == null || search.isBlank()) ? null : search.trim(), departmentId, status);
+            (search == null || search.isBlank()) ? "" : search.trim(), departmentId, status);
 
         Map<Long, SalaryStructure> structuresByEmployee = salaryStructureRepository.findAllActiveByEmployeeId(companyId);
         Map<Long, PayrollItem> latestItemByEmployee = payrollItemRepository.findLatestByEmployeeId(companyId);

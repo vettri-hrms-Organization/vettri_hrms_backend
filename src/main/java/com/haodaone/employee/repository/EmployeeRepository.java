@@ -129,7 +129,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
         @Query("select e from Employee e where e.deleted = false and e.company.id = :companyId " +
             "and (:departmentId is null or e.department.id = :departmentId) " +
             "and (:status is null or e.status = :status) " +
-            "and (:term is null or " +
+            "and (:term = '' or " +
             "lower(e.firstName) like lower(concat('%', :term, '%')) or " +
             "lower(e.lastName) like lower(concat('%', :term, '%')) or " +
             "lower(e.employeeCode) like lower(concat('%', :term, '%')) or " +
