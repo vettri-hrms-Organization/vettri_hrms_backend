@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.DayOfWeek;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -51,6 +52,7 @@ public class AttendanceController {
     private final OfficeLocationRepository officeLocationRepository;
     private final AttendanceValidationService attendanceValidationService;
     private final CompanyRepository companyRepository;
+    private final Clock applicationClock;
 
     public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
                                AttendanceSessionRepository attendanceSessionRepository,
@@ -60,7 +62,8 @@ public class AttendanceController {
                                HolidayRepository holidayRepository,
                                OfficeLocationRepository officeLocationRepository,
                                AttendanceValidationService attendanceValidationService,
-                               CompanyRepository companyRepository) {
+                               CompanyRepository companyRepository,
+                               Clock applicationClock) {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
@@ -70,13 +73,14 @@ public class AttendanceController {
         this.officeLocationRepository = officeLocationRepository;
         this.attendanceValidationService = attendanceValidationService;
         this.companyRepository = companyRepository;
+        this.applicationClock = applicationClock;
     }
 
     @GetMapping
     @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
     public List<AttendanceRecordDTO> byDate(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
-        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
+        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
         LocalDateTime start = targetDate.atStartOfDay();
         LocalDateTime end = start.plusDays(1);
         return attendanceRecordRepository.findAllByCompany_IdAndPunchTimeBetweenOrderByPunchTimeDesc(companyId, start, end).stream()
@@ -89,7 +93,7 @@ public class AttendanceController {
     @Transactional(readOnly = true)
     public AttendanceExceptionDTO exceptions(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
-        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
+        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
 
         boolean isWeekend = targetDate.getDayOfWeek() == DayOfWeek.SATURDAY || targetDate.getDayOfWeek() == DayOfWeek.SUNDAY;
         boolean isHoliday = !holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, targetDate, targetDate).isEmpty();
@@ -164,8 +168,9 @@ public class AttendanceController {
         AttendanceSession session = new AttendanceSession();
         session.setCompany(company);
         session.setEmployee(employee);
-        session.setAttendanceDate(LocalDate.now());
-        session.setCheckInTime(LocalDateTime.now());
+        LocalDateTime serverNow = LocalDateTime.now(applicationClock);
+        session.setAttendanceDate(serverNow.toLocalDate());
+        session.setCheckInTime(serverNow);
         session.setStatus("CHECKED_IN");
         session.setSource(normalizedSource);
         session.setDeviceId(request.getDeviceId());
@@ -207,7 +212,7 @@ public class AttendanceController {
 
         AttendanceSession session = attendanceSessionRepository
                 .findByEmployee_IdAndCompany_IdAndStatusAndAttendanceDate(
-                        employee.getId(), company.getId(), "CHECKED_IN", LocalDate.now())
+                        employee.getId(), company.getId(), "CHECKED_IN", LocalDate.now(applicationClock))
                 .orElseThrow(() -> new BadRequestException("CHECK_IN_REQUIRED"));
 
         if (request.getLatitude() != null && request.getLongitude() != null && session.getOfficeLocationId() != null) {
@@ -219,7 +224,7 @@ public class AttendanceController {
             }
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(applicationClock);
         session.setCheckOutTime(now);
         session.setStatus("CHECKED_OUT");
         session.setSource(attendanceValidationService.normalizeSource(request.getSource()));
@@ -241,7 +246,7 @@ public class AttendanceController {
 
         AttendanceSession session = attendanceSessionRepository
             .findTopByEmployee_IdAndCompany_IdAndAttendanceDateAndStatusInOrderByCheckInTimeDesc(
-                employee.getId(), company.getId(), LocalDate.now(), List.of("CHECKED_IN", "CHECKED_OUT"))
+                employee.getId(), company.getId(), LocalDate.now(applicationClock), List.of("CHECKED_IN", "CHECKED_OUT"))
             .orElse(null);
         if (session == null) {
             return ResponseEntity.ok().build();
@@ -314,7 +319,7 @@ public class AttendanceController {
         if (teamIds.isEmpty()) {
             return List.of();
         }
-        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now();
+        LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
         return attendanceSessionRepository.findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(companyId, teamIds, targetDate)
                 .stream().map(this::mapSession).toList();
     }

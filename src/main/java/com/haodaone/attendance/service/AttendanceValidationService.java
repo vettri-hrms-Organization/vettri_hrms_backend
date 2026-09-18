@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 
@@ -38,22 +39,25 @@ public class AttendanceValidationService {
     private final OfficeLocationRepository officeLocationRepository;
     private final MonitoredDeviceRepository monitoredDeviceRepository;
     private final WfhRequestRepository wfhRequestRepository;
+    private final Clock applicationClock;
 
     public AttendanceValidationService(AttendanceSessionRepository attendanceSessionRepository,
                                       OfficeLocationRepository officeLocationRepository,
                                       MonitoredDeviceRepository monitoredDeviceRepository,
-                                      WfhRequestRepository wfhRequestRepository) {
+                                      WfhRequestRepository wfhRequestRepository,
+                                      Clock applicationClock) {
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.officeLocationRepository = officeLocationRepository;
         this.monitoredDeviceRepository = monitoredDeviceRepository;
         this.wfhRequestRepository = wfhRequestRepository;
+        this.applicationClock = applicationClock;
     }
 
     @Transactional(readOnly = true)
     public AttendanceSession currentActiveSession(Employee employee, Company company) {
         return attendanceSessionRepository
                 .findTopByEmployee_IdAndCompany_IdAndAttendanceDateAndStatusInOrderByCheckInTimeDesc(
-                        employee.getId(), company.getId(), LocalDate.now(), List.of("CHECKED_IN"))
+                        employee.getId(), company.getId(), LocalDate.now(applicationClock), List.of("CHECKED_IN"))
                 .orElse(null);
     }
 

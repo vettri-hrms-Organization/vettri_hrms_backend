@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,13 +28,16 @@ public class WorkSessionController {
     private final WorkSessionRepository workSessionRepository;
     private final EmployeeRepository employeeRepository;
     private final MonitoredDeviceRepository monitoredDeviceRepository;
+    private final Clock applicationClock;
 
     public WorkSessionController(WorkSessionRepository workSessionRepository,
                                  EmployeeRepository employeeRepository,
-                                 MonitoredDeviceRepository monitoredDeviceRepository) {
+                                 MonitoredDeviceRepository monitoredDeviceRepository,
+                                 Clock applicationClock) {
         this.workSessionRepository = workSessionRepository;
         this.employeeRepository = employeeRepository;
         this.monitoredDeviceRepository = monitoredDeviceRepository;
+        this.applicationClock = applicationClock;
     }
 
     private Employee currentEmployee() {
@@ -83,7 +87,7 @@ public class WorkSessionController {
             }
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(applicationClock);
         // prevent double start
         if (workSessionRepository.countByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", today) > 0) {
             throw new BadRequestException("You already have an active session for today");
@@ -93,7 +97,7 @@ public class WorkSessionController {
         ws.setEmployee(me);
         ws.setCompany(me.getCompany());
         ws.setSessionDate(today);
-        ws.setLoginTime(LocalDateTime.now());
+        ws.setLoginTime(LocalDateTime.now(applicationClock));
         ws.setWorkingMode(mode);
         ws.setStatus("ACTIVE");
         workSessionRepository.save(ws);
@@ -106,10 +110,10 @@ public class WorkSessionController {
     @Transactional
     public WorkSessionDTO stop() {
         Employee me = currentEmployee();
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(applicationClock);
         WorkSession ws = workSessionRepository.findByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", today)
                 .orElseThrow(() -> new BadRequestException("No active session found for today"));
-        ws.setLogoutTime(LocalDateTime.now());
+        ws.setLogoutTime(LocalDateTime.now(applicationClock));
         ws.setStatus("COMPLETED");
         long minutes = java.time.Duration.between(ws.getLoginTime(), ws.getLogoutTime()).toMinutes();
         ws.setTotalWorkingMinutes((int) minutes);
@@ -121,7 +125,7 @@ public class WorkSessionController {
     @PreAuthorize("hasAuthority('EMPLOYEE_VIEW') or hasRole('EMPLOYEE')")
     public WorkSessionDTO todayForCurrentEmployee() {
         Employee me = currentEmployee();
-        return workSessionRepository.findByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", LocalDate.now())
+        return workSessionRepository.findByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", LocalDate.now(applicationClock))
                 .map(WorkSessionDTO::from)
                 .orElse(null);
     }
@@ -130,7 +134,7 @@ public class WorkSessionController {
     @PreAuthorize("!hasRole('EMPLOYEE') and hasAuthority('ATTENDANCE_VIEW')")
     public List<WorkSessionDTO> list(@RequestParam(required = false) String date,
                                      @RequestParam(required = false) String mode) {
-        LocalDate target = date != null ? LocalDate.parse(date) : LocalDate.now();
+        LocalDate target = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
         Long companyId = null;
         // company scoping: if tenant context present, apply it
         Long currentTenant = com.haodaone.tenant.TenantContext.getCurrentTenant();

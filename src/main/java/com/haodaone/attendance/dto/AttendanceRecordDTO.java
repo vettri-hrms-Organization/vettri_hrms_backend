@@ -3,6 +3,8 @@ package com.haodaone.attendance.dto;
 import com.haodaone.attendance.entity.AttendanceRecord;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 public class AttendanceRecordDTO {
     private Long id;
@@ -10,7 +12,7 @@ public class AttendanceRecordDTO {
     private String employeeCode;
     private String employeeName;
     private String departmentName;
-    private LocalDateTime punchTime;
+    private OffsetDateTime punchTime;
     private String punchType;
     private String verifyMode;
     private String deviceName;
@@ -20,7 +22,8 @@ public class AttendanceRecordDTO {
     public static AttendanceRecordDTO from(AttendanceRecord record) {
         AttendanceRecordDTO dto = new AttendanceRecordDTO();
         dto.id = record.getId();
-        dto.punchTime = record.getPunchTime();
+        dto.punchTime = record.getPunchTime() == null ? null
+            : record.getPunchTime().atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime();
         dto.punchType = record.getPunchType();
         dto.verifyMode = record.getVerifyMode();
         dto.deviceName = record.getDeviceName();
@@ -60,7 +63,7 @@ public class AttendanceRecordDTO {
         return departmentName;
     }
 
-    public LocalDateTime getPunchTime() {
+    public OffsetDateTime getPunchTime() {
         return punchTime;
     }
 

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -48,17 +49,20 @@ public class AttendanceIngestService {
     }
 
     private final DeviceRepository deviceRepository;
+    private final Clock applicationClock;
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final AttendanceEventPublisher eventPublisher;
 
     public AttendanceIngestService(DeviceRepository deviceRepository, EmployeeRepository employeeRepository,
                                     AttendanceRecordRepository attendanceRecordRepository,
-                                    AttendanceEventPublisher eventPublisher) {
+                                    AttendanceEventPublisher eventPublisher,
+                                    Clock applicationClock) {
         this.deviceRepository = deviceRepository;
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.eventPublisher = eventPublisher;
+        this.applicationClock = applicationClock;
     }
 
     @Transactional
@@ -113,7 +117,7 @@ public class AttendanceIngestService {
             d.setDeviceName(serialNumber);
             return d;
         });
-        device.setLastSeenAt(LocalDateTime.now());
+        device.setLastSeenAt(LocalDateTime.now(applicationClock));
         device.setLastIpAddress(remoteIp);
         return deviceRepository.save(device);
     }

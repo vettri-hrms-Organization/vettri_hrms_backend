@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 
@@ -26,10 +27,12 @@ public class WfhRequestController {
 
     private final WfhRequestRepository wfhRequestRepository;
     private final EmployeeRepository employeeRepository;
+    private final Clock applicationClock;
 
-    public WfhRequestController(WfhRequestRepository wfhRequestRepository, EmployeeRepository employeeRepository) {
+    public WfhRequestController(WfhRequestRepository wfhRequestRepository, EmployeeRepository employeeRepository, Clock applicationClock) {
         this.wfhRequestRepository = wfhRequestRepository;
         this.employeeRepository = employeeRepository;
+        this.applicationClock = applicationClock;
     }
 
     @PostMapping("/wfh/request")
@@ -86,7 +89,7 @@ public class WfhRequestController {
         }
         entity.setStatus("APPROVED");
         entity.setApprovedByEmployee(manager);
-        entity.setApprovedAt(LocalDateTime.now());
+        entity.setApprovedAt(LocalDateTime.now(applicationClock));
         entity.setManagerNote(note);
         return ResponseEntity.ok(toDto(wfhRequestRepository.save(entity)));
     }
@@ -102,7 +105,7 @@ public class WfhRequestController {
         }
         entity.setStatus("REJECTED");
         entity.setApprovedByEmployee(manager);
-        entity.setApprovedAt(LocalDateTime.now());
+        entity.setApprovedAt(LocalDateTime.now(applicationClock));
         entity.setManagerNote(note);
         return ResponseEntity.ok(toDto(wfhRequestRepository.save(entity)));
     }

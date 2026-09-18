@@ -2,6 +2,8 @@ package com.haodaone.attendance.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 public class AttendanceSessionDTO {
     private Long id;
@@ -9,8 +11,8 @@ public class AttendanceSessionDTO {
     private String employeeName;
     private String status;
     private LocalDate attendanceDate;
-    private LocalDateTime checkInTime;
-    private LocalDateTime checkOutTime;
+    private OffsetDateTime checkInTime;
+    private OffsetDateTime checkOutTime;
     private String source;
     private String locationType;
     private String locationValidationStatus;
@@ -29,10 +31,10 @@ public class AttendanceSessionDTO {
     public void setStatus(String status) { this.status = status; }
     public LocalDate getAttendanceDate() { return attendanceDate; }
     public void setAttendanceDate(LocalDate attendanceDate) { this.attendanceDate = attendanceDate; }
-    public LocalDateTime getCheckInTime() { return checkInTime; }
-    public void setCheckInTime(LocalDateTime checkInTime) { this.checkInTime = checkInTime; }
-    public LocalDateTime getCheckOutTime() { return checkOutTime; }
-    public void setCheckOutTime(LocalDateTime checkOutTime) { this.checkOutTime = checkOutTime; }
+    public OffsetDateTime getCheckInTime() { return checkInTime; }
+    public void setCheckInTime(LocalDateTime checkInTime) { this.checkInTime = toIstOffset(checkInTime); }
+    public OffsetDateTime getCheckOutTime() { return checkOutTime; }
+    public void setCheckOutTime(LocalDateTime checkOutTime) { this.checkOutTime = toIstOffset(checkOutTime); }
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
     public String getLocationType() { return locationType; }
@@ -47,4 +49,8 @@ public class AttendanceSessionDTO {
     public void setDurationMinutes(Long durationMinutes) { this.durationMinutes = durationMinutes; }
     public boolean isWfh() { return wfh; }
     public void setWfh(boolean wfh) { this.wfh = wfh; }
+
+    private static OffsetDateTime toIstOffset(LocalDateTime value) {
+        return value == null ? null : value.atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime();
+    }
 }
