@@ -130,12 +130,19 @@
         @Bean
         public CorsConfigurationSource corsConfigurationSource() {
             CorsConfiguration configuration = new CorsConfiguration();
-            // Parse allowed origins only if provided; in production this should be set explicitly
+            List<String> origins = new java.util.ArrayList<>(List.of(
+                    "https://app.vettrihrms.in",
+                    "https://vettrihrms.in",
+                    "https://www.vettrihrms.in"
+            ));
             if (allowedOrigins != null && !allowedOrigins.isBlank()) {
                 String[] parts = allowedOrigins.split(",");
-                List<String> origins = java.util.Arrays.stream(parts).map(String::trim).filter(s -> !s.isEmpty()).toList();
-                configuration.setAllowedOrigins(origins);
+                java.util.Arrays.stream(parts)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty() && !origins.contains(s))
+                        .forEach(origins::add);
             }
+            configuration.setAllowedOrigins(origins);
             configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
             // Restrict allowed headers to common safe headers and Authorization
             configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Company-Id", "X-WebRTC-Signaling-Token"));
