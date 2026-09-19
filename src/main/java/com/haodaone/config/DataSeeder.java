@@ -1,3 +1,4 @@
+
 package com.haodaone.config;
 
 import com.haodaone.leave.entity.LeaveType;
