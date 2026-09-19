@@ -253,8 +253,10 @@ public class BillingService {
         String paymentMethod = null;
         try {
             Payment payment = client.payments.fetch(razorpayPaymentId);
-            paymentMethod = payment.get("method") != null ? String.valueOf(payment.get("method")) : null;
-            if (payment.get("status") != null && "failed".equalsIgnoreCase(String.valueOf(payment.get("status")))) {
+            Object paymentMethodValue = payment.get("method");
+            Object paymentStatusValue = payment.get("status");
+            paymentMethod = paymentMethodValue != null ? String.valueOf(paymentMethodValue) : null;
+            if (paymentStatusValue != null && "failed".equalsIgnoreCase(String.valueOf(paymentStatusValue))) {
                 throw new BadRequestException("Payment failed in Razorpay.");
             }
         } catch (RazorpayException ex) {
