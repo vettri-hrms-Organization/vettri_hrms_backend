@@ -88,6 +88,7 @@ public class RegistrationService {
             String billingCycle = normalizeBillingCycle(request.billingCycle());
             int employeeCount = request.employeeCount() == null || request.employeeCount() < 1 ? 1 : request.employeeCount();
             java.math.BigDecimal amount = calculateAmount(employeeCount, billingCycle);
+            java.math.BigDecimal trialAmount = new java.math.BigDecimal("1.00");
 
             Subscription subscription = new Subscription();
             subscription.setCompany(savedCompany);
@@ -102,7 +103,7 @@ public class RegistrationService {
             subscription.setAmount(amount);
             subscriptions.save(subscription);
 
-            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", amount, "Payment required to activate your workspace.");
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", trialAmount, "Payment required to activate your workspace.");
         }
 
         user.setAccountStatus("ACTIVE");
@@ -144,12 +145,12 @@ public class RegistrationService {
     }
 
     private java.math.BigDecimal calculateAmount(int employeeCount, String billingCycle) {
-        java.math.BigDecimal monthlyBase = new java.math.BigDecimal("199").multiply(java.math.BigDecimal.valueOf(employeeCount));
-        return switch (billingCycle) {
-            case "QUARTERLY" -> monthlyBase.multiply(new java.math.BigDecimal("3")).setScale(2, java.math.RoundingMode.HALF_UP);
-            case "ANNUAL" -> monthlyBase.multiply(new java.math.BigDecimal("12")).multiply(new java.math.BigDecimal("0.9")).setScale(2, java.math.RoundingMode.HALF_UP);
-            default -> monthlyBase.setScale(2, java.math.RoundingMode.HALF_UP);
+        java.math.BigDecimal perEmployeeRate = switch (billingCycle) {
+            case "QUARTERLY" -> new java.math.BigDecimal("279");
+            case "ANNUAL" -> new java.math.BigDecimal("999");
+            default -> new java.math.BigDecimal("99");
         };
+        return perEmployeeRate.multiply(java.math.BigDecimal.valueOf(employeeCount)).setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private String normalizeInterests(List<String> interests) {
