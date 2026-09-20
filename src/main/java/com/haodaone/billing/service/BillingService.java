@@ -279,7 +279,10 @@ public class BillingService {
             Payment payment = client.payments.fetch(razorpayPaymentId);
             Object paymentMethodValue = payment.get("method");
             Object paymentStatusValue = payment.get("status");
-            int paymentAmountPaise = payment.get("amount") == null ? 0 : Integer.parseInt(String.valueOf(payment.get("amount")));
+                Object paymentAmountValue = payment.get("amount");
+                int paymentAmountPaise = paymentAmountValue instanceof Number number
+                    ? number.intValue()
+                    : paymentAmountValue == null ? 0 : Integer.parseInt(String.valueOf((Object) paymentAmountValue));
             if (paymentAmountPaise != expectedAmountPaise) {
                 throw new BadRequestException("Payment amount mismatch for this plan and billing cycle.");
             }
