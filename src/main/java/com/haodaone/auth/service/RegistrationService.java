@@ -104,7 +104,7 @@ public class RegistrationService {
             subscription.setAmount(amount);
             subscriptions.save(subscription);
 
-            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", amount, "Payment required to activate your workspace.");
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", new java.math.BigDecimal("1.00"), "A ₹1 verification is required to start your free trial.");
         }
 
         user.setAccountStatus("ACTIVE");

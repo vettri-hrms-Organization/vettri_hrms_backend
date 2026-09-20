@@ -116,11 +116,12 @@ public class BillingService {
 
         int normalizedEmployees = BillingPricing.normalizeEmployeeCount(employeeCount);
         BigDecimal subscriptionAmount = calculateSubscriptionAmount(normalizedPlan, normalizedEmployees, normalizedCycle);
+        BigDecimal verificationAmount = calculateVerificationAmount();
 
         try {
             RazorpayClient client = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
             JSONObject orderRequest = new JSONObject();
-            int amountPaise = subscriptionAmount.multiply(new BigDecimal("100")).intValueExact();
+            int amountPaise = verificationAmount.multiply(new BigDecimal("100")).intValueExact();
             orderRequest.put("amount", amountPaise);
             orderRequest.put("currency", razorpayCurrency);
             orderRequest.put("receipt", "vettri-" + company.getId() + "-" + System.currentTimeMillis());
@@ -144,7 +145,7 @@ public class BillingService {
             tx.setRazorpayOrderId(razorpayOrderId);
             tx.setRazorpayPaymentId(null);
             tx.setCurrency(razorpayCurrency);
-            tx.setAmount(subscriptionAmount);
+            tx.setAmount(verificationAmount);
             tx.setStatus(PaymentTransactionStatus.CREATED);
             tx.setPaymentMethod(null);
             tx.setPaidAt(null);
@@ -159,6 +160,7 @@ public class BillingService {
             response.put("billingCycle", normalizedCycle);
             response.put("employeeCount", normalizedEmployees);
             response.put("subscriptionAmount", subscriptionAmount);
+            response.put("verificationAmount", verificationAmount);
             response.put("companyId", company.getId());
             response.put("userId", user.getId());
             response.put("organizationName", company.getName());
@@ -235,7 +237,8 @@ public class BillingService {
 
         int normalizedEmployees = BillingPricing.normalizeEmployeeCount(employeeCount);
         BigDecimal subscriptionAmount = calculateSubscriptionAmount(normalizedPlan, normalizedEmployees, normalizedCycle);
-        int expectedAmountPaise = subscriptionAmount.multiply(new BigDecimal("100")).intValueExact();
+        BigDecimal verificationAmount = calculateVerificationAmount();
+        int expectedAmountPaise = verificationAmount.multiply(new BigDecimal("100")).intValueExact();
         int orderAmountPaise = orderJson.optInt("amount", 0);
         if (orderAmountPaise != expectedAmountPaise) {
             throw new BadRequestException("Payment amount mismatch for this plan and billing cycle.");
@@ -311,7 +314,7 @@ public class BillingService {
         paymentTransaction.setRazorpayPaymentId(razorpayPaymentId);
         paymentTransaction.setRazorpaySignature(razorpaySignature);
         paymentTransaction.setCurrency(razorpayCurrency);
-        paymentTransaction.setAmount(subscriptionAmount);
+        paymentTransaction.setAmount(verificationAmount);
         paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
         paymentTransaction.setPaymentMethod(paymentMethod);
         paymentTransaction.setPaidAt(LocalDateTime.now());
@@ -432,6 +435,10 @@ public class BillingService {
         BigDecimal perEmployeeRate = BillingPricing.rateFor(plan, billingCycle);
         return perEmployeeRate.multiply(BigDecimal.valueOf(BillingPricing.normalizeEmployeeCount(employeeCount)))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateVerificationAmount() {
+        return new BigDecimal("1.00");
     }
 
     private record PlanSpec(Plan plan, String label, Integer employeeLimit, Integer deviceLimit) {

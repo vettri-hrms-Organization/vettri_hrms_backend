@@ -22,5 +22,9 @@ class BillingServicePricingTest {
         assertEquals(new BigDecimal("4975.00"), monthlySubscription);
         assertEquals(new BigDecimal("13425.00"), quarterlySubscription);
         assertEquals(new BigDecimal("53700.00"), annualSubscription);
+
+        Method verificationMethod = BillingService.class.getDeclaredMethod("calculateVerificationAmount");
+        verificationMethod.setAccessible(true);
+        assertEquals(new BigDecimal("1.00"), verificationMethod.invoke(service));
     }
 }
