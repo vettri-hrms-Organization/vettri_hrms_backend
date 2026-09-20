@@ -3,6 +3,7 @@ package com.haodaone.selfservice.controller;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.recruitment.service.EmailService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,10 +21,13 @@ import java.util.Map;
 public class EmployeeSelfServiceController {
     private final JdbcTemplate jdbcTemplate;
     private final EmployeeRepository employeeRepository;
+    private final EmailService emailService;
 
-    public EmployeeSelfServiceController(JdbcTemplate jdbcTemplate, EmployeeRepository employeeRepository) {
+    public EmployeeSelfServiceController(JdbcTemplate jdbcTemplate, EmployeeRepository employeeRepository,
+                                         EmailService emailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.employeeRepository = employeeRepository;
+        this.emailService = emailService;
     }
 
     @GetMapping("/employee-assets/me")
@@ -82,6 +86,8 @@ public class EmployeeSelfServiceController {
                 insert into support_request(company_id, requester_employee_id, category, subject, description, priority)
                 values (?, ?, ?, ?, ?, ?) returning id
                 """, Long.class, employee.getCompany().getId(), employee.getId(), category, subject, description, priority);
+            emailService.sendSupportRequestEmail(employee.getUser().getEmail(), employee.getFullName(),
+                employee.getCompany().getName(), category, subject, description);
         return Map.of("id", id, "status", "OPEN", "subject", subject);
     }
 

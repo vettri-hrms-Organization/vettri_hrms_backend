@@ -12,6 +12,8 @@ import com.haodaone.company.entity.Subscription;
 import com.haodaone.company.entity.SubscriptionStatus;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.company.repository.SubscriptionRepository;
+import com.haodaone.recruitment.service.EmailService;
+import com.haodaone.auth.service.VerificationService;
 import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.RoleRepository;
@@ -20,6 +22,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -35,16 +39,21 @@ public class RegistrationService {
     private final SubscriptionRepository subscriptions;
     private final PasswordEncoder passwordEncoder;
     private final AuthService authService;
+    private final EmailService emailService;
+    private final VerificationService verificationService;
 
     public RegistrationService(UserRepository users, CompanyRepository companies, RoleRepository roles,
                                SubscriptionRepository subscriptions, PasswordEncoder passwordEncoder,
-                               AuthService authService) {
+                               AuthService authService, EmailService emailService,
+                               VerificationService verificationService) {
         this.users = users;
         this.companies = companies;
         this.roles = roles;
         this.subscriptions = subscriptions;
         this.passwordEncoder = passwordEncoder;
         this.authService = authService;
+        this.emailService = emailService;
+        this.verificationService = verificationService;
     }
 
     @Transactional
@@ -104,6 +113,9 @@ public class RegistrationService {
             subscription.setAmount(amount);
             subscriptions.save(subscription);
 
+            String verificationToken = verificationService.createToken(savedUser);
+            afterCommit(() -> emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), verificationToken));
+
             return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", new java.math.BigDecimal("1.00"), "A ₹1 verification is required to start your free trial.");
         }
 
@@ -119,6 +131,20 @@ public class RegistrationService {
         subscription.setStartDate(trialStart);
         subscription.setRenewalDate(trialStart.plusDays(14));
         subscriptions.save(subscription);
+
+        String verificationToken = verificationService.createToken(user);
+
+        String customerName = user.getFullName();
+        String customerEmail = user.getEmail();
+        String organizationName = savedCompany.getName();
+        String trialStartValue = subscription.getStartDate().toString();
+        String trialEndValue = subscription.getRenewalDate().toString();
+        afterCommit(() -> {
+            emailService.sendWelcomeEmail(customerEmail, customerName, organizationName,
+                subscription.getPlan().name(), subscription.getEmployeeLimit(), subscription.getBillingCycle(),
+                trialStartValue, trialEndValue);
+            emailService.sendVerificationEmail(customerEmail, customerName, verificationToken);
+        });
 
         LoginRequest login = new LoginRequest();
         login.setUsername(email);
@@ -141,5 +167,18 @@ public class RegistrationService {
                 .limit(20)
                 .reduce((left, right) -> left + "," + right)
                 .orElse("");
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 }

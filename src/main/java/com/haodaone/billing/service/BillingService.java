@@ -14,6 +14,7 @@ import com.haodaone.company.entity.SubscriptionStatus;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.company.repository.SubscriptionRepository;
 import com.haodaone.common.exception.BadRequestException;
+import com.haodaone.recruitment.service.EmailService;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.UserRepository;
 import com.razorpay.Order;
@@ -21,9 +22,12 @@ import com.razorpay.Payment;
 import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +51,7 @@ public class BillingService {
     private final SubscriptionRepository subscriptions;
     private final PaymentTransactionRepository paymentTransactions;
     private final AuthService authService;
+    private final EmailService emailService;
 
     @Value("${app.razorpay.key-id:}")
     private String razorpayKeyId;
@@ -60,15 +65,24 @@ public class BillingService {
     @Value("${app.razorpay.webhook-secret:}")
     private String razorpayWebhookSecret;
 
+    @Autowired
     public BillingService(UserRepository users, CompanyRepository companies,
                           SubscriptionRepository subscriptions,
                           PaymentTransactionRepository paymentTransactions,
-                          AuthService authService) {
+                          AuthService authService, EmailService emailService) {
         this.users = users;
         this.companies = companies;
         this.subscriptions = subscriptions;
         this.paymentTransactions = paymentTransactions;
         this.authService = authService;
+        this.emailService = emailService;
+    }
+
+    BillingService(UserRepository users, CompanyRepository companies,
+                   SubscriptionRepository subscriptions,
+                   PaymentTransactionRepository paymentTransactions,
+                   AuthService authService) {
+        this(users, companies, subscriptions, paymentTransactions, authService, null);
     }
 
     public List<PlanPricingResponse> pricing() {
@@ -271,9 +285,11 @@ public class BillingService {
             }
             paymentMethod = paymentMethodValue != null ? String.valueOf(paymentMethodValue) : null;
             if (paymentStatusValue != null && "failed".equalsIgnoreCase(String.valueOf(paymentStatusValue))) {
+                notifyPaymentFailure(user, company, razorpayOrderId);
                 throw new BadRequestException("Payment failed in Razorpay.");
             }
         } catch (RazorpayException ex) {
+            notifyPaymentFailure(user, company, razorpayOrderId);
             throw new BadRequestException("Razorpay payment not found or inaccessible.");
         }
 
@@ -323,6 +339,14 @@ public class BillingService {
         user.setAccountStatus("ACTIVE");
         user.setActive(true);
         users.save(user);
+
+        String customerEmail = user.getEmail();
+        String customerName = user.getFullName();
+        String organizationName = company.getName();
+        String paymentDate = paymentTransaction.getPaidAt().toString();
+        afterCommit(() -> emailService.sendPaymentSuccessEmail(customerEmail, customerName, organizationName,
+            normalizedPlan, normalizedEmployees, normalizedCycle, verificationAmount, paymentDate,
+            razorpayOrderId, razorpayPaymentId));
 
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("status", "verified");
@@ -439,6 +463,23 @@ public class BillingService {
 
     private BigDecimal calculateVerificationAmount() {
         return new BigDecimal("1.00");
+    }
+
+    private void notifyPaymentFailure(User user, Company company, String orderId) {
+        emailService.sendPaymentFailureEmail(user.getEmail(), user.getFullName(), company.getName(), orderId);
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     private record PlanSpec(Plan plan, String label, Integer employeeLimit, Integer deviceLimit) {

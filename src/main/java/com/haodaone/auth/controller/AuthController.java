@@ -7,6 +7,7 @@ import com.haodaone.auth.dto.RefreshRequest;
 import com.haodaone.auth.dto.RegisterRequest;
 import com.haodaone.auth.service.AuthService;
 import com.haodaone.auth.service.RegistrationService;
+import com.haodaone.auth.service.VerificationService;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.security.CustomUserPrincipal;
 import com.haodaone.user.dto.UserDTO;
@@ -24,12 +25,20 @@ public class AuthController {
 
     private final AuthService authService;
     private final RegistrationService registrationService;
+    private final VerificationService verificationService;
     private final EmployeeRepository employeeRepository;
 
-    public AuthController(AuthService authService, RegistrationService registrationService, EmployeeRepository employeeRepository) {
+    public AuthController(AuthService authService, RegistrationService registrationService,
+                          VerificationService verificationService, EmployeeRepository employeeRepository) {
         this.authService = authService;
         this.registrationService = registrationService;
+        this.verificationService = verificationService;
         this.employeeRepository = employeeRepository;
+    }
+
+    @GetMapping("/verify-email")
+    public ResponseEntity<Map<String, String>> verifyEmail(@RequestParam(required = false) String token) {
+        return ResponseEntity.ok(Map.of("status", verificationService.verify(token)));
     }
 
     @PostMapping("/login")

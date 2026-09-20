@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 /**
  * Shared transactional email sender for recruitment, onboarding, and
@@ -24,6 +25,12 @@ import java.time.format.DateTimeFormatter;
 @Service
 public class EmailService {
 
+    public enum EmailChannel {
+        SYSTEM,
+        BILLING,
+        SUPPORT
+    }
+
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
@@ -32,11 +39,23 @@ public class EmailService {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
-    @Value("${app.email.from-address}")
-    private String fromAddress;
+    @Value("${app.email.from-system-address:noreply@vettrihrms.in}")
+    private String systemFromAddress;
 
-    @Value("${app.email.from-name}")
-    private String fromName;
+    @Value("${app.email.from-system-name:Vettri HRMS}")
+    private String systemFromName;
+
+    @Value("${app.email.from-billing-address:billing@vettrihrms.in}")
+    private String billingFromAddress;
+
+    @Value("${app.email.from-billing-name:Vettri Billing}")
+    private String billingFromName;
+
+    @Value("${app.email.from-support-address:customersupport@vettrihrms.in}")
+    private String supportFromAddress;
+
+    @Value("${app.email.from-support-name:Vettri Customer Support}")
+    private String supportFromName;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -186,7 +205,7 @@ public class EmailService {
         }
 
         try {
-            sendHtmlEmail(toEmail, toName, subject, htmlBody, null, null);
+            sendHtmlEmail(toEmail, toName, subject, htmlBody, EmailChannel.SYSTEM, null, null);
             log.info("Sent email to {} <{}>: {}", toName, toEmail, subject);
             return true;
         } catch (Exception e) {
@@ -203,7 +222,7 @@ public class EmailService {
         }
 
         try {
-            sendHtmlEmail(toEmail, toName, subject, htmlBody, null,
+                sendHtmlEmail(toEmail, toName, subject, htmlBody, EmailChannel.SYSTEM, null,
                     new Attachment(attachmentFilename, attachmentBytes));
             log.info("Sent email with attachment to {} <{}>: {}", toName, toEmail, subject);
             return true;
@@ -213,25 +232,48 @@ public class EmailService {
         }
     }
 
-    /** Sends a plain-text message using the fixed Vettri sender address. */
+    /** Sends a plain-text message using the system sender profile. */
     public void sendEmail(String toEmail, String subject, String textBody, String replyTo) throws jakarta.mail.MessagingException {
-        sendHtmlEmail(toEmail, null, subject, textBody, replyTo, null);
+        sendTextEmail(toEmail, subject, textBody, EmailChannel.SYSTEM, replyTo);
     }
 
-    /** Sends an HTML message using the fixed Vettri sender address. */
+    public void sendTextEmail(String toEmail, String subject, String textBody,
+                              EmailChannel channel, String replyTo) throws jakarta.mail.MessagingException {
+        sendMessage(toEmail, null, subject, textBody, false, channel, replyTo, null);
+    }
+
+    /** Sends an HTML message using a verified Vettri sender profile. */
     public void sendHtmlEmail(String toEmail, String toName, String subject, String htmlBody, String replyTo)
             throws jakarta.mail.MessagingException {
-        sendHtmlEmail(toEmail, toName, subject, htmlBody, replyTo, null);
+        sendHtmlEmail(toEmail, toName, subject, htmlBody, EmailChannel.SYSTEM, replyTo);
     }
 
-    private void sendHtmlEmail(String toEmail, String toName, String subject, String body, String replyTo,
-                               Attachment attachment) throws jakarta.mail.MessagingException {
+    public void sendHtmlEmail(String toEmail, String toName, String subject, String htmlBody,
+                              EmailChannel channel, String replyTo) throws jakarta.mail.MessagingException {
+        sendMessage(toEmail, toName, subject, htmlBody, true, channel, replyTo, null);
+    }
+
+    public void sendTemplateEmail(String toEmail, String toName, String subject, String htmlBody,
+                                  EmailChannel channel, String replyTo) throws jakarta.mail.MessagingException {
+        sendHtmlEmail(toEmail, toName, subject, htmlBody, channel, replyTo);
+    }
+
+    private void sendHtmlEmail(String toEmail, String toName, String subject, String body,
+                               EmailChannel channel, String replyTo, Attachment attachment)
+            throws jakarta.mail.MessagingException {
+        sendMessage(toEmail, toName, subject, body, true, channel, replyTo, attachment);
+    }
+
+    private void sendMessage(String toEmail, String toName, String subject, String body, boolean html,
+                             EmailChannel channel, String replyTo, Attachment attachment)
+            throws jakarta.mail.MessagingException {
         InternetAddress recipient = new InternetAddress(toEmail);
         recipient.validate();
         var message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, attachment != null, "UTF-8");
+        SenderProfile sender = senderProfile(channel);
         try {
-            helper.setFrom(new InternetAddress(fromAddress, fromName));
+            helper.setFrom(new InternetAddress(sender.address(), sender.name()));
         } catch (java.io.UnsupportedEncodingException exception) {
             throw new jakarta.mail.MessagingException("Configured email sender name is invalid", exception);
         }
@@ -242,18 +284,120 @@ public class EmailService {
             replyAddress.validate();
             helper.setReplyTo(replyAddress);
         }
-        helper.setText(body, attachment == null && !body.trim().startsWith("<") ? false : true);
+        helper.setText(body, html);
         if (attachment != null) {
             helper.addAttachment(attachment.filename(), new ByteArrayResource(attachment.bytes()));
         }
         mailSender.send(message);
     }
 
+    private SenderProfile senderProfile(EmailChannel channel) {
+        SenderProfile sender = switch (channel == null ? EmailChannel.SYSTEM : channel) {
+            case SYSTEM -> new SenderProfile(systemFromAddress, systemFromName);
+            case BILLING -> new SenderProfile(billingFromAddress, billingFromName);
+            case SUPPORT -> new SenderProfile(supportFromAddress, supportFromName);
+        };
+        if (!VERIFIED_SENDERS.contains(sender.address().toLowerCase(Locale.ROOT))) {
+            throw new IllegalStateException("Email sender is not a verified Vettri address");
+        }
+        return sender;
+    }
+
+    private static final java.util.Set<String> VERIFIED_SENDERS = java.util.Set.of(
+            "noreply@vettrihrms.in", "billing@vettrihrms.in", "customersupport@vettrihrms.in");
+
+    public void sendWelcomeEmail(String toEmail, String customerName, String organizationName,
+                     String plan, Integer employeeCount, String billingCycle,
+                     String trialStart, String trialEnd) {
+        String body = brandedBody("Welcome to Vettri HRMS", "Hello " + escape(customerName) + ",",
+            "Welcome to Vettri HRMS. Your trial for <strong>" + escape(organizationName) + "</strong> has successfully started.",
+            rowIfPresent("Plan", plan) + rowIfPresent("Employees", employeeCount)
+                + rowIfPresent("Billing cycle", billingCycle)
+                + rowIfPresent("Trial starts", trialStart) + rowIfPresent("Trial ends", trialEnd),
+            "Access your HRMS at <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a>.<br>"
+                + "Website: <a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
+        sendSafely(toEmail, customerName, "Welcome to Vettri HRMS \u2014 Your Trial Has Started", body,
+            EmailChannel.SYSTEM, null);
+    }
+
+            public void sendVerificationEmail(String toEmail, String customerName, String verificationToken) {
+            String verificationLink = "https://app.vettrihrms.in/verify-email?token="
+                + java.net.URLEncoder.encode(verificationToken, java.nio.charset.StandardCharsets.UTF_8);
+            String body = brandedBody("Verify your Vettri HRMS email address", "Hi " + escape(customerName) + ",",
+                "Welcome to Vettri HRMS. Please verify your email address to secure your account.",
+                "<tr><td style=\"padding:16px 0;\"><a href=\"" + escape(verificationLink)
+                    + "\" style=\"display:inline-block;padding:12px 22px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;\">Verify Email</a></td></tr>"
+                    + row("Expires", "This verification link expires in 24 hours."),
+                "If you did not create this account, you can safely ignore this email.<br>Regards,<br>Vettri HRMS<br><a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
+            sendSafely(toEmail, customerName, "Verify your Vettri HRMS email address", body, EmailChannel.SYSTEM, null);
+            }
+
+    public void sendPaymentSuccessEmail(String toEmail, String customerName, String organizationName,
+                                        String plan, Integer employeeCount, String billingCycle,
+                                        java.math.BigDecimal amount, String paymentDate,
+                                        String orderId, String paymentId) {
+        String body = brandedBody("Payment successful", "Hello " + escape(customerName) + ",",
+                "Your Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong> was successful.",
+                row("Plan", escape(plan)) + row("Employees", String.valueOf(employeeCount))
+                        + row("Billing cycle", escape(billingCycle)) + row("Amount", escape(amount + " INR"))
+                        + row("Payment date", escape(paymentDate)) + row("Order reference", escape(orderId))
+                        + row("Payment reference", escape(paymentId)),
+                "Manage your account at <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a>.");
+        sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
+    }
+
+    public void sendPaymentFailureEmail(String toEmail, String customerName, String organizationName,
+                                        String orderId) {
+        String body = brandedBody("Payment failed", "Hello " + escape(customerName) + ",",
+                "We could not complete the Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong>.",
+                row("Order reference", escape(orderId)),
+                "Please retry from <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a> or contact customersupport@vettrihrms.in.");
+        sendSafely(toEmail, customerName, "Payment failed - Vettri HRMS", body, EmailChannel.BILLING, null);
+    }
+
+    public void sendSupportRequestEmail(String requesterEmail, String requesterName, String organizationName,
+                                        String category, String subject, String description) {
+        String body = brandedBody("New Vettri HRMS support request", "Hello Support,",
+                "A support request was submitted by <strong>" + escape(requesterName)
+                        + "</strong> from <strong>" + escape(organizationName) + "</strong>.",
+                row("Category", escape(category)) + row("Subject", escape(subject))
+                        + row("Description", escape(description)),
+                "Reply to this email to contact the requester.");
+        sendSafely("customersupport@vettrihrms.in", requesterName,
+                "Vettri Support Request - " + subject, body, EmailChannel.SUPPORT, requesterEmail);
+    }
+
+    private void sendSafely(String toEmail, String toName, String subject, String body,
+                            EmailChannel channel, String replyTo) {
+        try {
+            sendHtmlEmail(toEmail, toName, subject, body, channel, replyTo);
+        } catch (Exception exception) {
+            log.error("Failed to send notification email to {} <{}>: {}", toName, toEmail, exception.getMessage(), exception);
+        }
+    }
+
+    private String brandedBody(String heading, String greeting, String message, String details, String closing) {
+        return "<div style=\"font-family:Arial,sans-serif;color:#17212b;max-width:600px;margin:auto;\">"
+                + "<h1 style=\"color:#0b6e69;\">" + escape(heading) + "</h1>"
+                + "<p>" + greeting + "</p><p>" + message + "</p>"
+                + "<table style=\"border-collapse:collapse;margin:16px 0;\">" + details + "</table>"
+                + "<p>" + closing + "</p><p>Support: customersupport@vettrihrms.in</p></div>";
+    }
+
     private record Attachment(String filename, byte[] bytes) {}
+
+    private record SenderProfile(String address, String name) {}
 
     private String row(String label, String value) {
         return "<tr><td style=\"padding:4px 12px 4px 0;color:#555;\">" + escape(label) + "</td>"
                 + "<td style=\"padding:4px 0;font-weight:600;\">" + value + "</td></tr>";
+    }
+
+    private String rowIfPresent(String label, Object value) {
+        if (value == null || value.toString().isBlank()) {
+            return "";
+        }
+        return row(label, escape(value.toString()));
     }
 
     private String escape(String s) {

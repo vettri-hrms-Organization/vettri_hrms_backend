@@ -44,6 +44,12 @@ public class User extends BaseEntity {
     @Column(name = "account_status", nullable = false, length = 20)
     private String accountStatus = "ACTIVE";
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
 
@@ -117,6 +123,14 @@ public class User extends BaseEntity {
     public String getAccountStatus() { return accountStatus; }
 
     public void setAccountStatus(String accountStatus) { this.accountStatus = accountStatus; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public LocalDateTime getEmailVerifiedAt() { return emailVerifiedAt; }
+
+    public void setEmailVerifiedAt(LocalDateTime emailVerifiedAt) { this.emailVerifiedAt = emailVerifiedAt; }
 
     public LocalDateTime getLastLoginAt() {
         return lastLoginAt;
