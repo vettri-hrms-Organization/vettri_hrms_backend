@@ -230,7 +230,11 @@ public class EmailService {
         recipient.validate();
         var message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, attachment != null, "UTF-8");
-        helper.setFrom(new InternetAddress(fromAddress, fromName));
+        try {
+            helper.setFrom(new InternetAddress(fromAddress, fromName));
+        } catch (java.io.UnsupportedEncodingException exception) {
+            throw new jakarta.mail.MessagingException("Configured email sender name is invalid", exception);
+        }
         helper.setTo(recipient);
         helper.setSubject(subject);
         if (replyTo != null && !replyTo.isBlank()) {
