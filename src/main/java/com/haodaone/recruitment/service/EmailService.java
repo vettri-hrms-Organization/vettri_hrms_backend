@@ -1,39 +1,25 @@
 package com.haodaone.recruitment.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.recruitment.entity.Candidate;
 import com.haodaone.recruitment.entity.Interview;
+import jakarta.mail.internet.InternetAddress;
+import org.springframework.core.io.ByteArrayResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.format.DateTimeFormatter;
 
 /**
- * Transactional email for the Recruitment module, via Brevo's REST API
- * rather than SMTP - Render blocks outbound SMTP, same constraint and
- * provider HaodaAsset hit for invoice emails (see that app's
- * JavaMailSender-to-Brevo migration). No new Maven dependency: this uses
- * the JDK's built-in java.net.http.HttpClient and the Jackson
- * ObjectMapper Spring Boot already wires in, rather than pulling in a
- * Brevo SDK.
- *
- * If app.email.brevo-api-key isn't set (e.g. local dev without a key
- * configured), sendEmail logs the would-be email at INFO instead of
- * failing the calling workflow - assigning a manager, generating an
- * offer, etc. should never fail *because* email delivery isn't
- * configured yet.
+ * Shared transactional email sender for recruitment, onboarding, and
+ * agent-token notifications. Credentials and SMTP settings are supplied
+ * by Spring Boot from environment variables; the service owns the sender
+ * address so callers cannot choose an arbitrary From address.
  */
 @Service
 public class EmailService {
@@ -41,13 +27,10 @@ public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
-    private static final URI BREVO_ENDPOINT = URI.create("https://api.brevo.com/v3/smtp/email");
+    private final JavaMailSender mailSender;
 
-    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${app.email.brevo-api-key}")
-    private String brevoApiKey;
+    @Value("${spring.mail.password:}")
+    private String mailPassword;
 
     @Value("${app.email.from-address}")
     private String fromAddress;
@@ -58,8 +41,9 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    @Value("${app.email.invitation-disable-click-tracking:true}")
-    private boolean invitationDisableClickTracking;
+    public EmailService(JavaMailSender mailSender) {
+        this.mailSender = mailSender;
+    }
 
     /** To the hiring manager, when HR assigns them a candidate for the manager round. */
     public void sendManagerAssignmentEmail(Candidate candidate, Interview interview, Employee manager) {
@@ -87,7 +71,7 @@ public class EmailService {
                 + (interview.getInstructions() != null && !interview.getInstructions().isBlank()
                         ? "<p><strong>Interview Instructions:</strong> " + escape(interview.getInstructions()) + "</p>"
                         : "")
-                + "<p>Please record your rating and decision in HaodaOne after the interview.</p>";
+                + "<p>Please record your rating and decision in Vettri HRMS after the interview.</p>";
 
         send(manager.getEmail(), manager.getFullName(), subject, body);
     }
@@ -125,7 +109,7 @@ public class EmailService {
      * rather than assuming success.
      */
     public boolean sendOfferLetterEmail(Candidate candidate, byte[] offerLetterBytes, String offerLetterFilename) {
-        String subject = "Your Offer Letter from Haoda";
+        String subject = "Your Offer Letter from Vettri HRMS";
         String body = "<p>Dear " + escape(candidate.getFirstName()) + ",</p>"
                 + "<p>Congratulations! Please find attached your offer letter for the position of "
                 + "<strong>" + escape(candidate.getJobOpening().getTitle()) + "</strong>.</p>"
@@ -141,7 +125,7 @@ public class EmailService {
 
     /** To the new hire, once accepting the offer auto-creates their employee login. */
     public void sendEmployeeWelcomeEmail(String toEmail, String toName, String employeeCode, String username, String temporaryPassword) {
-        String subject = "Welcome to Haoda - Your Login Details";
+        String subject = "Welcome to Vettri HRMS - Your Login Details";
         String loginUrl = applicationUrl() + "/login";
         String body = "<p>Dear " + escape(toName) + ",</p>"
                 + "<p>Welcome aboard! Your employee account has been created.</p>"
@@ -171,11 +155,11 @@ public class EmailService {
                 + "<p style=\"word-break:break-all;font-size:13px;\"><code>" + escape(activationLink) + "</code></p>"
                 + "<p>This invitation expires on " + escape(expiresAt.toString()) + ". Please request a new invitation if it has expired.</p>"
                 + "<p>Regards,<br>Vettri HRMS</p></div>";
-        return sendAndReport(toEmail, toName, subject, body, invitationDisableClickTracking);
+        return sendAndReport(toEmail, toName, subject, body);
     }
 
     public void sendAgentTokenOtpEmail(String toEmail, String toName, String otp, int expiryMinutes, String deviceName) {
-        String subject = "Haoda agent token verification code";
+        String subject = "Vettri HRMS agent token verification code";
         String body = "<p>Hello " + escape(toName) + ",</p>"
                 + "<p>Use this one-time code to rotate the agent token for <strong>" + escape(deviceName) + "</strong>:</p>"
                 + "<p style=\"font-size:28px;font-weight:700;letter-spacing:6px\">" + escape(otp) + "</p>"
@@ -184,7 +168,7 @@ public class EmailService {
     }
 
     private void send(String toEmail, String toName, String subject, String htmlBody) {
-        sendAndReport(toEmail, toName, subject, htmlBody, false);
+        sendAndReport(toEmail, toName, subject, htmlBody);
     }
 
     private String applicationUrl() {
@@ -196,103 +180,72 @@ public class EmailService {
     }
 
     private boolean sendAndReport(String toEmail, String toName, String subject, String htmlBody) {
-        return sendAndReport(toEmail, toName, subject, htmlBody, false);
-    }
-
-    private boolean sendAndReport(String toEmail, String toName, String subject, String htmlBody, boolean disableClickTracking) {
-        if (brevoApiKey == null || brevoApiKey.isBlank()) {
-            log.info("BREVO_API_KEY not configured - not sending email. To: {} <{}>, Subject: {}", toName, toEmail, subject);
+        if (mailPassword == null || mailPassword.isBlank()) {
+            log.warn("SMTP email is not configured; email not sent. To: {} <{}>, Subject: {}", toName, toEmail, subject);
             return false;
         }
 
         try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sender", Map.of("email", fromAddress, "name", fromName));
-            payload.put("to", List.of(Map.of("email", toEmail, "name", toName != null ? toName : toEmail)));
-            payload.put("subject", subject);
-            payload.put("htmlContent", htmlBody);
-            if (disableClickTracking) {
-                payload.put("headers", Map.of("X-Mailin-track-clicks", "0"));
-            }
-
-            String json = objectMapper.writeValueAsString(payload);
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(BREVO_ENDPOINT)
-                    .header("api-key", brevoApiKey)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(15))
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.info("Sent email to {} <{}>: {}", toName, toEmail, subject);
-                return true;
-            } else {
-                // Deliberately not thrown - a failed email shouldn't roll back the
-                // candidate/interview state change that triggered it. Log loudly so
-                // it's visible, and let HR notice + manually follow up if needed.
-                log.error("Brevo email send failed ({}) to {} <{}>: {}", response.statusCode(), toName, toEmail, response.body());
-                return false;
-            }
+            sendHtmlEmail(toEmail, toName, subject, htmlBody, null, null);
+            log.info("Sent email to {} <{}>: {}", toName, toEmail, subject);
+            return true;
         } catch (Exception e) {
             log.error("Failed to send email to {} <{}>: {}", toName, toEmail, e.getMessage(), e);
             return false;
         }
     }
 
-    /**
-     * Same as {@link #send} but with a single file attached (base64-encoded
-     * inline in the JSON payload, per Brevo's API) and a boolean result
-     * instead of a swallowed exception - the caller (offer letter send/
-     * resend) needs to record a real Sent/Failed status, unlike the other
-     * notification emails in this class which are fire-and-forget.
-     *
-     * When BREVO_API_KEY isn't configured, this logs and returns true
-     * rather than false: same reasoning as {@link #send} - an unconfigured
-     * environment isn't a delivery *failure*, and HR's "Send Offer
-     * Letter" action (stage change, upload, etc.) shouldn't be reported
-     * as failed just because local/dev email isn't wired up.
-     */
     private boolean sendWithAttachment(String toEmail, String toName, String subject, String htmlBody,
                                         byte[] attachmentBytes, String attachmentFilename) {
-        if (brevoApiKey == null || brevoApiKey.isBlank()) {
-            log.info("BREVO_API_KEY not configured - not sending email. To: {} <{}>, Subject: {}", toName, toEmail, subject);
+        if (mailPassword == null || mailPassword.isBlank()) {
+            log.warn("SMTP email is not configured; email not sent. To: {} <{}>, Subject: {}", toName, toEmail, subject);
             return true;
         }
 
         try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sender", Map.of("email", fromAddress, "name", fromName));
-            payload.put("to", List.of(Map.of("email", toEmail, "name", toName != null ? toName : toEmail)));
-            payload.put("subject", subject);
-            payload.put("htmlContent", htmlBody);
-            String encodedAttachment = java.util.Base64.getEncoder().encodeToString(attachmentBytes);
-            payload.put("attachment", List.of(Map.of("content", encodedAttachment, "name", attachmentFilename)));
-
-            String json = objectMapper.writeValueAsString(payload);
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(BREVO_ENDPOINT)
-                    .header("api-key", brevoApiKey)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .timeout(Duration.ofSeconds(30))
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                log.info("Sent email with attachment to {} <{}>: {}", toName, toEmail, subject);
-                return true;
-            }
-            log.error("Brevo email send failed ({}) to {} <{}>: {}", response.statusCode(), toName, toEmail, response.body());
-            return false;
+            sendHtmlEmail(toEmail, toName, subject, htmlBody, null,
+                    new Attachment(attachmentFilename, attachmentBytes));
+            log.info("Sent email with attachment to {} <{}>: {}", toName, toEmail, subject);
+            return true;
         } catch (Exception e) {
             log.error("Failed to send email with attachment to {} <{}>: {}", toName, toEmail, e.getMessage(), e);
             return false;
         }
     }
+
+    /** Sends a plain-text message using the fixed Vettri sender address. */
+    public void sendEmail(String toEmail, String subject, String textBody, String replyTo) throws jakarta.mail.MessagingException {
+        sendHtmlEmail(toEmail, null, subject, textBody, replyTo, null);
+    }
+
+    /** Sends an HTML message using the fixed Vettri sender address. */
+    public void sendHtmlEmail(String toEmail, String toName, String subject, String htmlBody, String replyTo)
+            throws jakarta.mail.MessagingException {
+        sendHtmlEmail(toEmail, toName, subject, htmlBody, replyTo, null);
+    }
+
+    private void sendHtmlEmail(String toEmail, String toName, String subject, String body, String replyTo,
+                               Attachment attachment) throws jakarta.mail.MessagingException {
+        InternetAddress recipient = new InternetAddress(toEmail);
+        recipient.validate();
+        var message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, attachment != null, "UTF-8");
+        helper.setFrom(new InternetAddress(fromAddress, fromName));
+        helper.setTo(recipient);
+        helper.setSubject(subject);
+        if (replyTo != null && !replyTo.isBlank()) {
+            InternetAddress replyAddress = new InternetAddress(replyTo);
+            replyAddress.validate();
+            helper.setReplyTo(replyAddress);
+        }
+        helper.setText(body, attachment == null && !body.trim().startsWith("<") ? false : true);
+        if (attachment != null) {
+            helper.addAttachment(attachment.filename(), new ByteArrayResource(attachment.bytes()));
+        }
+        mailSender.send(message);
+    }
+
+    private record Attachment(String filename, byte[] bytes) {}
 
     private String row(String label, String value) {
         return "<tr><td style=\"padding:4px 12px 4px 0;color:#555;\">" + escape(label) + "</td>"

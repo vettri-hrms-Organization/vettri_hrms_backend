@@ -1,7 +1,11 @@
-# Brevo email (optional for local development; OTP delivery requires a configured key)
-app.email.brevo-api-key=${BREVO_API_KEY:}
-app.email.from-address=${EMAIL_FROM_ADDRESS:no-reply@example.com}
-app.email.from-name=${EMAIL_FROM_NAME:Vettri HRMS}
+# Zoho SMTP email. MAIL_PASSWORD must be a Zoho app-specific password.
+MAIL_HOST=smtp.zoho.in
+MAIL_PORT=587
+MAIL_USERNAME=customersupport@vettrihrms.in
+ZOHO_MAIL_APP_PASSWORD=
+MAIL_PASSWORD=
+MAIL_FROM=customersupport@vettrihrms.in
+MAIL_FROM_NAME=Vettri Customer Support
 
 # Agent token OTP policy
 app.agent-token.otp-expiry-minutes=${AGENT_TOKEN_OTP_EXPIRY_MINUTES:10}
