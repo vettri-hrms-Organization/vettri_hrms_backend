@@ -1,0 +1,2 @@
+ALTER TABLE subscription
+    ADD COLUMN IF NOT EXISTS rate NUMERIC(10,2);

@@ -4,6 +4,7 @@ import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
 import com.haodaone.auth.dto.RegisterRequest;
 import com.haodaone.auth.dto.SignupRegistrationResponse;
+import com.haodaone.billing.service.BillingPricing;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.entity.Plan;
@@ -80,15 +81,14 @@ public class RegistrationService {
         user.setCompany(savedCompany);
         user.setRoles(new HashSet<>(List.of(companyAdmin)));
 
-        String planName = normalizePlan(request.plan());
+        String planName = BillingPricing.normalizePlan(request.plan());
         if (planName != null) {
             user.setAccountStatus("PENDING_PAYMENT");
             User savedUser = users.save(user);
 
-            String billingCycle = normalizeBillingCycle(request.billingCycle());
-            int employeeCount = request.employeeCount() == null || request.employeeCount() < 1 ? 1 : request.employeeCount();
-            java.math.BigDecimal amount = calculateAmount(employeeCount, billingCycle);
-            java.math.BigDecimal trialAmount = new java.math.BigDecimal("1.00");
+            String billingCycle = BillingPricing.normalizeBillingCycle(request.billingCycle());
+            int employeeCount = BillingPricing.normalizeEmployeeCount(request.employeeCount());
+            java.math.BigDecimal amount = calculateAmount(planName, employeeCount, billingCycle);
 
             Subscription subscription = new Subscription();
             subscription.setCompany(savedCompany);
@@ -100,10 +100,11 @@ public class RegistrationService {
             subscription.setBillableEmployeeCount(employeeCount);
             subscription.setStartDate(LocalDate.now());
             subscription.setRenewalDate(LocalDate.now().plusDays(30));
+            subscription.setRate(BillingPricing.rateFor(planName, billingCycle));
             subscription.setAmount(amount);
             subscriptions.save(subscription);
 
-            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", trialAmount, "Payment required to activate your workspace.");
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", amount, "Payment required to activate your workspace.");
         }
 
         user.setAccountStatus("ACTIVE");
@@ -125,32 +126,10 @@ public class RegistrationService {
         return authService.login(login, httpRequest);
     }
 
-    private String normalizePlan(String plan) {
-        if (plan == null || plan.isBlank()) return null;
-        String normalized = plan.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "VETTRI_HRMS", "VETTRI", "HRMS" -> "VETTRI_HRMS";
-            default -> null;
-        };
-    }
-
-    private String normalizeBillingCycle(String billingCycle) {
-        if (billingCycle == null || billingCycle.isBlank()) {
-            return "MONTHLY";
-        }
-        return switch (billingCycle.trim().toUpperCase(Locale.ROOT)) {
-            case "MONTHLY", "QUARTERLY", "ANNUAL" -> billingCycle.trim().toUpperCase(Locale.ROOT);
-            default -> "MONTHLY";
-        };
-    }
-
-    private java.math.BigDecimal calculateAmount(int employeeCount, String billingCycle) {
-        java.math.BigDecimal perEmployeeRate = switch (billingCycle) {
-            case "QUARTERLY" -> new java.math.BigDecimal("279");
-            case "ANNUAL" -> new java.math.BigDecimal("999");
-            default -> new java.math.BigDecimal("99");
-        };
-        return perEmployeeRate.multiply(java.math.BigDecimal.valueOf(employeeCount)).setScale(2, java.math.RoundingMode.HALF_UP);
+    private java.math.BigDecimal calculateAmount(String plan, int employeeCount, String billingCycle) {
+        return BillingPricing.rateFor(plan, billingCycle)
+                .multiply(java.math.BigDecimal.valueOf(employeeCount))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private String normalizeInterests(List<String> interests) {

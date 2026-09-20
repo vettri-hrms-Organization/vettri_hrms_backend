@@ -38,9 +38,9 @@ import java.util.Optional;
 @Service
 public class BillingService {
 
-    private static final Map<String, PlanSpec> PLAN_PRICING = Map.of(
-            "VETTRI_HRMS", new PlanSpec(Plan.VETTRI_HRMS, "Vettri HRMS", new BigDecimal("99"), new BigDecimal("279"), new BigDecimal("999"), 1000, 500)
-    );
+        private static final Map<String, PlanSpec> PLAN_PRICING = Map.of(
+            "VETTRI_HRMS", new PlanSpec(Plan.VETTRI_HRMS, "Vettri HRMS", 1000, 500)
+        );
 
     private final UserRepository users;
     private final CompanyRepository companies;
@@ -77,7 +77,7 @@ public class BillingService {
                 .map(entry -> new PlanPricingResponse(
                         entry.getKey(),
                         entry.getValue().label(),
-                        entry.getValue().monthlyRate(),
+                        BillingPricing.rateFor(entry.getKey(), BillingPricing.MONTHLY),
                         razorpayCurrency,
                         entry.getValue().employeeLimit(),
                         entry.getValue().deviceLimit(),
@@ -91,8 +91,11 @@ public class BillingService {
             throw new BadRequestException("A company and user are required for checkout.");
         }
 
-        String normalizedPlan = normalizePlan(plan);
-        String normalizedCycle = normalizeBillingCycle(billingCycle);
+        String normalizedPlan = BillingPricing.normalizePlan(plan);
+        String normalizedCycle = BillingPricing.normalizeBillingCycle(billingCycle);
+        if (normalizedPlan == null) {
+            throw new BadRequestException("Plan not found.");
+        }
         PlanSpec spec = PLAN_PRICING.get(normalizedPlan);
         if (spec == null) {
             throw new BadRequestException("Plan not found.");
@@ -111,13 +114,13 @@ public class BillingService {
             throw new BadRequestException("Payment is temporarily unavailable. Add Razorpay credentials to the backend environment.");
         }
 
-        BigDecimal trialAmount = calculateTrialAmount(normalizedCycle);
-        BigDecimal subscriptionAmount = calculateSubscriptionAmount(employeeCount, normalizedCycle);
+        int normalizedEmployees = BillingPricing.normalizeEmployeeCount(employeeCount);
+        BigDecimal subscriptionAmount = calculateSubscriptionAmount(normalizedPlan, normalizedEmployees, normalizedCycle);
 
         try {
             RazorpayClient client = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
             JSONObject orderRequest = new JSONObject();
-            int amountPaise = trialAmount.multiply(new BigDecimal("100")).intValueExact();
+            int amountPaise = subscriptionAmount.multiply(new BigDecimal("100")).intValueExact();
             orderRequest.put("amount", amountPaise);
             orderRequest.put("currency", razorpayCurrency);
             orderRequest.put("receipt", "vettri-" + company.getId() + "-" + System.currentTimeMillis());
@@ -126,7 +129,7 @@ public class BillingService {
                     "userId", String.valueOf(user.getId()),
                     "plan", normalizedPlan,
                     "billingCycle", normalizedCycle,
-                    "employeeCount", String.valueOf(employeeCount == null || employeeCount < 1 ? 1 : employeeCount),
+                    "employeeCount", String.valueOf(normalizedEmployees),
                     "organizationName", company.getName(),
                     "customerEmail", user.getEmail()
             )));
@@ -141,7 +144,7 @@ public class BillingService {
             tx.setRazorpayOrderId(razorpayOrderId);
             tx.setRazorpayPaymentId(null);
             tx.setCurrency(razorpayCurrency);
-            tx.setAmount(trialAmount);
+            tx.setAmount(subscriptionAmount);
             tx.setStatus(PaymentTransactionStatus.CREATED);
             tx.setPaymentMethod(null);
             tx.setPaidAt(null);
@@ -154,8 +157,7 @@ public class BillingService {
             response.put("currency", razorpayCurrency);
             response.put("plan", normalizedPlan);
             response.put("billingCycle", normalizedCycle);
-            response.put("employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
-            response.put("trialAmount", trialAmount);
+            response.put("employeeCount", normalizedEmployees);
             response.put("subscriptionAmount", subscriptionAmount);
             response.put("companyId", company.getId());
             response.put("userId", user.getId());
@@ -175,8 +177,8 @@ public class BillingService {
             throw new BadRequestException("Payment verification is missing a user or company.");
         }
 
-        String normalizedPlan = normalizePlan(plan);
-        String normalizedCycle = normalizeBillingCycle(billingCycle);
+        String normalizedPlan = BillingPricing.normalizePlan(plan);
+        String normalizedCycle = BillingPricing.normalizeBillingCycle(billingCycle);
         if (normalizedPlan == null) {
             throw new BadRequestException("Plan not found.");
         }
@@ -220,15 +222,20 @@ public class BillingService {
                 String orderCompanyId = notes.optString("companyId", "");
                 String orderUserId = notes.optString("userId", "");
                 String orderPlan = notes.optString("plan", "");
-                if (!orderCompanyId.equals(String.valueOf(companyId)) || !orderUserId.equals(String.valueOf(userId)) || !orderPlan.equals(normalizedPlan)) {
+                String orderCycle = notes.optString("billingCycle", "");
+                int normalizedEmployees = BillingPricing.normalizeEmployeeCount(employeeCount);
+                String orderEmployees = notes.optString("employeeCount", "");
+                if (!orderCompanyId.equals(String.valueOf(companyId)) || !orderUserId.equals(String.valueOf(userId))
+                    || !orderPlan.equals(normalizedPlan) || !orderCycle.equals(normalizedCycle)
+                    || !orderEmployees.equals(String.valueOf(normalizedEmployees))) {
                     throw new BadRequestException("Payment order does not belong to the current company or user.");
                 }
             }
         }
 
-        BigDecimal expectedTrialAmount = calculateTrialAmount(normalizedCycle);
-        BigDecimal subscriptionAmount = calculateSubscriptionAmount(employeeCount, normalizedCycle);
-        int expectedAmountPaise = expectedTrialAmount.multiply(new BigDecimal("100")).intValueExact();
+        int normalizedEmployees = BillingPricing.normalizeEmployeeCount(employeeCount);
+        BigDecimal subscriptionAmount = calculateSubscriptionAmount(normalizedPlan, normalizedEmployees, normalizedCycle);
+        int expectedAmountPaise = subscriptionAmount.multiply(new BigDecimal("100")).intValueExact();
         int orderAmountPaise = orderJson.optInt("amount", 0);
         if (orderAmountPaise != expectedAmountPaise) {
             throw new BadRequestException("Payment amount mismatch for this plan and billing cycle.");
@@ -255,6 +262,10 @@ public class BillingService {
             Payment payment = client.payments.fetch(razorpayPaymentId);
             Object paymentMethodValue = payment.get("method");
             Object paymentStatusValue = payment.get("status");
+            int paymentAmountPaise = payment.get("amount") == null ? 0 : Integer.parseInt(String.valueOf(payment.get("amount")));
+            if (paymentAmountPaise != expectedAmountPaise) {
+                throw new BadRequestException("Payment amount mismatch for this plan and billing cycle.");
+            }
             paymentMethod = paymentMethodValue != null ? String.valueOf(paymentMethodValue) : null;
             if (paymentStatusValue != null && "failed".equalsIgnoreCase(String.valueOf(paymentStatusValue))) {
                 throw new BadRequestException("Payment failed in Razorpay.");
@@ -272,9 +283,10 @@ public class BillingService {
             created.setEmployeeLimit(spec.employeeLimit());
             created.setDeviceLimit(spec.deviceLimit());
             created.setBillingCycle(normalizedCycle);
-            created.setBillableEmployeeCount(employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+            created.setBillableEmployeeCount(normalizedEmployees);
             created.setStartDate(LocalDate.now());
             created.setRenewalDate(LocalDate.now().plusDays(30));
+            created.setRate(BillingPricing.rateFor(normalizedPlan, normalizedCycle));
             created.setAmount(subscriptionAmount);
             return created;
         });
@@ -286,9 +298,10 @@ public class BillingService {
         subscription.setEmployeeLimit(spec.employeeLimit());
         subscription.setDeviceLimit(spec.deviceLimit());
         subscription.setBillingCycle(normalizedCycle);
-        subscription.setBillableEmployeeCount(employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+        subscription.setBillableEmployeeCount(normalizedEmployees);
         subscription.setStartDate(LocalDate.now());
         subscription.setRenewalDate(LocalDate.now().plusDays(30));
+        subscription.setRate(BillingPricing.rateFor(normalizedPlan, normalizedCycle));
         subscriptions.save(subscription);
 
         paymentTransaction.setCompany(company);
@@ -298,7 +311,7 @@ public class BillingService {
         paymentTransaction.setRazorpayPaymentId(razorpayPaymentId);
         paymentTransaction.setRazorpaySignature(razorpaySignature);
         paymentTransaction.setCurrency(razorpayCurrency);
-        paymentTransaction.setAmount(expectedTrialAmount);
+        paymentTransaction.setAmount(subscriptionAmount);
         paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
         paymentTransaction.setPaymentMethod(paymentMethod);
         paymentTransaction.setPaidAt(LocalDateTime.now());
@@ -314,7 +327,7 @@ public class BillingService {
         response.put("userId", user.getId());
         response.put("plan", normalizedPlan);
         response.put("billingCycle", normalizedCycle);
-        response.put("employeeCount", employeeCount == null || employeeCount < 1 ? 1 : employeeCount);
+        response.put("employeeCount", normalizedEmployees);
         response.put("message", "Payment verified and company activated.");
         return response;
     }
@@ -415,39 +428,12 @@ public class BillingService {
         }
     }
 
-    private String normalizePlan(String plan) {
-        if (plan == null) return null;
-        String normalized = plan.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "VETTRI_HRMS", "VETTRI", "HRMS" -> "VETTRI_HRMS";
-            default -> PLAN_PRICING.containsKey(normalized) ? normalized : null;
-        };
+    private BigDecimal calculateSubscriptionAmount(String plan, Integer employeeCount, String billingCycle) {
+        BigDecimal perEmployeeRate = BillingPricing.rateFor(plan, billingCycle);
+        return perEmployeeRate.multiply(BigDecimal.valueOf(BillingPricing.normalizeEmployeeCount(employeeCount)))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    private String normalizeBillingCycle(String billingCycle) {
-        if (billingCycle == null || billingCycle.isBlank()) {
-            return "MONTHLY";
-        }
-        return switch (billingCycle.trim().toUpperCase(Locale.ROOT)) {
-            case "MONTHLY", "QUARTERLY", "ANNUAL" -> billingCycle.trim().toUpperCase(Locale.ROOT);
-            default -> "MONTHLY";
-        };
-    }
-
-    private BigDecimal calculateTrialAmount(String billingCycle) {
-        return new BigDecimal("1.00");
-    }
-
-    private BigDecimal calculateSubscriptionAmount(Integer employeeCount, String billingCycle) {
-        int normalizedEmployees = employeeCount == null || employeeCount < 1 ? 1 : employeeCount;
-        BigDecimal perEmployeeRate = switch (normalizeBillingCycle(billingCycle)) {
-            case "QUARTERLY" -> new BigDecimal("279");
-            case "ANNUAL" -> new BigDecimal("999");
-            default -> new BigDecimal("99");
-        };
-        return perEmployeeRate.multiply(BigDecimal.valueOf(normalizedEmployees)).setScale(2, java.math.RoundingMode.HALF_UP);
-    }
-
-    private record PlanSpec(Plan plan, String label, BigDecimal monthlyRate, BigDecimal quarterlyRate, BigDecimal annualRate, Integer employeeLimit, Integer deviceLimit) {
+    private record PlanSpec(Plan plan, String label, Integer employeeLimit, Integer deviceLimit) {
     }
 }

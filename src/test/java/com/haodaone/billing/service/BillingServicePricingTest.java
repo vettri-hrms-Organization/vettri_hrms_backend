@@ -10,22 +10,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class BillingServicePricingTest {
 
     @Test
-    void shouldSeparateTrialAmountFromSubscriptionAmount() throws Exception {
+    void shouldCalculateSubscriptionAmountFromAuthoritativeRates() throws Exception {
         BillingService service = new BillingService(null, null, null, null, null);
 
-        Method subscriptionMethod = BillingService.class.getDeclaredMethod("calculateSubscriptionAmount", Integer.class, String.class);
+        Method subscriptionMethod = BillingService.class.getDeclaredMethod("calculateSubscriptionAmount", String.class, Integer.class, String.class);
         subscriptionMethod.setAccessible(true);
-        Object monthlySubscription = subscriptionMethod.invoke(service, 25, "MONTHLY");
-        Object quarterlySubscription = subscriptionMethod.invoke(service, 25, "QUARTERLY");
-        Object annualSubscription = subscriptionMethod.invoke(service, 25, "ANNUAL");
+        Object monthlySubscription = subscriptionMethod.invoke(service, "VETTRI_HRMS", 25, "MONTHLY");
+        Object quarterlySubscription = subscriptionMethod.invoke(service, "VETTRI_HRMS", 25, "QUARTERLY");
+        Object annualSubscription = subscriptionMethod.invoke(service, "VETTRI_HRMS", 25, "ANNUAL");
 
-        Method trialMethod = BillingService.class.getDeclaredMethod("calculateTrialAmount", String.class);
-        trialMethod.setAccessible(true);
-        Object trialAmount = trialMethod.invoke(service, "MONTHLY");
-
-        assertEquals(new BigDecimal("2475.00"), monthlySubscription);
-        assertEquals(new BigDecimal("6975.00"), quarterlySubscription);
-        assertEquals(new BigDecimal("24975.00"), annualSubscription);
-        assertEquals(new BigDecimal("1.00"), trialAmount);
+        assertEquals(new BigDecimal("4975.00"), monthlySubscription);
+        assertEquals(new BigDecimal("13425.00"), quarterlySubscription);
+        assertEquals(new BigDecimal("53700.00"), annualSubscription);
     }
 }

@@ -43,6 +43,9 @@ public class Subscription extends BaseEntity {
     @Column(precision = 10, scale = 2)
     private BigDecimal amount;
 
+    @Column(precision = 10, scale = 2)
+    private BigDecimal rate;
+
     public Company getCompany() {
         return company;
     }
@@ -121,5 +124,13 @@ public class Subscription extends BaseEntity {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public BigDecimal getRate() {
+        return rate;
+    }
+
+    public void setRate(BigDecimal rate) {
+        this.rate = rate;
     }
 }
