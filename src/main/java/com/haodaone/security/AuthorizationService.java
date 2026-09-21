@@ -72,10 +72,11 @@ public class AuthorizationService {
 
         Employee target = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(resourceId, tenantId).orElse(null);
         if (target == null) return false;
+        if (scopes.contains(PermissionScope.ORGANIZATION)) return true;
+
         Employee current = employeeRepository.findByUser_IdAndDeletedFalse(user.getId()).orElse(null);
         if (current == null) return false;
 
-        if (scopes.contains(PermissionScope.ORGANIZATION)) return true;
         if (scopes.contains(PermissionScope.SELF) && current.getId().equals(target.getId())) return true;
         if (scopes.contains(PermissionScope.TEAM)
                 && target.getReportingManager() != null

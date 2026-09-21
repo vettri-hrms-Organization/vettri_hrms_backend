@@ -87,6 +87,19 @@ class AuthorizationServiceTest {
         assertFalse(service.isAllowed("EMPLOYEE_VIEW", "EMPLOYEE", 99L));
     }
 
+    @Test
+    void organizationScopeDoesNotRequireCurrentUserEmployeeRecord() {
+        Company company = company(1L);
+        User user = user(10L, company);
+        Employee target = employee(11L, company);
+        grant(user, "EMPLOYEE_VIEW", PermissionScope.ORGANIZATION);
+        authenticate(user, "EMPLOYEE_VIEW");
+        TenantContext.setCurrentTenant(1L);
+        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(11L, 1L)).thenReturn(Optional.of(target));
+
+        assertTrue(service.isAllowed("EMPLOYEE_VIEW", "EMPLOYEE", 11L));
+    }
+
     private void authenticate(User user, String permission) {
         when(userRepository.findByUsernameAndDeletedFalse(user.getUsername())).thenReturn(Optional.of(user));
         SecurityContextHolder.getContext().setAuthentication(
