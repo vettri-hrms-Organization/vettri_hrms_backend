@@ -131,7 +131,8 @@ public class EmployeeInvitationService {
         invitationRepository.save(invitation);
 
         emailService.sendEmployeeInvitationEmail(email, employee.getFullName(),
-            employee.getEmployeeCode(), rawToken, invitation.getExpiresAt());
+            employee.getEmployeeCode(), rawToken, invitation.getExpiresAt(), resend,
+            employee.getCompany() == null ? null : employee.getCompany().getName());
 
         auditLogService.log("Employee", employee.getId(), resend ? "INVITATION_RESENT" : "INVITATION_SENT",
                 "Invitation sent to '" + employee.getFullName() + "'");

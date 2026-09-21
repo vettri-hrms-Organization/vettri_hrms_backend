@@ -144,36 +144,45 @@ public class EmailService {
 
     /** To the new hire, once accepting the offer auto-creates their employee login. */
     public void sendEmployeeWelcomeEmail(String toEmail, String toName, String employeeCode, String username, String temporaryPassword) {
-        String subject = "Welcome to Vettri HRMS - Your Login Details";
+        String subject = "Welcome to Vettri HRMS, " + toName;
         String loginUrl = applicationUrl() + "/login";
         String body = "<p>Dear " + escape(toName) + ",</p>"
-                + "<p>Welcome aboard! Your employee account has been created.</p>"
+            + "<p>Welcome to Vettri HRMS.</p>"
+            + "<p>Your employee account has been created. You can now sign in to access your HR workspace and the features available to you.</p>"
                 + "<table style=\"border-collapse:collapse;margin:16px 0;\">"
                 + row("Employee ID", escape(employeeCode))
-                + row("Username", escape(username))
-                + row("Temporary Password", escape(temporaryPassword))
-                + row("Login", "<a href=\"" + loginUrl + "\">" + loginUrl + "</a>")
+            + row("Login", "<a href=\"" + escape(loginUrl) + "\">Sign in to Vettri HRMS</a>")
                 + "</table>"
-                + "<p>You'll be asked to set a new password the first time you log in.</p>";
+            + "<p>Need help? Contact our support team at customersupport@vettrihrms.in.</p>";
 
         send(toEmail, toName, subject, body);
     }
 
     public boolean sendEmployeeInvitationEmail(String toEmail, String toName, String employeeCode,
                                                String rawToken, LocalDateTime expiresAt) {
-        String subject = "You're invited to Vettri HRMS";
+        return sendEmployeeInvitationEmail(toEmail, toName, employeeCode, rawToken, expiresAt, false, null);
+        }
+
+        public boolean sendEmployeeInvitationEmail(String toEmail, String toName, String employeeCode,
+                               String rawToken, LocalDateTime expiresAt, boolean resend,
+                               String organizationName) {
+        String safeOrganizationName = organizationName == null || organizationName.isBlank()
+            ? "Vettri HRMS" : organizationName;
+        String subject = resend ? "Your Vettri HRMS invitation has been resent"
+            : "You're invited to join " + safeOrganizationName + " on Vettri HRMS";
         String activationLink = applicationUrl() + "/activate-account?token=" + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
         String body = "<div style=\"font-family:Arial,sans-serif;color:#17212b;max-width:600px;\">"
                 + "<h1 style=\"color:#0b6e69;\">Vettri HRMS</h1>"
                 + "<p>Hi " + escape(toName) + ",</p>"
-                + "<p>Your Vettri HRMS employee account has been created.</p>"
+            + "<p>" + (resend ? "A new invitation has been generated for " : "Welcome to ")
+            + escape(safeOrganizationName) + " on Vettri HRMS.</p>"
                 + row("Employee ID", escape(employeeCode))
-                + "<p>Set your password to activate your account and access your employee dashboard.</p>"
-                + "<p><a href=\"" + escape(activationLink) + "\" style=\"display:inline-block;padding:12px 22px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;\">Create Password</a></p>"
-                + "<p style=\"font-size:13px;color:#52606d;\">If the button does not work, copy and paste this link:</p>"
-                + "<p style=\"word-break:break-all;font-size:13px;\"><code>" + escape(activationLink) + "</code></p>"
-                + "<p>This invitation expires on " + escape(expiresAt.toString()) + ". Please request a new invitation if it has expired.</p>"
-                + "<p>Regards,<br>Vettri HRMS</p></div>";
+            + row("Organization", escape(safeOrganizationName))
+            + row("Email", escape(toEmail))
+            + "<p>Your employee account has been created and you've been invited to access your HRMS workspace.</p>"
+            + "<p><a href=\"" + escape(activationLink) + "\" style=\"display:inline-block;padding:12px 22px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;\">Accept Invitation &amp; Set Password</a></p>"
+            + "<p>This invitation will expire on " + escape(expiresAt.toString()) + ". If you were not expecting this invitation, contact your HR administrator.</p>"
+            + "<p>Regards,<br>Vettri HRMS</p><p>Need help? customersupport@vettrihrms.in</p></div>";
         return sendAndReport(toEmail, toName, subject, body);
     }
 
@@ -314,14 +323,14 @@ public class EmailService {
             rowIfPresent("Plan", plan) + rowIfPresent("Employees", employeeCount)
                 + rowIfPresent("Billing cycle", billingCycle)
                 + rowIfPresent("Trial starts", trialStart) + rowIfPresent("Trial ends", trialEnd),
-            "Access your HRMS at <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a>.<br>"
+            "Access your HRMS at <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a>.<br>"
                 + "Website: <a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
         sendSafely(toEmail, customerName, "Welcome to Vettri HRMS \u2014 Your Trial Has Started", body,
             EmailChannel.SYSTEM, null);
     }
 
             public void sendVerificationEmail(String toEmail, String customerName, String verificationToken) {
-            String verificationLink = "https://app.vettrihrms.in/verify-email?token="
+            String verificationLink = applicationUrl() + "/verify-email?token="
                 + java.net.URLEncoder.encode(verificationToken, java.nio.charset.StandardCharsets.UTF_8);
             String body = brandedBody("Verify your Vettri HRMS email address", "Hi " + escape(customerName) + ",",
                 "Welcome to Vettri HRMS. Please verify your email address to secure your account.",
@@ -342,7 +351,7 @@ public class EmailService {
                         + row("Billing cycle", escape(billingCycle)) + row("Amount", escape(amount + " INR"))
                         + row("Payment date", escape(paymentDate)) + row("Order reference", escape(orderId))
                         + row("Payment reference", escape(paymentId)),
-                "Manage your account at <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a>.");
+                "Manage your account at <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a>.");
         sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
     }
 
@@ -351,7 +360,7 @@ public class EmailService {
         String body = brandedBody("Payment failed", "Hello " + escape(customerName) + ",",
                 "We could not complete the Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong>.",
                 row("Order reference", escape(orderId)),
-                "Please retry from <a href=\"https://app.vettrihrms.in\">https://app.vettrihrms.in</a> or contact customersupport@vettrihrms.in.");
+                "Please retry from <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a> or contact customersupport@vettrihrms.in.");
         sendSafely(toEmail, customerName, "Payment failed - Vettri HRMS", body, EmailChannel.BILLING, null);
     }
 

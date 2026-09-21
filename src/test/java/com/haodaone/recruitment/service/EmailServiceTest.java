@@ -37,6 +37,8 @@ class EmailServiceTest {
         ReflectionTestUtils.setField(emailService, "billingFromName", "Vettri Billing");
         ReflectionTestUtils.setField(emailService, "supportFromAddress", "customersupport@vettrihrms.in");
         ReflectionTestUtils.setField(emailService, "supportFromName", "Vettri Customer Support");
+        ReflectionTestUtils.setField(emailService, "frontendUrl", "https://app.vettrihrms.in");
+        ReflectionTestUtils.setField(emailService, "mailPassword", "test-password");
     }
 
     @Test
@@ -59,5 +61,24 @@ class EmailServiceTest {
         assertTrue(content.contains("2026-09-20"));
         assertTrue(content.contains("2026-10-04"));
         assertFalse(content.contains("Billing cycle"));
+    }
+
+    @Test
+    void sendsResendInvitationWithSystemSenderAndNoRawLinkCopy() throws Exception {
+        MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
+        when(mailSender.createMimeMessage()).thenReturn(message);
+        doNothing().when(mailSender).send(message);
+
+        emailService.sendEmployeeInvitationEmail("employee@example.com", "Asha Rao", "EMP001",
+                "raw-token-value", java.time.LocalDateTime.of(2026, 9, 23, 12, 0), true, "Acme Technologies");
+
+        verify(mailSender).send(message);
+        assertEquals("Your Vettri HRMS invitation has been resent", message.getSubject());
+        assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
+        String content = String.valueOf(message.getContent());
+        assertTrue(content.contains("A new invitation has been generated"));
+        assertTrue(content.contains("Accept Invitation &amp; Set Password"));
+        assertTrue(content.contains("https://app.vettrihrms.in/activate-account?token="));
+        assertFalse(content.contains("If the button does not work, copy and paste this link"));
     }
 }
