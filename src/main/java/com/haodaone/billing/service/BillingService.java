@@ -43,6 +43,9 @@ import java.util.Optional;
 public class BillingService {
 
         private static final Map<String, PlanSpec> PLAN_PRICING = Map.of(
+            "STARTER", new PlanSpec(Plan.STARTER, "Starter", 1000, 500),
+            "BUSINESS", new PlanSpec(Plan.BUSINESS, "Business", 1000, 500),
+            "ENTERPRISE", new PlanSpec(Plan.ENTERPRISE, "Enterprise", 1000, 500),
             "VETTRI_HRMS", new PlanSpec(Plan.VETTRI_HRMS, "Vettri HRMS", 1000, 500)
         );
 

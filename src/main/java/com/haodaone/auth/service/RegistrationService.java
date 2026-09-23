@@ -90,8 +90,8 @@ public class RegistrationService {
         user.setCompany(savedCompany);
         user.setRoles(new HashSet<>(List.of(companyAdmin)));
 
-        String planName = BillingPricing.normalizePlan(request.plan());
-        if (planName != null) {
+        String planName = BillingPricing.resolveSignupPlan(request.plan());
+        if (BillingPricing.isExplicitPaidPlan(planName)) {
             user.setAccountStatus("PENDING_PAYMENT");
             User savedUser = users.save(user);
 
@@ -101,7 +101,7 @@ public class RegistrationService {
 
             Subscription subscription = new Subscription();
             subscription.setCompany(savedCompany);
-            subscription.setPlan(Plan.VETTRI_HRMS);
+            subscription.setPlan(Plan.valueOf(planName));
             subscription.setStatus(SubscriptionStatus.PENDING_PAYMENT);
             subscription.setEmployeeLimit(Math.max(1, employeeCount));
             subscription.setDeviceLimit(Math.max(1, Math.min(100, employeeCount)));

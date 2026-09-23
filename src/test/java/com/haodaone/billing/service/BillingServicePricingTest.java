@@ -27,4 +27,27 @@ class BillingServicePricingTest {
         verificationMethod.setAccessible(true);
         assertEquals(new BigDecimal("1.00"), verificationMethod.invoke(service));
     }
+
+    @Test
+    void shouldDefaultToFreeTrialWhenNoExplicitPaidPlanIsSelected() {
+        assertEquals("TRIAL", BillingPricing.resolveSignupPlan(null));
+        assertEquals("TRIAL", BillingPricing.resolveSignupPlan(""));
+        assertEquals("TRIAL", BillingPricing.resolveSignupPlan("TRIAL"));
+    }
+
+    @Test
+    void shouldAcceptExplicitPaidPlansAndRejectLegacyPlanNames() {
+        assertEquals("STARTER", BillingPricing.resolveSignupPlan("STARTER"));
+        assertEquals("BUSINESS", BillingPricing.resolveSignupPlan("business"));
+        assertEquals("ENTERPRISE", BillingPricing.resolveSignupPlan("Enterprise"));
+
+        assertEquals(Boolean.TRUE, BillingPricing.isExplicitPaidPlan("STARTER"));
+        assertEquals(Boolean.TRUE, BillingPricing.isExplicitPaidPlan("BUSINESS"));
+        assertEquals(Boolean.TRUE, BillingPricing.isExplicitPaidPlan("ENTERPRISE"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.haodaone.common.exception.BadRequestException.class,
+                () -> BillingPricing.resolveSignupPlan("VETTRI_HRMS")
+        );
+    }
 }
