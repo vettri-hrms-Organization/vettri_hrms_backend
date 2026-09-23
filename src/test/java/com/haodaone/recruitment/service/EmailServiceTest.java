@@ -51,15 +51,15 @@ class EmailServiceTest {
                 "TRIAL", 25, null, "2026-09-20", "2026-10-04");
 
         verify(mailSender).send(message);
-        assertEquals("Welcome to Vettri HRMS — Your Trial Has Started", message.getSubject());
+        assertEquals("Your Vettri HRMS trial is ready", message.getSubject());
         assertEquals("customer@example.com", message.getAllRecipients()[0].toString());
         assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
         String content = String.valueOf(message.getContent());
         assertTrue(content.contains("Acme Technologies"));
         assertTrue(content.contains("TRIAL"));
         assertTrue(content.contains("25"));
-        assertTrue(content.contains("2026-09-20"));
-        assertTrue(content.contains("2026-10-04"));
+        assertTrue(content.contains("20 September 2026"));
+        assertTrue(content.contains("4 October 2026"));
         assertFalse(content.contains("Billing cycle"));
     }
 
@@ -77,7 +77,7 @@ class EmailServiceTest {
         assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
         String content = String.valueOf(message.getContent());
         assertTrue(content.contains("A new invitation has been generated"));
-        assertTrue(content.contains("Accept Invitation &amp; Set Password"));
+        assertTrue(content.contains("Accept invitation and set password"));
         assertTrue(content.contains("https://app.vettrihrms.in/activate-account?token="));
         assertFalse(content.contains("If the button does not work, copy and paste this link"));
     }

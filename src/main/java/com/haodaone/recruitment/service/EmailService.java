@@ -13,7 +13,11 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.math.BigDecimal;
+import java.text.NumberFormat;
 import java.util.Locale;
 
 /**
@@ -34,7 +38,10 @@ public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
+    private static final DateTimeFormatter DISPLAY_DATE_FMT = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter DISPLAY_TIMESTAMP_FMT = DateTimeFormatter.ofPattern("d MMMM yyyy, h:mm a 'IST'", Locale.ENGLISH);
     private final JavaMailSender mailSender;
+    private final EmailTemplateService templateService;
 
     @Value("${spring.mail.password:}")
     private String mailPassword;
@@ -60,8 +67,13 @@ public class EmailService {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
-    public EmailService(JavaMailSender mailSender) {
+    public EmailService(JavaMailSender mailSender, EmailTemplateService templateService) {
         this.mailSender = mailSender;
+        this.templateService = templateService;
+    }
+
+    public EmailService(JavaMailSender mailSender) {
+        this(mailSender, new EmailTemplateService());
     }
 
     /** To the hiring manager, when HR assigns them a candidate for the manager round. */
@@ -153,6 +165,7 @@ public class EmailService {
                 + row("Employee ID", escape(employeeCode))
             + row("Login", "<a href=\"" + escape(loginUrl) + "\">Sign in to Vettri HRMS</a>")
                 + "</table>"
+            + button("Sign in to Vettri HRMS", loginUrl)
             + "<p>Need help? Contact our support team at customersupport@vettrihrms.in.</p>";
 
         send(toEmail, toName, subject, body);
@@ -180,8 +193,8 @@ public class EmailService {
             + row("Organization", escape(safeOrganizationName))
             + row("Email", escape(toEmail))
             + "<p>Your employee account has been created and you've been invited to access your HRMS workspace.</p>"
-            + "<p><a href=\"" + escape(activationLink) + "\" style=\"display:inline-block;padding:12px 22px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;\">Accept Invitation &amp; Set Password</a></p>"
-            + "<p>This invitation will expire on " + escape(expiresAt.toString()) + ". If you were not expecting this invitation, contact your HR administrator.</p>"
+            + button("Accept invitation and set password", activationLink)
+            + "<p>This invitation will expire on " + escape(formatTimestamp(expiresAt.toString())) + ". If you were not expecting this invitation, contact your HR administrator.</p>"
             + "<p>Regards,<br>Vettri HRMS</p><p>Need help? customersupport@vettrihrms.in</p></div>";
         return sendAndReport(toEmail, toName, subject, body);
     }
@@ -190,7 +203,7 @@ public class EmailService {
         String subject = "Vettri HRMS agent token verification code";
         String body = "<p>Hello " + escape(toName) + ",</p>"
                 + "<p>Use this one-time code to rotate the agent token for <strong>" + escape(deviceName) + "</strong>:</p>"
-                + "<p style=\"font-size:28px;font-weight:700;letter-spacing:6px\">" + escape(otp) + "</p>"
+                + "<p style=\"margin:22px 0;padding:17px 20px;background:#F4F7FB;border:1px solid #E2E8F0;border-radius:8px;color:#0F1B3D;font-size:30px;font-weight:700;letter-spacing:8px;text-align:center\">" + escape(otp) + "</p>"
                 + "<p>This code expires in " + expiryMinutes + " minutes and can be used once.</p>";
         send(toEmail, toName, subject, body);
     }
@@ -293,7 +306,7 @@ public class EmailService {
             replyAddress.validate();
             helper.setReplyTo(replyAddress);
         }
-        helper.setText(body, html);
+        helper.setText(html ? templateService.render(subject, body) : body, html);
         if (attachment != null) {
             helper.addAttachment(attachment.filename(), new ByteArrayResource(attachment.bytes()));
         }
@@ -319,13 +332,12 @@ public class EmailService {
                      String plan, Integer employeeCount, String billingCycle,
                      String trialStart, String trialEnd) {
         String body = brandedBody("Welcome to Vettri HRMS", "Hello " + escape(customerName) + ",",
-            "Welcome to Vettri HRMS. Your trial for <strong>" + escape(organizationName) + "</strong> has successfully started.",
+                "Your Vettri HRMS trial for <strong>" + escape(organizationName) + "</strong> is ready.",
             rowIfPresent("Plan", plan) + rowIfPresent("Employees", employeeCount)
                 + rowIfPresent("Billing cycle", billingCycle)
-                + rowIfPresent("Trial starts", trialStart) + rowIfPresent("Trial ends", trialEnd),
-            "Access your HRMS at <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a>.<br>"
-                + "Website: <a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
-        sendSafely(toEmail, customerName, "Welcome to Vettri HRMS \u2014 Your Trial Has Started", body,
+                + rowIfPresent("Trial starts", formatDateValue(trialStart)) + rowIfPresent("Trial ends", formatDateValue(trialEnd)),
+            button("Open Vettri HRMS", applicationUrl()));
+        sendSafely(toEmail, customerName, "Your Vettri HRMS trial is ready", body,
             EmailChannel.SYSTEM, null);
     }
 
@@ -333,12 +345,11 @@ public class EmailService {
             String verificationLink = applicationUrl() + "/verify-email?token="
                 + java.net.URLEncoder.encode(verificationToken, java.nio.charset.StandardCharsets.UTF_8);
             String body = brandedBody("Verify your Vettri HRMS email address", "Hi " + escape(customerName) + ",",
-                "Welcome to Vettri HRMS. Please verify your email address to secure your account.",
-                "<tr><td style=\"padding:16px 0;\"><a href=\"" + escape(verificationLink)
-                    + "\" style=\"display:inline-block;padding:12px 22px;background:#0b6e69;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;\">Verify Email</a></td></tr>"
+                "Please verify your email address to continue using Vettri HRMS.",
+                button("Verify email address", verificationLink)
                     + row("Expires", "This verification link expires in 24 hours."),
                 "If you did not create this account, you can safely ignore this email.<br>Regards,<br>Vettri HRMS<br><a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
-            sendSafely(toEmail, customerName, "Verify your Vettri HRMS email address", body, EmailChannel.SYSTEM, null);
+            sendSafely(toEmail, customerName, "Verify your Vettri HRMS email", body, EmailChannel.SYSTEM, null);
             }
 
     public void sendPaymentSuccessEmail(String toEmail, String customerName, String organizationName,
@@ -348,11 +359,11 @@ public class EmailService {
         String body = brandedBody("Payment successful", "Hello " + escape(customerName) + ",",
                 "Your Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong> was successful.",
                 row("Plan", escape(plan)) + row("Employees", String.valueOf(employeeCount))
-                        + row("Billing cycle", escape(billingCycle)) + row("Amount", escape(amount + " INR"))
-                        + row("Payment date", escape(paymentDate)) + row("Order reference", escape(orderId))
-                        + row("Payment reference", escape(paymentId)),
-                "Manage your account at <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a>.");
-        sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
+                        + row("Billing cycle", escape(billingCycle)) + row("Amount paid", escape(formatAmount(amount)))
+                        + row("Payment date", escape(formatTimestamp(paymentDate))) + row("Order ID", escape(orderId))
+                        + row("Payment ID", escape(paymentId)),
+                    button("Go to Vettri HRMS", applicationUrl()));
+                sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
     }
 
     public void sendPaymentFailureEmail(String toEmail, String customerName, String organizationName,
@@ -360,8 +371,8 @@ public class EmailService {
         String body = brandedBody("Payment failed", "Hello " + escape(customerName) + ",",
                 "We could not complete the Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong>.",
                 row("Order reference", escape(orderId)),
-                "Please retry from <a href=\"" + escape(applicationUrl()) + "\">Vettri HRMS</a> or contact customersupport@vettrihrms.in.");
-        sendSafely(toEmail, customerName, "Payment failed - Vettri HRMS", body, EmailChannel.BILLING, null);
+                button("Retry payment", applicationUrl()) + "<p>Please contact customersupport@vettrihrms.in if you need help.</p>");
+            sendSafely(toEmail, customerName, "Action required: Vettri HRMS payment", body, EmailChannel.BILLING, null);
     }
 
     public void sendSupportRequestEmail(String requesterEmail, String requesterName, String organizationName,
@@ -386,11 +397,10 @@ public class EmailService {
     }
 
     private String brandedBody(String heading, String greeting, String message, String details, String closing) {
-        return "<div style=\"font-family:Arial,sans-serif;color:#17212b;max-width:600px;margin:auto;\">"
-                + "<h1 style=\"color:#0b6e69;\">" + escape(heading) + "</h1>"
-                + "<p>" + greeting + "</p><p>" + message + "</p>"
+        return "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#17212b;\">"
+            + "<p style=\"margin:0 0 16px;\">" + greeting + "</p><p>" + message + "</p>"
                 + "<table style=\"border-collapse:collapse;margin:16px 0;\">" + details + "</table>"
-                + "<p>" + closing + "</p><p>Support: customersupport@vettrihrms.in</p></div>";
+            + "<p>" + closing + "</p></div>";
     }
 
     private record Attachment(String filename, byte[] bytes) {}
@@ -409,10 +419,48 @@ public class EmailService {
         return row(label, escape(value.toString()));
     }
 
+    private String button(String label, String url) {
+        return "<p style=\"margin:24px 0 8px;\"><a href=\"" + escape(url) + "\" style=\"display:inline-block;background:#2563EB;color:#FFFFFF;text-decoration:none;padding:13px 20px;border-radius:7px;font-weight:700;font-size:14px;\">"
+                + escape(label) + " &rarr;</a></p>"
+                + "<p style=\"font-size:12px;color:#5F6F86;word-break:break-all;\">If the button does not work, open: "
+                + escape(url) + "</p>";
+    }
+
+    private String formatAmount(BigDecimal amount) {
+        if (amount == null) return "";
+        NumberFormat formatter = NumberFormat.getNumberInstance(Locale.of("en", "IN"));
+        formatter.setMinimumFractionDigits(2);
+        formatter.setMaximumFractionDigits(2);
+        return "₹" + formatter.format(amount);
+    }
+
+    private String formatDateValue(String value) {
+        if (value == null || value.isBlank()) return "";
+        try {
+            return LocalDate.parse(value).format(DISPLAY_DATE_FMT);
+        } catch (DateTimeParseException ignored) {
+            return formatTimestamp(value);
+        }
+    }
+
+    private String formatTimestamp(String value) {
+        if (value == null || value.isBlank()) return "";
+        try {
+            return LocalDateTime.parse(value).format(DISPLAY_TIMESTAMP_FMT);
+        } catch (DateTimeParseException ignored) {
+            try {
+                return java.time.OffsetDateTime.parse(value).format(DISPLAY_TIMESTAMP_FMT);
+            } catch (DateTimeParseException ignoredOffset) {
+                return value;
+            }
+        }
+    }
+
     private String escape(String s) {
         if (s == null) {
             return "";
         }
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
     }
 }
