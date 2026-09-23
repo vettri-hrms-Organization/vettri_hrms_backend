@@ -93,9 +93,9 @@ public class AuthService {
                     "Account locked due to too many failed attempts. Try again after " + user.getLockedUntil());
         }
 
-        if (!user.isActive()) {
+        if (!isAuthenticationEnabled(user)) {
             recordLoginAttempt(request.getUsername(), false, "Account inactive", httpRequest);
-            throw new AuthenticationFailedException("This account has been deactivated");
+            throw new AuthenticationFailedException("This account is not active. Complete account setup or contact your administrator.");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
@@ -131,8 +131,8 @@ public class AuthService {
         }
 
         User user = stored.getUser();
-        if (!user.isActive()) {
-            throw new AuthenticationFailedException("This account has been deactivated");
+        if (!isAuthenticationEnabled(user)) {
+            throw new AuthenticationFailedException("This account is not active. Complete account setup or contact your administrator.");
         }
 
         // Rotate: revoke the used refresh token and issue a brand new one -
@@ -186,6 +186,13 @@ public class AuthService {
             log.warn("Account '{}' locked for {} minutes after {} failed login attempts", user.getUsername(), LOCKOUT_MINUTES, attempts);
         }
         userRepository.save(user);
+    }
+
+    /** Keep token issuance aligned with CustomUserPrincipal.isEnabled(). */
+    private boolean isAuthenticationEnabled(User user) {
+        return user.isActive()
+                && "ACTIVE".equalsIgnoreCase(user.getAccountStatus())
+                && (user.getLockedUntil() == null || user.getLockedUntil().isBefore(LocalDateTime.now()));
     }
 
     private void recordLoginAttempt(String username, boolean success, String failureReason, HttpServletRequest request) {
