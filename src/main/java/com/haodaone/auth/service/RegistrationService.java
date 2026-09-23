@@ -91,17 +91,20 @@ public class RegistrationService {
         user.setRoles(new HashSet<>(List.of(companyAdmin)));
 
         String planName = BillingPricing.resolveSignupPlan(request.plan());
-        if (BillingPricing.isExplicitPaidPlan(planName)) {
+        if (BillingPricing.isExplicitPaidPlan(planName) || BillingPricing.TRIAL.equals(planName)) {
+            String subscriptionPlanName = BillingPricing.TRIAL.equals(planName)
+                    ? BillingPricing.STARTER
+                    : planName;
             user.setAccountStatus("PENDING_PAYMENT");
             User savedUser = users.save(user);
 
             String billingCycle = BillingPricing.normalizeBillingCycle(request.billingCycle());
             int employeeCount = BillingPricing.normalizeEmployeeCount(request.employeeCount());
-            java.math.BigDecimal amount = calculateAmount(planName, employeeCount, billingCycle);
+            java.math.BigDecimal amount = calculateAmount(subscriptionPlanName, employeeCount, billingCycle);
 
             Subscription subscription = new Subscription();
             subscription.setCompany(savedCompany);
-            subscription.setPlan(Plan.valueOf(planName));
+            subscription.setPlan(Plan.valueOf(subscriptionPlanName));
             subscription.setStatus(SubscriptionStatus.PENDING_PAYMENT);
             subscription.setEmployeeLimit(Math.max(1, employeeCount));
             subscription.setDeviceLimit(Math.max(1, Math.min(100, employeeCount)));
@@ -109,14 +112,14 @@ public class RegistrationService {
             subscription.setBillableEmployeeCount(employeeCount);
             subscription.setStartDate(LocalDate.now());
             subscription.setRenewalDate(LocalDate.now().plusDays(30));
-            subscription.setRate(BillingPricing.rateFor(planName, billingCycle));
+            subscription.setRate(BillingPricing.rateFor(subscriptionPlanName, billingCycle));
             subscription.setAmount(amount);
             subscriptions.save(subscription);
 
             String verificationToken = verificationService.createToken(savedUser);
             afterCommit(() -> emailService.sendVerificationEmail(savedUser.getEmail(), savedUser.getFullName(), verificationToken));
 
-            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), planName, "INR", new java.math.BigDecimal("1.00"), "A ₹1 verification is required to start your free trial.");
+            return new SignupRegistrationResponse(true, savedCompany.getId(), savedUser.getId(), subscriptionPlanName, "INR", new java.math.BigDecimal("1.00"), "A ₹1 verification is required to start your free trial.");
         }
 
         user.setAccountStatus("ACTIVE");
