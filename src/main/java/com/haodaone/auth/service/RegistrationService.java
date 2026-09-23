@@ -120,7 +120,7 @@ public class RegistrationService {
         }
 
         user.setAccountStatus("ACTIVE");
-        users.save(user);
+        User savedUser = users.saveAndFlush(user);
 
         LocalDate trialStart = LocalDate.now();
         Subscription subscription = new Subscription();
@@ -134,10 +134,10 @@ public class RegistrationService {
         subscription.setRenewalDate(trialStart.plusDays(14));
         subscriptions.save(subscription);
 
-        String verificationToken = verificationService.createToken(user);
+        String verificationToken = verificationService.createToken(savedUser);
 
-        String customerName = user.getFullName();
-        String customerEmail = user.getEmail();
+        String customerName = savedUser.getFullName();
+        String customerEmail = savedUser.getEmail();
         String organizationName = savedCompany.getName();
         String trialStartValue = subscription.getStartDate().toString();
         String trialEndValue = subscription.getRenewalDate().toString();
