@@ -83,7 +83,7 @@ public final class BillingPricing {
         if (isExplicitPaidPlan(normalizedPlan)) {
             return normalizedPlan;
         }
-        return TRIAL;
+        throw new BadRequestException("Unsupported plan selection.");
     }
 
     public static boolean isExplicitPaidPlan(String plan) {

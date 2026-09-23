@@ -128,6 +128,8 @@ public class RegistrationService {
         subscription.setPlan(Plan.TRIAL);
         subscription.setStatus(SubscriptionStatus.TRIALING);
         subscription.setEmployeeLimit(25);
+        subscription.setAmount(java.math.BigDecimal.ZERO);
+        subscription.setRate(java.math.BigDecimal.ZERO);
         subscription.setStartDate(trialStart);
         subscription.setRenewalDate(trialStart.plusDays(14));
         subscriptions.save(subscription);
