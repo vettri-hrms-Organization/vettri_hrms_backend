@@ -80,7 +80,7 @@ public class DataSeeder implements CommandLineRunner {
         // functional set as HR_ADMIN but this role is intended to be scoped to a
         // single tenant/company (tenant enforcement is enforced server-side).
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
-                permissionsByCode("USER_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
                         "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
