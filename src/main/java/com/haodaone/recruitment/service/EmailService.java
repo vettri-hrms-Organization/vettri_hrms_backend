@@ -368,6 +368,27 @@ public class EmailService {
                 sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
     }
 
+    public boolean sendInvoiceEmail(String toEmail, String customerName, String invoiceNumber, String documentLabel, byte[] pdfBytes) {
+        if (mailPassword == null || mailPassword.isBlank()) {
+            log.warn("SMTP email is not configured; invoice email not sent. Invoice: {}", invoiceNumber);
+            return false;
+        }
+        String body = brandedBody("Your Vettri HRMS " + escape(documentLabel), "Hello " + escape(customerName) + ",",
+            "Your " + escape(documentLabel).toLowerCase(java.util.Locale.ROOT) + " <strong>" + escape(invoiceNumber) + "</strong> is attached for your records.",
+            row("Reference number", escape(invoiceNumber)) + row("Document", escape(documentLabel)) + row("Sender", "Vettri Billing"),
+                "Regards,<br>Vettri Billing<br>billing@vettrihrms.in");
+        try {
+            sendHtmlEmail(toEmail, customerName,
+                "Vettri HRMS " + documentLabel + " " + invoiceNumber,
+                    body, EmailChannel.BILLING, null,
+                    new Attachment(invoiceNumber + ".pdf", pdfBytes));
+            return true;
+        } catch (Exception exception) {
+            log.error("Failed to send invoice email to {}: {}", toEmail, exception.getMessage(), exception);
+            return false;
+        }
+    }
+
     public void sendPaymentFailureEmail(String toEmail, String customerName, String organizationName,
                                         String orderId) {
         String body = brandedBody("Payment failed", "Hello " + escape(customerName) + ",",

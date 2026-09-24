@@ -4,6 +4,7 @@ import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
 import com.haodaone.auth.service.AuthService;
 import com.haodaone.billing.dto.PlanPricingResponse;
+import com.haodaone.billing.entity.Invoice;
 import com.haodaone.billing.entity.PaymentTransaction;
 import com.haodaone.billing.entity.PaymentTransactionStatus;
 import com.haodaone.billing.repository.PaymentTransactionRepository;
@@ -55,6 +56,7 @@ public class BillingService {
     private final PaymentTransactionRepository paymentTransactions;
     private final AuthService authService;
     private final EmailService emailService;
+    private final InvoiceService invoiceService;
 
     @Value("${app.razorpay.key-id:}")
     private String razorpayKeyId;
@@ -72,20 +74,21 @@ public class BillingService {
     public BillingService(UserRepository users, CompanyRepository companies,
                           SubscriptionRepository subscriptions,
                           PaymentTransactionRepository paymentTransactions,
-                          AuthService authService, EmailService emailService) {
+                          AuthService authService, EmailService emailService, InvoiceService invoiceService) {
         this.users = users;
         this.companies = companies;
         this.subscriptions = subscriptions;
         this.paymentTransactions = paymentTransactions;
         this.authService = authService;
         this.emailService = emailService;
+        this.invoiceService = invoiceService;
     }
 
     BillingService(UserRepository users, CompanyRepository companies,
                    SubscriptionRepository subscriptions,
                    PaymentTransactionRepository paymentTransactions,
                    AuthService authService) {
-        this(users, companies, subscriptions, paymentTransactions, authService, null);
+            this(users, companies, subscriptions, paymentTransactions, authService, null, null);
     }
 
     public List<PlanPricingResponse> pricing() {
@@ -265,7 +268,10 @@ public class BillingService {
                 .or(() -> paymentTransactions.findByRazorpayPaymentId(razorpayPaymentId))
                 .orElseGet(PaymentTransaction::new);
 
-        if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())) {
+        if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())
+            && paymentTransaction.getSubscription() != null) {
+            Optional<Invoice> createdInvoice = invoiceService == null ? Optional.empty() : invoiceService.createIfMissing(paymentTransaction);
+            createdInvoice.ifPresent(invoice -> afterCommit(() -> invoiceService.email(invoice.getId(), company.getId(), user.getEmail(), user.getFullName())));
             Map<String, Object> response = new java.util.LinkedHashMap<>();
             response.put("status", "verified");
             response.put("alreadyProcessed", true);
@@ -341,6 +347,7 @@ public class BillingService {
         paymentTransaction.setPaymentMethod(paymentMethod);
         paymentTransaction.setPaidAt(LocalDateTime.now());
         paymentTransactions.save(paymentTransaction);
+        Optional<Invoice> createdInvoice = invoiceService == null ? Optional.empty() : invoiceService.createIfMissing(paymentTransaction);
 
         user.setAccountStatus("ACTIVE");
         user.setActive(true);
@@ -353,6 +360,7 @@ public class BillingService {
         afterCommit(() -> emailService.sendPaymentSuccessEmail(customerEmail, customerName, organizationName,
             normalizedPlan, normalizedEmployees, normalizedCycle, verificationAmount, paymentDate,
             razorpayOrderId, razorpayPaymentId));
+        createdInvoice.ifPresent(invoice -> afterCommit(() -> invoiceService.email(invoice.getId(), company.getId(), customerEmail, customerName)));
 
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("status", "verified");
@@ -413,6 +421,15 @@ public class BillingService {
         paymentTransaction.setRazorpayOrderId(orderId);
         paymentTransaction.setRazorpayPaymentId(paymentId);
         paymentTransaction.setWebhookEvent(event);
+        if (paymentEntity.has("amount")) {
+            paymentTransaction.setAmount(BigDecimal.valueOf(paymentEntity.optLong("amount", 0L), 2));
+        }
+        if (paymentEntity.has("currency")) {
+            paymentTransaction.setCurrency(paymentEntity.optString("currency", razorpayCurrency));
+        }
+        if (paymentEntity.has("method")) {
+            paymentTransaction.setPaymentMethod(paymentEntity.optString("method", null));
+        }
 
         if ("payment.captured".equalsIgnoreCase(event) || "payment.authorized".equalsIgnoreCase(event)) {
             if (paymentTransaction.getCompany() != null && paymentTransaction.getSubscription() != null) {
@@ -423,6 +440,14 @@ public class BillingService {
             paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
             paymentTransaction.setPaidAt(LocalDateTime.now());
             paymentTransactions.save(paymentTransaction);
+            if (invoiceService != null && paymentTransaction.getSubscription() != null) {
+                invoiceService.createIfMissing(paymentTransaction).ifPresent(invoice -> {
+                    if (paymentTransaction.getCompany() != null) {
+                        users.findAllByCompanyIdAndDeletedFalse(paymentTransaction.getCompany().getId()).stream().findFirst().ifPresent(recipient ->
+                                afterCommit(() -> invoiceService.email(invoice.getId(), paymentTransaction.getCompany().getId(), recipient.getEmail(), recipient.getFullName())));
+                    }
+                });
+            }
         } else if ("payment.failed".equalsIgnoreCase(event)) {
             paymentTransaction.setStatus(PaymentTransactionStatus.FAILED);
             paymentTransaction.setPaidAt(LocalDateTime.now());

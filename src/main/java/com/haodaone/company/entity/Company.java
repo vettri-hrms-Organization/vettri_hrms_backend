@@ -37,6 +37,15 @@ public class Company extends BaseEntity {
     @Column(name = "workspace_interests", columnDefinition = "TEXT")
     private String workspaceInterests;
 
+    @Column(name = "legal_name", length = 255)
+    private String legalName;
+
+    @Column(name = "billing_address", length = 1000)
+    private String billingAddress;
+
+    @Column(name = "gstin", length = 30)
+    private String gstin;
+
     public String getName() {
         return name;
     }
@@ -99,5 +108,29 @@ public class Company extends BaseEntity {
 
     public void setWorkspaceInterests(String workspaceInterests) {
         this.workspaceInterests = workspaceInterests;
+    }
+
+    public String getLegalName() {
+        return legalName;
+    }
+
+    public void setLegalName(String legalName) {
+        this.legalName = legalName;
+    }
+
+    public String getBillingAddress() {
+        return billingAddress;
+    }
+
+    public void setBillingAddress(String billingAddress) {
+        this.billingAddress = billingAddress;
+    }
+
+    public String getGstin() {
+        return gstin;
+    }
+
+    public void setGstin(String gstin) {
+        this.gstin = gstin;
     }
 }
