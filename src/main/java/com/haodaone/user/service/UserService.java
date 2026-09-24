@@ -11,6 +11,8 @@ import com.haodaone.user.repository.RoleRepository;
 import com.haodaone.user.repository.UserRepository;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -144,11 +146,38 @@ public class UserService {
     }
 
     private void validateRequestedRoles(Set<String> roleNames) {
-        if (roleNames.contains("SUPER_ADMIN") || roleNames.contains("HR_ADMIN")) {
-            boolean isSuperAdmin = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
-                    .anyMatch(authority -> "ROLE_SUPER_ADMIN".equals(authority.getAuthority()) || "SUPER_ADMIN".equals(authority.getAuthority()));
-            if (!isSuperAdmin) {
-                throw new BadRequestException("Only a Super Admin can assign platform administrator roles.");
+        if (roleNames == null || roleNames.isEmpty()) {
+            return;
+        }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new AccessDeniedException("You are not authenticated.");
+        }
+
+        boolean isSuperAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_SUPER_ADMIN".equals(authority.getAuthority()) || "SUPER_ADMIN".equals(authority.getAuthority()));
+        boolean isCompanyAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_COMPANY_ADMIN".equals(authority.getAuthority()) || "COMPANY_ADMIN".equals(authority.getAuthority()));
+
+        Set<String> requested = roleNames.stream().map(String::trim).filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.toSet());
+
+        if (requested.contains("SUPER_ADMIN") && !isSuperAdmin) {
+            throw new AccessDeniedException("Only a Super Admin can assign the platform Super Admin role.");
+        }
+
+        if (requested.contains("COMPANY_ADMIN") && !isSuperAdmin) {
+            throw new AccessDeniedException("Only a Super Admin can assign Company Admin roles.");
+        }
+
+        if (!isSuperAdmin && !isCompanyAdmin) {
+            throw new AccessDeniedException("You don't have permission to manage this user's access.");
+        }
+
+        if (isCompanyAdmin && !isSuperAdmin) {
+            Set<String> forbiddenTenantAssignments = Set.of("SUPER_ADMIN", "COMPANY_ADMIN");
+            if (requested.stream().anyMatch(forbiddenTenantAssignments::contains)) {
+                throw new AccessDeniedException("Company Admins cannot assign platform-level administrator roles.");
             }
         }
     }
