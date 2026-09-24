@@ -23,6 +23,8 @@ import com.razorpay.Payment;
 import com.razorpay.RazorpayClient;
 import com.razorpay.RazorpayException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -42,6 +44,8 @@ import java.util.Optional;
 
 @Service
 public class BillingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BillingService.class);
 
         private static final Map<String, PlanSpec> PLAN_PRICING = Map.of(
             "STARTER", new PlanSpec(Plan.STARTER, "Starter", 1000, 500),
@@ -271,7 +275,7 @@ public class BillingService {
         if (paymentTransaction.getId() != null && PaymentTransactionStatus.VERIFIED.equals(paymentTransaction.getStatus())
             && paymentTransaction.getSubscription() != null) {
             Optional<Invoice> createdInvoice = invoiceService == null ? Optional.empty() : invoiceService.createIfMissing(paymentTransaction);
-            createdInvoice.ifPresent(invoice -> afterCommit(() -> invoiceService.email(invoice.getId(), company.getId(), user.getEmail(), user.getFullName())));
+            createdInvoice.ifPresent(invoice -> afterCommit(() -> sendReceiptEmailAfterCommit(invoice.getId(), company.getId(), user.getEmail(), user.getFullName())));
             Map<String, Object> response = new java.util.LinkedHashMap<>();
             response.put("status", "verified");
             response.put("alreadyProcessed", true);
@@ -360,7 +364,7 @@ public class BillingService {
         afterCommit(() -> emailService.sendPaymentSuccessEmail(customerEmail, customerName, organizationName,
             normalizedPlan, normalizedEmployees, normalizedCycle, verificationAmount, paymentDate,
             razorpayOrderId, razorpayPaymentId));
-        createdInvoice.ifPresent(invoice -> afterCommit(() -> invoiceService.email(invoice.getId(), company.getId(), customerEmail, customerName)));
+        createdInvoice.ifPresent(invoice -> afterCommit(() -> sendReceiptEmailAfterCommit(invoice.getId(), company.getId(), customerEmail, customerName)));
 
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("status", "verified");
@@ -444,7 +448,7 @@ public class BillingService {
                 invoiceService.createIfMissing(paymentTransaction).ifPresent(invoice -> {
                     if (paymentTransaction.getCompany() != null) {
                         users.findAllByCompanyIdAndDeletedFalse(paymentTransaction.getCompany().getId()).stream().findFirst().ifPresent(recipient ->
-                                afterCommit(() -> invoiceService.email(invoice.getId(), paymentTransaction.getCompany().getId(), recipient.getEmail(), recipient.getFullName())));
+                                afterCommit(() -> sendReceiptEmailAfterCommit(invoice.getId(), paymentTransaction.getCompany().getId(), recipient.getEmail(), recipient.getFullName())));
                     }
                 });
             }
@@ -498,6 +502,15 @@ public class BillingService {
 
     private void notifyPaymentFailure(User user, Company company, String orderId) {
         emailService.sendPaymentFailureEmail(user.getEmail(), user.getFullName(), company.getName(), orderId);
+    }
+
+    private void sendReceiptEmailAfterCommit(Long invoiceId, Long companyId, String recipientEmail, String recipientName) {
+        try {
+            invoiceService.email(invoiceId, companyId, recipientEmail, recipientName);
+        } catch (RuntimeException exception) {
+            log.error("Payment verification succeeded but receipt delivery failed. invoiceId={}, companyId={}, recipient={}",
+                    invoiceId, companyId, recipientEmail, exception);
+        }
     }
 
     private void afterCommit(Runnable action) {
