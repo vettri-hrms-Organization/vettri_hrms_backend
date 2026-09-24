@@ -78,6 +78,7 @@ public class EmployeeSalaryService {
         return new PageImpl<>(rows.subList(start, end), pageable, rows.size());
     }
 
+    @Transactional(readOnly = true)
     public EmployeeSalaryDetailDTO getDetail(Long employeeId) {
         Long companyId = requiredTenant();
         Employee employee = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(employeeId, companyId)
