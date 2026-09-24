@@ -80,7 +80,11 @@ public class CompanySecurity {
         Optional<Long> myCompany = currentCompanyId();
         if (myCompany.isEmpty()) return false;
         return employeeRepository.findById(employeeId)
-                .map(emp -> emp.getCompany() != null && myCompany.get().equals(emp.getCompany().getId()))
+            .map(emp -> emp.getCompany() != null
+                && myCompany.get().equals(emp.getCompany().getId())
+                && (emp.getUser() == null || emp.getUser().getRoles().stream()
+                .noneMatch(role -> "SUPER_ADMIN".equals(role.getName())
+                    || "ROLE_SUPER_ADMIN".equals(role.getName()))))
                 .orElse(false);
     }
 

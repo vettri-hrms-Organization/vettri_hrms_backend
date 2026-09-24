@@ -3,6 +3,7 @@ package com.haodaone.employee.service;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.dto.PageResponse;
 import com.haodaone.common.exception.BadRequestException;
+import com.haodaone.common.exception.ConflictException;
 import com.haodaone.common.exception.ResourceNotFoundException;
 import com.haodaone.employee.dto.CreateEmployeeRequest;
 import com.haodaone.employee.dto.EmployeeDetailDTO;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -188,9 +190,13 @@ public class EmployeeService {
     @Transactional
     public EmployeeDetailDTO update(Long id, CreateEmployeeRequest request) {
         Employee employee = findActiveOrThrow(id);
+        String previousEmail = employee.getEmail();
+        String normalizedEmail = normalizeEmail(request.getEmail());
+        request.setEmail(normalizedEmail);
 
-        if (!employee.getEmail().equalsIgnoreCase(request.getEmail()) && employeeRepository.existsByEmail(request.getEmail())) {
-            throw new BadRequestException("An employee with email '" + request.getEmail() + "' already exists");
+        Employee employeeWithEmail = employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(normalizedEmail).orElse(null);
+        if (employeeWithEmail != null && !employeeWithEmail.getId().equals(employee.getId())) {
+            throw new ConflictException("An account already exists with this email address.");
         }
 
         applyRequestFields(employee, request);
@@ -199,8 +205,23 @@ public class EmployeeService {
                 .ifPresent(employee::setUser);
         }
         Employee saved = employeeRepository.save(employee);
-        auditLogService.log("Employee", saved.getId(), "UPDATE", "Profile updated for '" + saved.getFullName() + "'");
+        String auditDetails = "Profile updated for '" + saved.getFullName() + "'";
+        if (!normalizedEmail.equalsIgnoreCase(previousEmail)) {
+            auditDetails += "; email: " + previousEmail + " -> " + normalizedEmail;
+        }
+        auditLogService.log("Employee", saved.getId(), "UPDATE", auditDetails);
         return EmployeeDetailDTO.from(saved);
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            throw new BadRequestException("Email is required");
+        }
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || !normalized.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new BadRequestException("Email must be valid");
+        }
+        return normalized;
     }
 
     @Transactional
