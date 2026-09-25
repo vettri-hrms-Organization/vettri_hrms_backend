@@ -15,6 +15,7 @@ import com.haodaone.leave.repository.HolidayRepository;
 import com.haodaone.leave.repository.LeaveBalanceRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.leave.repository.LeaveTypeRepository;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -125,8 +126,7 @@ public class LeaveRequestService {
             throw new BadRequestException("End date cannot be before start date");
         }
 
-        Employee employee = employeeRepository.findById(request.getEmployeeId())
-                .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
+        Employee employee = resolveEmployeeForApply(request);
         Long companyId = requiredTenant();
         if (employee.getCompany() == null || !companyId.equals(employee.getCompany().getId())) throw new BadRequestException("Employee is not in this company");
         LeaveType leaveType = leaveTypeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getLeaveTypeId(), companyId)
@@ -228,6 +228,32 @@ public class LeaveRequestService {
             }
         }
         return count;
+    }
+
+    private Employee resolveEmployeeForApply(ApplyLeaveRequest request) {
+        if (request == null || request.getEmployeeId() == null) {
+            throw new BadRequestException("Employee is required");
+        }
+
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            java.util.Optional<Employee> currentEmployee = employeeRepository.findByUser_UsernameAndDeletedFalse(authentication.getName());
+            if (currentEmployee.isPresent()) {
+                Employee current = currentEmployee.get();
+                if (request.getEmployeeId().equals(current.getId())) {
+                    return current;
+                }
+                boolean canApplyForOthers = authentication.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .anyMatch("LEAVE_APPLY"::equals);
+                if (!canApplyForOthers) {
+                    throw new BadRequestException("Employees can only apply leave for themselves");
+                }
+            }
+        }
+
+        return employeeRepository.findById(request.getEmployeeId())
+                .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }

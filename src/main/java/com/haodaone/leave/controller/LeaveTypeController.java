@@ -20,7 +20,7 @@ public class LeaveTypeController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('LEAVE_APPLY') or hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("hasAuthority('LEAVE_APPLY') or hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_MANAGE') or hasAuthority('SELF_LEAVE_VIEW') or hasAuthority('SELF_LEAVE_APPLY')")
     public List<LeaveTypeDTO> listAll() {
         return leaveTypeService.listAll();
     }

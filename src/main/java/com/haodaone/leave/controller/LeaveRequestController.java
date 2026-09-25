@@ -69,7 +69,7 @@ public class LeaveRequestController {
      * downstream can be reached with an unauthorized employeeId.
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('LEAVE_APPLY') or @employeeSecurity.isSelf(#request.employeeId)")
+    @PreAuthorize("hasAuthority('LEAVE_APPLY') or hasAuthority('SELF_LEAVE_APPLY') or @employeeSecurity.isSelf(#request.employeeId)")
     public ResponseEntity<LeaveRequestDTO> apply(@Valid @RequestBody ApplyLeaveRequest request) {
         return ResponseEntity.status(201).body(leaveRequestService.apply(request));
     }
