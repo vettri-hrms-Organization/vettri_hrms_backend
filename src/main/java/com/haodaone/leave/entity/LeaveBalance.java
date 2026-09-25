@@ -13,7 +13,7 @@ import jakarta.persistence.*;
  * this row's "used" figure stale - there isn't one to go stale.
  */
 @Entity
-@Table(name = "leave_balance", uniqueConstraints = @UniqueConstraint(columnNames = {"employee_id", "leave_type_id", "year"}))
+@Table(name = "leave_balance", uniqueConstraints = @UniqueConstraint(columnNames = {"employee_id", "leave_type_id", "\"year\""}))
 public class LeaveBalance extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)

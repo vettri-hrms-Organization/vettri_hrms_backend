@@ -6,6 +6,8 @@ import com.haodaone.company.entity.Company;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.dto.ApplyLeaveRequest;
+import com.haodaone.leave.dto.LeaveRequestDTO;
+import com.haodaone.leave.entity.LeaveRequest;
 import com.haodaone.leave.entity.LeaveType;
 import com.haodaone.leave.repository.HolidayRepository;
 import com.haodaone.leave.repository.LeaveBalanceRepository;
@@ -28,6 +30,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -108,5 +111,36 @@ class LeaveRequestServiceTest {
         assertThatThrownBy(() -> leaveRequestService.apply(request))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Employees can only apply leave for themselves");
+    }
+
+    @Test
+    void dtoMapsEmployeeAndLeaveTypeFieldsForLeaveRequests() {
+        Employee employee = new Employee();
+        employee.setId(4268L);
+        employee.setEmployeeCode("EMP-4268");
+        employee.setFirstName("Jamie");
+        employee.setLastName("Wells");
+
+        LeaveType leaveType = new LeaveType();
+        leaveType.setId(12L);
+        leaveType.setName("Earned Leave");
+
+        LeaveRequest request = new LeaveRequest();
+        request.setId(99L);
+        request.setEmployee(employee);
+        request.setLeaveType(leaveType);
+        request.setStartDate(LocalDate.of(2025, 5, 10));
+        request.setEndDate(LocalDate.of(2025, 5, 12));
+        request.setDays(2.0);
+        request.setStatus("PENDING");
+
+        LeaveRequestDTO dto = LeaveRequestDTO.from(request);
+
+        assertThat(dto.getEmployeeId()).isEqualTo(4268L);
+        assertThat(dto.getEmployeeCode()).isEqualTo("EMP-4268");
+        assertThat(dto.getEmployeeName()).isEqualTo("Jamie Wells");
+        assertThat(dto.getLeaveTypeId()).isEqualTo(12L);
+        assertThat(dto.getLeaveTypeName()).isEqualTo("Earned Leave");
+        assertThat(dto.getStatus()).isEqualTo("PENDING");
     }
 }

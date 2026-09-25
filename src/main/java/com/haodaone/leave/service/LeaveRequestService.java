@@ -53,6 +53,7 @@ public class LeaveRequestService {
         this.authorizationService = authorizationService;
     }
 
+    @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listAll(String status) {
         Long companyId = requiredTenant();
         var scope = authorizationService.resolveEmployeeIdsForAny("LEAVE_VIEW", "LEAVE_APPROVE");
@@ -69,6 +70,7 @@ public class LeaveRequestService {
      *  returns an empty list rather than falling back to "all", since an
      *  empty team should mean nothing to approve, not everything. Blank
      *  status means every status, mirroring listAll's own behavior. */
+    @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listForEmployees(java.util.Collection<Long> employeeIds, String status) {
         if (employeeIds == null || employeeIds.isEmpty()) {
             return List.of();
@@ -88,6 +90,7 @@ public class LeaveRequestService {
      * "who is my team" is resolved exactly one way, not reimplemented
      * per caller.
      */
+    @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listForManagerTeam(String username, String status) {
         Employee me = employeeRepository.findByUser_UsernameAndDeletedFalse(username).orElse(null);
         if (me == null) {
@@ -98,12 +101,14 @@ public class LeaveRequestService {
         return listForEmployees(teamIds, status);
     }
 
+    @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listByEmployee(Long employeeId) {
         return leaveRequestRepository.findAllByEmployee_Company_IdAndEmployeeIdOrderByStartDateDesc(requiredTenant(), employeeId).stream()
                 .map(LeaveRequestDTO::from)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<LeaveBalanceDTO> getBalances(Long employeeId, int year) {
         Long companyId = requiredTenant();
         List<LeaveType> activeTypes = leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream()
