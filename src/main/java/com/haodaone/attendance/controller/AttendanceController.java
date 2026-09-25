@@ -164,7 +164,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional
     public ResponseEntity<AttendanceSessionDTO> checkIn(@Valid @RequestBody AttendanceCheckInRequest request) {
         Employee employee = currentEmployee();
@@ -219,7 +219,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/check-out")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional
     public ResponseEntity<AttendanceSessionDTO> checkOut(@Valid @RequestBody AttendanceCheckOutRequest request) {
         Employee employee = currentEmployee();
@@ -253,7 +253,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/today")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional(readOnly = true)
     public ResponseEntity<AttendanceSessionDTO> today() {
         Employee employee = currentEmployee();
@@ -270,7 +270,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/office-locations")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('ATTENDANCE_VIEW')")
     public List<OfficeLocationDTO> officeLocations() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {

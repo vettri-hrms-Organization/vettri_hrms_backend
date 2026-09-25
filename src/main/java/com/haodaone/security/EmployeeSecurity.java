@@ -2,6 +2,7 @@ package com.haodaone.security;
 
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
+import com.haodaone.tenant.TenantContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -40,6 +41,18 @@ public class EmployeeSecurity {
         return currentEmployeeId().map(employeeId::equals).orElse(false);
     }
 
+    /** True when the authenticated active account is linked to an employee in the current tenant. */
+    public boolean isLinkedEmployee() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        Long tenantId = TenantContext.getCurrentTenant();
+        return currentEmployee().map(employee -> "Active".equalsIgnoreCase(employee.getStatus())
+            && employee.getCompany() != null
+                && (tenantId == null || tenantId.equals(employee.getCompany().getId()))).orElse(false);
+    }
+
     /** True if the given leave request was filed by the currently authenticated login. */
     public boolean ownsLeaveRequest(Long leaveRequestId) {
         if (leaveRequestId == null) {
@@ -54,5 +67,10 @@ public class EmployeeSecurity {
     private java.util.Optional<Long> currentEmployeeId() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username).map(e -> e.getId());
+    }
+
+    private java.util.Optional<com.haodaone.employee.entity.Employee> currentEmployee() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return employeeRepository.findByUser_UsernameAndDeletedFalse(username);
     }
 }

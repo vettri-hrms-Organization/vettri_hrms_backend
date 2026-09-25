@@ -39,7 +39,7 @@ public class WfhRequestController {
     }
 
     @PostMapping("/wfh/request")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional
     public ResponseEntity<WfhRequestDTO> requestWfh(@RequestBody @Valid WfhRequestDTO request) {
         Employee employee = currentEmployee();
@@ -64,7 +64,7 @@ public class WfhRequestController {
     }
 
     @GetMapping("/wfh/my")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional(readOnly = true)
     public List<WfhRequestDTO> myWfhRequests() {
         Employee employee = currentEmployee();

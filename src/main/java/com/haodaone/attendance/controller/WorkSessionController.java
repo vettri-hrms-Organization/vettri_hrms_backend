@@ -57,7 +57,7 @@ public class WorkSessionController {
     }
 
     @PostMapping("/start")
-    @PreAuthorize("hasAuthority('EMPLOYEE_VIEW') or hasRole('EMPLOYEE')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional
     public WorkSessionDTO start(@RequestBody StartWorkRequest request) {
         Employee me = currentEmployee();
@@ -106,7 +106,7 @@ public class WorkSessionController {
     }
 
     @PostMapping("/stop")
-    @PreAuthorize("hasAuthority('EMPLOYEE_VIEW') or hasRole('EMPLOYEE')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     @Transactional
     public WorkSessionDTO stop() {
         Employee me = currentEmployee();
@@ -122,7 +122,7 @@ public class WorkSessionController {
     }
 
     @GetMapping("/me/today")
-    @PreAuthorize("hasAuthority('EMPLOYEE_VIEW') or hasRole('EMPLOYEE')")
+    @PreAuthorize("@employeeSecurity.isLinkedEmployee() or hasAuthority('EMPLOYEE_VIEW')")
     public WorkSessionDTO todayForCurrentEmployee() {
         Employee me = currentEmployee();
         return workSessionRepository.findByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", LocalDate.now(applicationClock))
