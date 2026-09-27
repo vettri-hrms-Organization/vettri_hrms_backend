@@ -201,6 +201,66 @@ public class AttendancePresenceFlowTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    public void self_service_permission_allows_employee_profile_without_employee_role_name() throws Exception {
+        Company company = companyRepository.save(newCompany("Acme 4"));
+        Permission selfCheckIn = permissionRepository.findByCode("SELF_ATTENDANCE_CHECKIN")
+                .orElseThrow(() -> new IllegalStateException("SELF_ATTENDANCE_CHECKIN permission missing"));
+        Role selfServiceRole = roleRepository.findByName("OPS_MANAGER").orElseGet(() -> {
+            Role role = new Role();
+            role.setName("OPS_MANAGER");
+            role.setLabel("Operations Manager");
+            role.setPermissions(Set.of(selfCheckIn));
+            return roleRepository.save(role);
+        });
+
+        User user = new User();
+        user.setUsername("ops-self-checkin");
+        user.setEmail("ops-self-checkin@acme.test");
+        user.setFullName("Ops Manager");
+        user.setPasswordHash(passwordEncoder.encode("password"));
+        user.setCompany(company);
+        user.setRoles(Set.of(selfServiceRole));
+        user = userRepository.save(user);
+
+        Employee employee = new Employee();
+        employee.setEmployeeCode("E-103");
+        employee.setFirstName("Ops");
+        employee.setLastName("Manager");
+        employee.setEmail(user.getEmail());
+        employee.setDateOfJoining(java.time.LocalDate.now());
+        employee.setCompany(company);
+        employee.setUser(user);
+        employee.setStatus("Active");
+        employeeRepository.save(employee);
+
+        OfficeLocation location = new OfficeLocation();
+        location.setCompany(company);
+        location.setName("HQ");
+        location.setAddress("HQ Main");
+        location.setLatitude(13.0827);
+        location.setLongitude(80.2707);
+        location.setAllowedRadiusMeters(150);
+        location.setActive(true);
+        officeLocationRepository.save(location);
+
+        String token = jwtService.generateAccessToken(user.getUsername(), java.util.List.of(selfServiceRole.getName()));
+
+        AttendanceCheckInRequest req = new AttendanceCheckInRequest();
+        req.setLatitude(13.0829);
+        req.setLongitude(80.2709);
+        req.setAccuracy(12.0);
+        req.setTimestamp(System.currentTimeMillis());
+        req.setSource("MOBILE");
+        req.setOfficeLocationId(location.getId());
+
+        mockMvc.perform(post("/api/attendance/check-in")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk());
+    }
+
     private Company newCompany(String name) {
         Company company = new Company();
         company.setName(name);

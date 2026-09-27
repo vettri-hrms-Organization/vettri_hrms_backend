@@ -75,7 +75,9 @@ public class DataSeeder implements CommandLineRunner {
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                     "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW", "MONITORING_VIEW",
-                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE"));
+                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
+                    "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         // Company Admin - company-scoped administrative role. Permissions are the same
         // functional set as HR_ADMIN but this role is intended to be scoped to a
         // single tenant/company (tenant enforcement is enforced server-side).
@@ -85,10 +87,14 @@ public class DataSeeder implements CommandLineRunner {
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                     "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW", "MONITORING_VIEW", "MONITORING_MANAGE",
-                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE"));
+                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
+                    "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
                 permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
-                        "RECRUITMENT_VIEW", "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "REPORTS_VIEW"));
+                        "RECRUITMENT_VIEW", "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "REPORTS_VIEW",
+                        "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         Role employee = seedRole("EMPLOYEE", "Baseline self-service access", permissionsByCode(
             "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
             "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));

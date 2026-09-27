@@ -88,6 +88,11 @@ public class AuthorizationService {
     }
 
     @Transactional(readOnly = true)
+    public boolean canAccessOwnAttendance() {
+        return resolveCurrentEmployee() != null;
+    }
+
+    @Transactional(readOnly = true)
     public Set<PermissionScope> getScopes(String permissionCode) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !isAccountActive(authentication)) return Set.of();
@@ -167,7 +172,34 @@ public class AuthorizationService {
     }
 
     private User currentUser(Authentication authentication) {
-        return userRepository.findByUsernameAndDeletedFalse(authentication.getName()).orElse(null);
+        String identifier = authentication.getName();
+        return userRepository.findByUsernameAndDeletedFalse(identifier)
+                .or(() -> userRepository.findByEmailIgnoreCaseAndDeletedFalse(identifier))
+                .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public Employee resolveCurrentEmployee() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || !isAccountActive(authentication)) {
+            return null;
+        }
+        User user = currentUser(authentication);
+        if (user == null || user.getCompany() == null) {
+            return null;
+        }
+        Long tenantId = TenantContext.getCurrentTenant();
+        Employee current = employeeRepository.findByUser_IdAndDeletedFalse(user.getId()).orElse(null);
+        if (current == null || current.getCompany() == null || current.isDeleted()) {
+            return null;
+        }
+        if (tenantId != null && !tenantId.equals(current.getCompany().getId())) {
+            return null;
+        }
+        if (current.getStatus() != null && !"Active".equalsIgnoreCase(current.getStatus())) {
+            return null;
+        }
+        return current;
     }
 
     private boolean isAccountActive(Authentication authentication) {
