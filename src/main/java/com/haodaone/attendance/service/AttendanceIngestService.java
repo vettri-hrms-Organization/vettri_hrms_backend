@@ -103,7 +103,7 @@ public class AttendanceIngestService {
                     eventPublisher.publish(AttendanceRecordDTO.from(record));
                 }
             } catch (Exception ex) {
-                log.error("Failed to parse ADMS line from SN={}: '{}' - {}", serialNumber, line, ex.getMessage());
+                log.error("Failed to parse ADMS line from SN={}: '{}' - {}", serialNumber, line, ex.getMessage(), ex);
             }
         }
         log.info("ADMS push from SN={}: {} line(s), {} saved", serialNumber, lines.length, saved);

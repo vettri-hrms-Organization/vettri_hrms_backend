@@ -1,6 +1,7 @@
 package com.haodaone.common.exception;
 
 import com.haodaone.common.dto.ApiError;
+import com.haodaone.common.logging.ErrorLogService;
 import com.haodaone.attendance.exception.AttendanceLocationException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -20,20 +21,29 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    private final ErrorLogService errorLogService;
+
+    public GlobalExceptionHandler(ErrorLogService errorLogService) {
+        this.errorLogService = errorLogService;
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.NOT_FOUND.value(), "GlobalExceptionHandler");
         log.warn("Not found: {}", ex.getMessage());
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ApiError> handleBadRequest(BadRequestException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.BAD_REQUEST.value(), "GlobalExceptionHandler");
         log.warn("Bad request: {}", ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
     @ExceptionHandler(AttendanceLocationException.class)
     public ResponseEntity<ApiError> handleAttendanceLocation(AttendanceLocationException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.BAD_REQUEST.value(), "GlobalExceptionHandler");
         log.warn("Attendance location rejected: code={}, accuracyMeters={}, distanceMeters={}, allowedRadiusMeters={}, validationStage={}, source={}",
             ex.getCode(), ex.getAccuracyMeters(), ex.getDistanceMeters(), ex.getAllowedRadiusMeters(), ex.getValidationStage(), ex.getSource());
         ApiError body = buildBody(HttpStatus.BAD_REQUEST, ex.getCode(), ex.getMessage(), request);
@@ -49,23 +59,27 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ApiError> handleConflict(ConflictException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.CONFLICT.value(), "GlobalExceptionHandler");
         return build(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
     @ExceptionHandler(EmailDeliveryException.class)
     public ResponseEntity<ApiError> handleEmailDelivery(EmailDeliveryException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.BAD_GATEWAY.value(), "GlobalExceptionHandler");
         log.warn("Email delivery failed on {}: {}", request.getRequestURI(), ex.getMessage());
         return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
     }
 
     @ExceptionHandler({AuthenticationFailedException.class, BadCredentialsException.class})
     public ResponseEntity<ApiError> handleAuthFailed(RuntimeException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.UNAUTHORIZED.value(), "GlobalExceptionHandler");
         log.warn("Authentication failed: {}", ex.getMessage());
         return build(HttpStatus.UNAUTHORIZED, "Invalid credentials or session expired", request);
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.FORBIDDEN.value(), "GlobalExceptionHandler");
         log.warn("Access denied on {}: {}", request.getRequestURI(), ex.getMessage());
         return build(HttpStatus.FORBIDDEN, ex.getMessage() != null && !ex.getMessage().isBlank()
                 ? ex.getMessage()
@@ -74,6 +88,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.BAD_REQUEST.value(), "GlobalExceptionHandler");
         List<String> details = ex.getBindingResult().getFieldErrors().stream()
                 .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .toList();
@@ -84,7 +99,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex, HttpServletRequest request) {
-        log.error("Unexpected error on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        errorLogService.capture(ex, request, HttpStatus.INTERNAL_SERVER_ERROR.value(), "GlobalExceptionHandler");
+        log.warn("Unexpected error on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong. Please try again.", request);
     }
 

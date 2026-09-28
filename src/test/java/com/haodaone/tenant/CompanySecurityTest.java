@@ -86,4 +86,32 @@ public class CompanySecurityTest {
 
         assertFalse(companySecurity.canManageEmployee(99L));
     }
+
+    @Test
+    void hrAdmin_withoutImportPermission_cannotImportEmployees() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("hradmin", null, "ROLE_HR_ADMIN"));
+
+        User current = new User();
+        Company company = new Company();
+        company.setId(7L);
+        current.setCompany(company);
+
+        when(userRepository.findByUsernameAndDeletedFalse("hradmin")).thenReturn(Optional.of(current));
+
+        assertFalse(companySecurity.canImportEmployees());
+    }
+
+    @Test
+    void companyAdmin_withImportPermission_canImportEmployees() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("company-admin", null, "ROLE_COMPANY_ADMIN", "EMPLOYEE_IMPORT"));
+
+        User current = new User();
+        Company company = new Company();
+        company.setId(7L);
+        current.setCompany(company);
+
+        when(userRepository.findByUsernameAndDeletedFalse("company-admin")).thenReturn(Optional.of(current));
+
+        assertTrue(companySecurity.canImportEmployees());
+    }
 }

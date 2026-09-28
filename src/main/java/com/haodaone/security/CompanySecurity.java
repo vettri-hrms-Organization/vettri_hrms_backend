@@ -72,6 +72,13 @@ public class CompanySecurity {
         return isCompanyAdmin() || isHrAdmin();
     }
 
+    /** True if the caller can perform organization-level bulk employee import. */
+    public boolean canImportEmployees() {
+        if (isSuperAdmin()) return true;
+        if (!currentCompanyId().isPresent()) return false;
+        return currentRoles().contains("EMPLOYEE_IMPORT");
+    }
+
     /** True if caller can manage the given employee id (company scope or super admin). */
     public boolean canManageEmployee(Long employeeId) {
         if (employeeId == null) return false;

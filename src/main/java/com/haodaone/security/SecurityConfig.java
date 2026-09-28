@@ -3,6 +3,7 @@
     import com.fasterxml.jackson.databind.ObjectMapper;
     import com.haodaone.company.repository.CompanyRepository;
     import com.haodaone.common.dto.ApiError;
+    import com.haodaone.common.logging.ErrorLogService;
     import org.springframework.beans.factory.annotation.Value;
     import org.springframework.context.annotation.Bean;
     import org.springframework.context.annotation.Configuration;
@@ -43,6 +44,7 @@
         private final JwtAuthenticationFilter jwtAuthenticationFilter;
         private final AgentTokenAuthenticationFilter agentTokenAuthenticationFilter;
         private final ObjectMapper objectMapper;
+        private final ErrorLogService errorLogService;
 
         @Value("${app.cors.allowed-origins:}")
         private String allowedOrigins;
@@ -52,10 +54,12 @@
 
         public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                                AgentTokenAuthenticationFilter agentTokenAuthenticationFilter,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               ErrorLogService errorLogService) {
             this.jwtAuthenticationFilter = jwtAuthenticationFilter;
             this.agentTokenAuthenticationFilter = agentTokenAuthenticationFilter;
             this.objectMapper = objectMapper;
+            this.errorLogService = errorLogService;
         }
 
         @Bean
@@ -108,12 +112,16 @@
                             .requestMatchers("/agent/**").permitAll()
                             .requestMatchers("/iclock/**").permitAll()
                             .requestMatchers("/actuator/health").permitAll()
-                            .anyRequest().authenticated())
+                    .anyRequest().authenticated())
                     .exceptionHandling(handler -> handler
-                            .authenticationEntryPoint((request, response, ex) -> writeJsonError(
-                                    response, HttpStatus.UNAUTHORIZED, "Authentication required", request.getRequestURI()))
-                            .accessDeniedHandler((request, response, ex) -> writeJsonError(
-                                    response, HttpStatus.FORBIDDEN, "You don't have permission to perform this action", request.getRequestURI())));
+                            .authenticationEntryPoint((request, response, ex) -> {
+                                errorLogService.capture(ex, request, HttpStatus.UNAUTHORIZED.value(), "Security.authenticationEntryPoint");
+                                writeJsonError(response, HttpStatus.UNAUTHORIZED, "Authentication required", request.getRequestURI());
+                            })
+                            .accessDeniedHandler((request, response, ex) -> {
+                                errorLogService.capture(ex, request, HttpStatus.FORBIDDEN.value(), "Security.accessDeniedHandler");
+                                writeJsonError(response, HttpStatus.FORBIDDEN, "You don't have permission to perform this action", request.getRequestURI());
+                            }));
 
             // Register custom filters relative to Spring's standard auth filter chain.
             // The custom filters themselves are not part of the built-in order registry,
