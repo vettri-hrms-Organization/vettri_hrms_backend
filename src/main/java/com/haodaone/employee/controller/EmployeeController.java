@@ -96,20 +96,20 @@ public class EmployeeController {
     }
 
     @PostMapping(value = "/import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('EMPLOYEE_CREATE') and (@companySecurity.canCreateEmployee() or @companySecurity.isSuperAdmin())")
+    @PreAuthorize("hasAuthority('EMPLOYEE_IMPORT') and @companySecurity.canImportEmployees()")
     public EmployeeImportResultDTO previewImport(@RequestPart("file") MultipartFile file) {
         return employeeImportService.preview(file);
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('EMPLOYEE_CREATE') and (@companySecurity.canCreateEmployee() or @companySecurity.isSuperAdmin())")
+    @PreAuthorize("hasAuthority('EMPLOYEE_IMPORT') and @companySecurity.canImportEmployees()")
     public EmployeeImportResultDTO importEmployees(@RequestPart("file") MultipartFile file,
                                                      @RequestParam(defaultValue = "false") boolean validOnly) {
         return employeeImportService.importEmployees(file, validOnly);
     }
 
     @GetMapping("/import/template")
-    @PreAuthorize("hasAuthority('EMPLOYEE_CREATE') and (@companySecurity.canCreateEmployee() or @companySecurity.isSuperAdmin())")
+    @PreAuthorize("hasAuthority('EMPLOYEE_IMPORT') and @companySecurity.canImportEmployees()")
     public ResponseEntity<byte[]> importTemplate() {
         return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=employee-import-template.xlsx")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))

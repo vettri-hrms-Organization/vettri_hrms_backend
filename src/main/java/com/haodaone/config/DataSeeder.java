@@ -82,7 +82,7 @@ public class DataSeeder implements CommandLineRunner {
         // functional set as HR_ADMIN but this role is intended to be scoped to a
         // single tenant/company (tenant enforcement is enforced server-side).
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
-                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_IMPORT", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
                         "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
@@ -139,6 +139,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"AUDIT_VIEW", "View audit logs and login history", "Security"},
                 new String[]{"EMPLOYEE_VIEW", "View employee profiles and the org directory", "Employee Management"},
                 new String[]{"EMPLOYEE_CREATE", "Onboard new employees", "Employee Management"},
+                new String[]{"EMPLOYEE_IMPORT", "Import employee records in bulk for the organization", "Organization"},
                 new String[]{"EMPLOYEE_MANAGE", "Edit employee profiles and change employment status", "Employee Management"},
                 new String[]{"ORG_VIEW", "View departments, designations, and teams", "Organization"},
                 new String[]{"ORG_MANAGE", "Create and edit departments, designations, and teams", "Organization"},
