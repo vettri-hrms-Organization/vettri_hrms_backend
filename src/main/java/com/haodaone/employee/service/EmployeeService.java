@@ -314,8 +314,13 @@ public class EmployeeService {
 
     /** EMP0001, EMP0002, ... - looks at the highest existing suffix rather than a separate counter table, so it self-heals if a row is ever removed. */
     private String generateEmployeeCode() {
-        Integer maxSuffix = employeeRepository.findMaxEmployeeCodeSuffix(EMPLOYEE_CODE_PREFIX, EMPLOYEE_CODE_PREFIX.length());
-        int next = (maxSuffix == null ? 0 : maxSuffix) + 1;
+        int maxSuffix = employeeRepository.findEmployeeCodesByPrefix(EMPLOYEE_CODE_PREFIX).stream()
+                .map(code -> code.substring(EMPLOYEE_CODE_PREFIX.length()))
+                .filter(suffix -> suffix.matches("\\d+"))
+                .mapToInt(Integer::parseInt)
+                .max()
+                .orElse(0);
+        int next = maxSuffix + 1;
         return EMPLOYEE_CODE_PREFIX + String.format("%0" + EMPLOYEE_CODE_DIGITS + "d", next);
     }
 

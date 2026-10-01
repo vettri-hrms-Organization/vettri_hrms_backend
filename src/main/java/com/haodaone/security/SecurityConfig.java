@@ -20,6 +20,7 @@
     import org.springframework.security.crypto.password.PasswordEncoder;
     import org.springframework.security.web.SecurityFilterChain;
     import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+    import org.springframework.boot.web.servlet.FilterRegistrationBean;
     import org.springframework.web.cors.CorsConfiguration;
     import org.springframework.web.cors.CorsConfigurationSource;
     import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -129,7 +130,7 @@
             // UsernamePasswordAuthenticationFilter rather than one another.
             http.addFilterBefore(agentTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                     .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                    .addFilterAfter(maskingRequestFilter(), JwtAuthenticationFilter.class)
+                    .addFilterAfter(maskingRequestFilter(), UsernamePasswordAuthenticationFilter.class)
                     .addFilterAfter(tenantResolverFilter(companyRepository), UsernamePasswordAuthenticationFilter.class);
 
             return http.build();
@@ -174,7 +175,39 @@
         }
 
         @Bean
+        public FilterRegistrationBean<com.haodaone.security.MaskingRequestFilter> maskingRequestFilterRegistration(
+                com.haodaone.security.MaskingRequestFilter filter) {
+            FilterRegistrationBean<com.haodaone.security.MaskingRequestFilter> registration = new FilterRegistrationBean<>(filter);
+            registration.setEnabled(false);
+            return registration;
+        }
+
+        @Bean
+        public FilterRegistrationBean<JwtAuthenticationFilter> jwtAuthenticationFilterRegistration(
+                JwtAuthenticationFilter filter) {
+            FilterRegistrationBean<JwtAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+            registration.setEnabled(false);
+            return registration;
+        }
+
+        @Bean
+        public FilterRegistrationBean<AgentTokenAuthenticationFilter> agentTokenAuthenticationFilterRegistration(
+                AgentTokenAuthenticationFilter filter) {
+            FilterRegistrationBean<AgentTokenAuthenticationFilter> registration = new FilterRegistrationBean<>(filter);
+            registration.setEnabled(false);
+            return registration;
+        }
+
+        @Bean
         public com.haodaone.security.TenantResolverFilter tenantResolverFilter(CompanyRepository companyRepository) {
             return new com.haodaone.security.TenantResolverFilter(companyRepository);
+        }
+
+        @Bean
+        public FilterRegistrationBean<com.haodaone.security.TenantResolverFilter> tenantResolverFilterRegistration(
+                com.haodaone.security.TenantResolverFilter filter) {
+            FilterRegistrationBean<com.haodaone.security.TenantResolverFilter> registration = new FilterRegistrationBean<>(filter);
+            registration.setEnabled(false);
+            return registration;
         }
     }

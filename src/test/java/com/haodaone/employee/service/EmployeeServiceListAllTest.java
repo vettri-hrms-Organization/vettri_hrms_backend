@@ -7,6 +7,7 @@ import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.org.entity.Department;
 import com.haodaone.org.repository.DepartmentRepository;
+import com.haodaone.security.AuthorizationService;
 import com.haodaone.tenant.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,12 +16,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
 /**
  * Test to verify that the LazyInitializationException for Department
@@ -47,6 +51,9 @@ public class EmployeeServiceListAllTest {
     @Autowired
     private CompanyRepository companyRepository;
 
+    @MockitoBean
+    private AuthorizationService authorizationService;
+
     private Company testCompany;
     private Department testDepartment;
     private Employee employeeWithDept;
@@ -54,6 +61,8 @@ public class EmployeeServiceListAllTest {
 
     @BeforeEach
     public void setup() {
+        when(authorizationService.resolveEmployeeIds("EMPLOYEE_VIEW")).thenReturn(Optional.empty());
+
         // Create a test company
         testCompany = new Company();
         testCompany.setName("Test Company");
@@ -62,6 +71,7 @@ public class EmployeeServiceListAllTest {
         // Create a test department
         testDepartment = new Department();
         testDepartment.setName("Engineering");
+        testDepartment.setCode("ENG");
         testDepartment.setCompany(testCompany);
         testDepartment = departmentRepository.save(testDepartment);
 

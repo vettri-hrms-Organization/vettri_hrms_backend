@@ -20,6 +20,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -93,7 +94,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         r.setName("EMP_VIEWER");
         r.setLabel("Employee Viewer");
         r.setPermissions(Set.of(p));
-        roleRepository.save(r);
+        r = roleRepository.save(r);
 
         User userA = new User();
         userA.setUsername("userA@companya.example");
@@ -102,7 +103,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         userA.setPasswordHash(passwordEncoder.encode("password"));
         userA.setRoles(Set.of(r));
         userA.setCompany(a);
-        userRepository.save(userA);
+        userA = userRepository.save(userA);
 
         User userB = new User();
         userB.setUsername("userB@companyb.example");
@@ -111,7 +112,8 @@ public class EmployeeAndAttendanceApiIsolationTest {
         userB.setPasswordHash(passwordEncoder.encode("password"));
         userB.setRoles(Set.of(r));
         userB.setCompany(b);
-        userRepository.save(userB);
+        userB = userRepository.save(userB);
+        userRepository.flush();
 
         Employee empB = new Employee();
         empB.setEmployeeCode("E-B-1");
@@ -120,12 +122,15 @@ public class EmployeeAndAttendanceApiIsolationTest {
         empB.setEmail("empb1@companyb.example");
         empB.setDateOfJoining(java.time.LocalDate.now());
         empB.setCompany(b);
-        employeeRepository.save(empB);
+        empB = employeeRepository.save(empB);
         employeeRepository.flush();
         userRepository.flush();
 
         String tokenA = jwtService.generateAccessToken(userA.getUsername(), java.util.List.of(r.getName()));
         String tokenB = jwtService.generateAccessToken(userB.getUsername(), java.util.List.of(r.getName()));
+
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
 
         mockMvc.perform(get("/api/employees/" + empB.getId())
                         .header("Authorization", "Bearer " + tokenA)
@@ -163,7 +168,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         r.setName("ATT_VIEWER");
         r.setLabel("Attendance Viewer");
         r.setPermissions(Set.of(p));
-        roleRepository.save(r);
+        r = roleRepository.save(r);
 
         User userA = new User();
         userA.setUsername("userA2@companya.example");
@@ -172,7 +177,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         userA.setPasswordHash(passwordEncoder.encode("password"));
         userA.setRoles(Set.of(r));
         userA.setCompany(a);
-        userRepository.save(userA);
+        userA = userRepository.save(userA);
 
         User userB = new User();
         userB.setUsername("userB2@companyb.example");
@@ -181,7 +186,8 @@ public class EmployeeAndAttendanceApiIsolationTest {
         userB.setPasswordHash(passwordEncoder.encode("password"));
         userB.setRoles(Set.of(r));
         userB.setCompany(b);
-        userRepository.save(userB);
+        userB = userRepository.save(userB);
+        userRepository.flush();
 
         Employee empB = new Employee();
         empB.setEmployeeCode("E-B-2");
@@ -190,7 +196,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         empB.setEmail("empb2@companyb.example");
         empB.setDateOfJoining(java.time.LocalDate.now());
         empB.setCompany(b);
-        employeeRepository.save(empB);
+        empB = employeeRepository.save(empB);
 
         // Create an AttendanceRecord under company B for empB
         AttendanceRecord ar = new AttendanceRecord();
@@ -208,6 +214,9 @@ public class EmployeeAndAttendanceApiIsolationTest {
 
         String tokenA = jwtService.generateAccessToken(userA.getUsername(), java.util.List.of(r.getName()));
         String tokenB = jwtService.generateAccessToken(userB.getUsername(), java.util.List.of(r.getName()));
+
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
 
         mockMvc.perform(get("/api/attendance/employee/" + empB.getId())
                         .header("Authorization", "Bearer " + tokenA)

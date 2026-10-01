@@ -5,6 +5,10 @@ import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import com.haodaone.security.JwtService;
+import com.haodaone.software.entity.SoftwarePackage;
+import com.haodaone.software.entity.SoftwareVersion;
+import com.haodaone.software.repository.SoftwarePackageRepository;
+import com.haodaone.software.repository.SoftwareVersionRepository;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.User;
@@ -52,6 +56,12 @@ public class SoftwareDeploymentAccessTest {
     private MonitoredDeviceRepository deviceRepository;
 
     @Autowired
+    private SoftwarePackageRepository softwarePackageRepository;
+
+    @Autowired
+    private SoftwareVersionRepository softwareVersionRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -61,19 +71,22 @@ public class SoftwareDeploymentAccessTest {
     void companyAdminCanCreateDeploymentForOwnCompany() throws Exception {
         Company company = new Company();
         company.setName("Alpha Co");
-        companyRepository.save(company);
+        company = companyRepository.save(company);
 
-        Permission softwareDeploy = new Permission();
-        softwareDeploy.setCode("SOFTWARE_DEPLOY");
-        softwareDeploy.setDescription("Deploy software");
-        softwareDeploy.setModule("Software");
-        permissionRepository.save(softwareDeploy);
+        Permission softwareDeploy = permissionRepository.findByCode("SOFTWARE_DEPLOY")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("SOFTWARE_DEPLOY");
+                permission.setDescription("Deploy software");
+                permission.setModule("Software");
+                return permissionRepository.save(permission);
+            });
 
         Role adminRole = new Role();
         adminRole.setName("SOFTWARE_ADMIN");
         adminRole.setLabel("Software Admin");
         adminRole.setPermissions(Set.of(softwareDeploy));
-        roleRepository.save(adminRole);
+        adminRole = roleRepository.save(adminRole);
 
         User admin = new User();
         admin.setUsername("admin@alpha");
@@ -82,7 +95,8 @@ public class SoftwareDeploymentAccessTest {
         admin.setPasswordHash(passwordEncoder.encode("password"));
         admin.setCompany(company);
         admin.setRoles(Set.of(adminRole));
-        userRepository.save(admin);
+        admin = userRepository.save(admin);
+        userRepository.flush();
 
         MonitoredDevice device = new MonitoredDevice();
         device.setDeviceId("alpha-device-1");
@@ -90,28 +104,41 @@ public class SoftwareDeploymentAccessTest {
         device.setAgentTokenHash("alpha-token-hash-1");
         device.setCompany(company);
         device.setActive(true);
-        deviceRepository.save(device);
+        device = deviceRepository.save(device);
+
+        SoftwarePackage softwarePackage = new SoftwarePackage();
+        softwarePackage.setCompany(company);
+        softwarePackage.setName("Test Package");
+        softwarePackage = softwarePackageRepository.save(softwarePackage);
+
+        SoftwareVersion version = new SoftwareVersion();
+        version.setSoftwarePackage(softwarePackage);
+        version.setPackageVersion("1.0.0");
+        version = softwareVersionRepository.save(version);
 
         String token = jwtService.generateAccessToken(admin.getUsername(), List.of(adminRole.getName()));
 
         mockMvc.perform(post("/api/software/deployments")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"softwarePackageId\":1,\"softwareVersionId\":1,\"targetDeviceIds\":[" + device.getId() + "]}"))
-                .andExpect(status().isOk());
+                        .content("{\"softwareVersionId\":" + version.getId() + ",\"targetDeviceIds\":[" + device.getId() + "]}"))
+                    .andExpect(status().isCreated());
     }
 
     @Test
     void employeeCannotCreateDeploymentWithoutPermission() throws Exception {
         Company company = new Company();
         company.setName("Bravo Co");
-        companyRepository.save(company);
+        company = companyRepository.save(company);
 
-        Role employeeRole = new Role();
-        employeeRole.setName("EMPLOYEE");
-        employeeRole.setLabel("Employee");
-        employeeRole.setPermissions(Set.of());
-        roleRepository.save(employeeRole);
+        Role employeeRole = roleRepository.findByName("EMPLOYEE")
+            .orElseGet(() -> {
+                Role role = new Role();
+                role.setName("EMPLOYEE");
+                role.setLabel("Employee");
+                role.setPermissions(Set.of());
+                return roleRepository.save(role);
+            });
 
         User employee = new User();
         employee.setUsername("emp@bravo");
@@ -120,7 +147,8 @@ public class SoftwareDeploymentAccessTest {
         employee.setPasswordHash(passwordEncoder.encode("password"));
         employee.setCompany(company);
         employee.setRoles(Set.of(employeeRole));
-        userRepository.save(employee);
+        employee = userRepository.save(employee);
+        userRepository.flush();
 
         String token = jwtService.generateAccessToken(employee.getUsername(), List.of(employeeRole.getName()));
 
