@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.transaction.TestTransaction;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.Set;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -227,5 +229,58 @@ public class EmployeeAndAttendanceApiIsolationTest {
                         .header("Authorization", "Bearer " + tokenB)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    public void employee_cannotUploadDocumentForAnotherEmployee() throws Exception {
+        Company company = new Company();
+        company.setName("Document isolation company");
+        company = companyRepository.save(company);
+
+        Role role = new Role();
+        role.setName("DOCUMENT_SELF_TEST");
+        role.setLabel("Document self test");
+        role.setPermissions(Set.of());
+        role = roleRepository.save(role);
+
+        User user = new User();
+        user.setUsername("document.self@example.com");
+        user.setEmail("document.self@example.com");
+        user.setFullName("Document Self");
+        user.setPasswordHash(passwordEncoder.encode("password"));
+        user.setRoles(Set.of(role));
+        user.setCompany(company);
+        user = userRepository.save(user);
+
+        Employee self = new Employee();
+        self.setEmployeeCode("DOC-SELF");
+        self.setFirstName("Document");
+        self.setLastName("Self");
+        self.setEmail("document.self.employee@example.com");
+        self.setDateOfJoining(java.time.LocalDate.now());
+        self.setCompany(company);
+        self.setUser(user);
+        employeeRepository.save(self);
+
+        Employee other = new Employee();
+        other.setEmployeeCode("DOC-OTHER");
+        other.setFirstName("Another");
+        other.setLastName("Employee");
+        other.setEmail("document.other.employee@example.com");
+        other.setDateOfJoining(java.time.LocalDate.now());
+        other.setCompany(company);
+        other = employeeRepository.save(other);
+        employeeRepository.flush();
+
+        String token = jwtService.generateAccessToken(user.getUsername(), java.util.List.of(role.getName()));
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+
+        mockMvc.perform(multipart("/api/documents/employee/{employeeId}/upload", other.getId())
+                        .file(new MockMultipartFile("file", "id.pdf", "application/pdf", "document".getBytes()))
+                        .param("documentType", "AADHAAR")
+                        .param("expiryDate", "2027-10-02")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 }

@@ -3,6 +3,7 @@ package com.haodaone.common.exception;
 import com.haodaone.common.dto.ApiError;
 import com.haodaone.common.logging.ErrorLogService;
 import com.haodaone.attendance.exception.AttendanceLocationException;
+import com.haodaone.document.service.DocumentStorageException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,6 +68,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleEmailDelivery(EmailDeliveryException ex, HttpServletRequest request) {
         errorLogService.capture(ex, request, HttpStatus.BAD_GATEWAY.value(), "GlobalExceptionHandler");
         log.warn("Email delivery failed on {}: {}", request.getRequestURI(), ex.getMessage());
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DocumentStorageException.class)
+    public ResponseEntity<ApiError> handleDocumentStorage(DocumentStorageException ex, HttpServletRequest request) {
+        errorLogService.capture(ex, request, HttpStatus.BAD_GATEWAY.value(), "GlobalExceptionHandler");
+        log.error("Employee document storage failed on {}: {}", request.getRequestURI(), ex.getMessage(), ex);
         return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
     }
 

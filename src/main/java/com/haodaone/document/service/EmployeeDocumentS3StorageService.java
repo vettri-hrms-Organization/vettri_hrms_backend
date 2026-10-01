@@ -8,6 +8,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -21,6 +22,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,14 +40,23 @@ public class EmployeeDocumentS3StorageService {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "text/plain"
     );
+            private static final Map<String, String> CONTENT_TYPE_BY_EXTENSION = Map.of(
+                "pdf", "application/pdf",
+                "jpg", "image/jpeg",
+                "jpeg", "image/jpeg",
+                "png", "image/png",
+                "doc", "application/msword",
+                "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "txt", "text/plain"
+            );
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
 
-    @Value("${aws.s3.bucket-name}")
+    @Value("${app.storage.employee-document-bucket}")
     private String bucketName;
 
-    @Value("${app.upload.max-offer-letter-size-mb:10}")
+    @Value("${app.upload.max-employee-document-size-mb:10}")
     private long maxFileSizeMb;
 
     @Value("${aws.s3.presigned-url-expiry-minutes:15}")
@@ -56,13 +67,17 @@ public class EmployeeDocumentS3StorageService {
         this.s3Presigner = s3Presigner;
     }
 
-    public StoredFile store(MultipartFile file) {
+    public StoredFile store(MultipartFile file, Long companyId, Long employeeId, String documentType) {
         if (file == null || file.isEmpty()) throw new BadRequestException("Please attach a document file.");
+        if (companyId == null || employeeId == null || documentType == null || documentType.isBlank()) {
+            throw new BadRequestException("Company, employee, and document type are required.");
+        }
         validate(file);
 
         String originalName = originalNameOf(file);
         String extension = extensionOf(originalName).toLowerCase();
-        String key = "employee-documents/" + UUID.randomUUID() + "." + extension;
+        String key = "employee-documents/" + companyId + "/" + employeeId + "/" + documentType + "/"
+                + UUID.randomUUID() + "." + extension;
         String contentType = file.getContentType() != null ? file.getContentType().toLowerCase() : "application/octet-stream";
 
         try {
@@ -78,10 +93,10 @@ public class EmployeeDocumentS3StorageService {
             return new StoredFile(key, originalName, file.getSize(), contentType);
         } catch (IOException e) {
             log.error("Failed to read uploaded document '{}': {}", originalName, e.getMessage(), e);
-            throw new IllegalStateException("Failed to save the uploaded document. Please try again.", e);
-        } catch (S3Exception e) {
-            log.error("S3 upload failed for key '{}': {}", key, e.getMessage(), e);
-            throw new IllegalStateException("Failed to save the uploaded document. Please try again.", e);
+            throw new DocumentStorageException("Document storage is temporarily unavailable. Please try again.");
+        } catch (SdkException e) {
+            log.error("S3 upload failed for bucket '{}' and key '{}': {}", bucketName, key, e.getMessage(), e);
+            throw new DocumentStorageException("Document storage is temporarily unavailable. Please try again.");
         }
     }
 
@@ -99,9 +114,9 @@ public class EmployeeDocumentS3StorageService {
             return new InputStreamResource(stream);
         } catch (NoSuchKeyException e) {
             throw new BadRequestException("Document file not found in cloud storage.");
-        } catch (S3Exception e) {
+        } catch (SdkException e) {
             log.error("S3 download failed for key '{}': {}", key, e.getMessage(), e);
-            throw new IllegalStateException("Failed to read the stored document.", e);
+            throw new DocumentStorageException("Document storage is temporarily unavailable. Please try again.");
         }
     }
 
@@ -120,8 +135,8 @@ public class EmployeeDocumentS3StorageService {
         if (key == null || key.isBlank()) return;
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(key).build());
-        } catch (S3Exception e) {
-            log.warn("Could not delete S3 object '{}': {}", key, e.getMessage());
+        } catch (SdkException e) {
+            log.warn("Could not delete S3 object '{}': {}", key, e.getMessage(), e);
         }
     }
 
@@ -139,7 +154,8 @@ public class EmployeeDocumentS3StorageService {
         String extension = extensionOf(originalName).toLowerCase();
         String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
         boolean extensionOk = ALLOWED_EXTENSIONS.contains(extension);
-        boolean contentTypeOk = contentType.isBlank() || ALLOWED_CONTENT_TYPES.contains(contentType);
+        boolean contentTypeOk = ALLOWED_CONTENT_TYPES.contains(contentType)
+            && contentType.equals(CONTENT_TYPE_BY_EXTENSION.get(extension));
 
         if (!extensionOk || !contentTypeOk) {
             throw new BadRequestException("Only PDF, JPG, PNG, DOC, DOCX, or TXT documents are accepted.");

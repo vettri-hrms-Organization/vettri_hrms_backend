@@ -13,6 +13,8 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -52,9 +54,21 @@ public class EmployeeDocumentController {
                                                    @RequestParam(value = "issueDate", required = false) String issueDate,
                                                    @RequestParam("expiryDate") String expiryDate,
                                                    @RequestParam(value = "notes", required = false) String notes) {
-        java.time.LocalDate parsedIssueDate = issueDate == null || issueDate.isBlank() ? null : java.time.LocalDate.parse(issueDate);
-        java.time.LocalDate parsedExpiryDate = java.time.LocalDate.parse(expiryDate);
+        LocalDate parsedIssueDate = parseDate("issueDate", issueDate, true);
+        LocalDate parsedExpiryDate = parseDate("expiryDate", expiryDate, false);
         return ResponseEntity.status(201).body(documentService.upload(employeeId, file, documentType, documentNumber, parsedIssueDate, parsedExpiryDate, notes));
+    }
+
+    static LocalDate parseDate(String field, String value, boolean optional) {
+        if (value == null || value.isBlank()) {
+            if (optional) return null;
+            throw new BadRequestException(field + " is required.");
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException e) {
+            throw new BadRequestException(field + " must use ISO format yyyy-MM-dd.");
+        }
     }
 
     @PostMapping("/{id}/review")

@@ -129,7 +129,8 @@ public class EmployeeDocumentService {
             throw new BadRequestException("Employee is not in this company");
         }
 
-        EmployeeDocumentS3StorageService.StoredFile stored = documentStorageService.store(file);
+        EmployeeDocumentS3StorageService.StoredFile stored = documentStorageService.store(
+            file, companyId, employee.getId(), documentType);
         EmployeeDocument doc = new EmployeeDocument();
         doc.setEmployee(employee);
         doc.setCompany(employee.getCompany());
