@@ -10,11 +10,12 @@ import java.util.Set;
 public interface EmployeeDocumentRepository extends JpaRepository<EmployeeDocument, Long> {
     List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(Long companyId, Long employeeId);
 
+    java.util.Optional<EmployeeDocument> findByIdAndCompany_IdAndDeletedFalse(Long id, Long companyId);
+
     List<EmployeeDocument> findAllByEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(Long employeeId);
 
     /** Powers the Dashboard "expiring soon" widget and the Settings-wide expiry list - deliberately unpaginated like Goal/PerformanceReview's per-employee queries, since org-wide expiries within a lookahead window is a naturally bounded list. */
     List<EmployeeDocument> findAllByDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(LocalDate start, LocalDate end);
     List<EmployeeDocument> findAllByCompany_IdAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, LocalDate start, LocalDate end);
     List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdInAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, Set<Long> employeeIds, LocalDate start, LocalDate end);
-    java.util.Optional<EmployeeDocument> findByIdAndCompany_IdAndDeletedFalse(Long id, Long companyId);
 }
