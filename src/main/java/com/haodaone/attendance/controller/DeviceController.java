@@ -4,9 +4,12 @@ import com.haodaone.attendance.dto.DeviceDTO;
 import com.haodaone.attendance.entity.Device;
 import com.haodaone.attendance.repository.DeviceRepository;
 import com.haodaone.audit.service.AuditLogService;
+import com.haodaone.company.entity.Company;
+import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.common.exception.ResourceNotFoundException;
 import com.haodaone.tenant.TenantContext;
+import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,10 +23,13 @@ public class DeviceController {
 
     private final DeviceRepository deviceRepository;
     private final AuditLogService auditLogService;
+    private final CompanyRepository companyRepository;
 
-    public DeviceController(DeviceRepository deviceRepository, AuditLogService auditLogService) {
+    public DeviceController(DeviceRepository deviceRepository, AuditLogService auditLogService,
+                            CompanyRepository companyRepository) {
         this.deviceRepository = deviceRepository;
         this.auditLogService = auditLogService;
+        this.companyRepository = companyRepository;
     }
 
     @GetMapping
@@ -34,6 +40,26 @@ public class DeviceController {
             throw new BadRequestException("Company context is required");
         }
         return deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId).stream().map(DeviceDTO::from).toList();
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('DEVICE_MANAGE')")
+    public DeviceDTO register(@Valid @RequestBody DeviceDTO.RegisterRequest request) {
+        Long companyId = TenantContext.getCurrentTenant();
+        if (companyId == null) throw new BadRequestException("Company context is required");
+        String serialNumber = request.serialNumber().trim();
+        if (deviceRepository.findBySerialNumber(serialNumber).isPresent()) {
+            throw new BadRequestException("A device with this serial number is already registered");
+        }
+        Company company = companyRepository.findById(companyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Company not found: " + companyId));
+        Device device = new Device();
+        device.setSerialNumber(serialNumber);
+        device.setDeviceName(request.deviceName().trim());
+        device.setCompany(company);
+        Device saved = deviceRepository.save(device);
+        auditLogService.log("Device", saved.getId(), "CREATE", "Registered biometric device '" + serialNumber + "'");
+        return DeviceDTO.from(saved);
     }
 
     @PatchMapping("/{id}/rename")

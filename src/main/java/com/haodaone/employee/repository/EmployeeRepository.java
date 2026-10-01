@@ -63,6 +63,11 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     long countByCompany_IdAndStatusAndDeletedFalse(Long companyId, String status);
 
     long countByCompany_IdAndStatusInAndDeletedFalse(Long companyId, java.util.Collection<String> statuses);
+        long countByCompany_IdAndStatusInAndIdInAndDeletedFalse(Long companyId, java.util.Collection<String> statuses, Set<Long> employeeIds);
+
+        @Query("select count(e) from Employee e where e.deleted = false and e.company.id = :companyId and e.id in :employeeIds " +
+            "and e.status in ('Resigned','Terminated','Exit Clearance','Assets Returned') and e.updatedAt >= :since")
+        long countSeparationsSinceForCompanyAndEmployees(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds, @Param("since") LocalDateTime since);
 
     long countByDepartmentIdAndDeletedFalse(Long departmentId);
 

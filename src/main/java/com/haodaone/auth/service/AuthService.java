@@ -72,7 +72,7 @@ public class AuthService {
         return dto;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = AuthenticationFailedException.class)
     public LoginResponse login(LoginRequest request, HttpServletRequest httpRequest) {
         String identifier = request.getUsername() == null ? null : request.getUsername().trim();
         String normalizedEmail = identifier == null ? null : identifier.toLowerCase(Locale.ROOT);
@@ -176,6 +176,20 @@ public class AuthService {
         // Force re-login everywhere - a changed password should invalidate old sessions.
         refreshTokenRepository.revokeAllForUser(user.getId());
         auditLogService.log("User", user.getId(), "PASSWORD_CHANGE", "Password changed by user");
+    }
+
+    @Transactional
+    public void resetPassword(Long userId, String newPassword) {
+        User user = userRepository.findById(userId)
+                .filter(candidate -> !candidate.isDeleted())
+                .orElseThrow(() -> new AuthenticationFailedException("User not found"));
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
+        userRepository.save(user);
+        refreshTokenRepository.revokeAllForUser(user.getId());
+        auditLogService.log("User", user.getId(), "PASSWORD_RESET", "Password reset using recovery link");
     }
 
     private void handleFailedAttempt(User user) {

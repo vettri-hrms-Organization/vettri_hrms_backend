@@ -3,6 +3,7 @@ import com.haodaone.remotesupport.dto.RemoteSupportDTO;
 import com.haodaone.remotesupport.entity.RemoteSupportOperation;
 import com.haodaone.remotesupport.service.RemoteSupportService;
 import com.haodaone.security.CustomUserPrincipal;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -21,4 +22,8 @@ public class RemoteSupportController {
     @PostMapping("/disable") public RemoteSupportDTO.Response disable(@PathVariable Long deviceId,@AuthenticationPrincipal CustomUserPrincipal user){return service.disable(deviceId,user.getId());}
     @GetMapping public List<RemoteSupportDTO.Response> list(@PathVariable Long deviceId){return service.list(deviceId);}
     @GetMapping("/{jobId}") public RemoteSupportDTO.Response get(@PathVariable Long deviceId,@PathVariable Long jobId){return service.get(deviceId,jobId);}
+    @PostMapping("/{jobId}/credential")
+    public ResponseEntity<RemoteSupportDTO.CredentialResponse> revealCredential(@PathVariable Long deviceId, @PathVariable Long jobId) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.revealCredential(deviceId, jobId));
+    }
 }

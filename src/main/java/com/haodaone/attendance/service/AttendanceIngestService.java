@@ -17,7 +17,9 @@ import java.time.Clock;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * Speaks the eSSL/ZKTeco ADMS push protocol - same mechanics validated in
@@ -67,7 +69,7 @@ public class AttendanceIngestService {
 
     @Transactional
     public String handleHandshake(String serialNumber, String pushVersion, String remoteIp) {
-        Device device = findOrRegisterDevice(serialNumber, remoteIp);
+        Device device = findRegisteredDevice(serialNumber, remoteIp);
         if (pushVersion != null && !pushVersion.isBlank()) {
             device.setPushVersion(pushVersion);
             deviceRepository.save(device);
@@ -79,16 +81,21 @@ public class AttendanceIngestService {
                 + "Delay=10\r\nTransFlag=1111000000\r\nRealtime=1\r\nEncrypt=None\r\n";
     }
 
-    public String handleGetRequest(String serialNumber) {
+    public String handleGetRequest(String serialNumber, String remoteIp) {
+        findRegisteredDevice(serialNumber, remoteIp);
         return "OK";
+    }
+
+    public void validateRegisteredDevice(String serialNumber, String remoteIp) {
+        findRegisteredDevice(serialNumber, remoteIp);
     }
 
     @Transactional
     public int handleAttendanceLogs(String serialNumber, String body, String remoteIp) {
+        Device device = findRegisteredDevice(serialNumber, remoteIp);
         if (body == null || body.isBlank()) {
             return 0;
         }
-        Device device = findOrRegisterDevice(serialNumber, remoteIp);
 
         String[] lines = body.split("\r\n|\n|\r");
         int saved = 0;
@@ -110,13 +117,12 @@ public class AttendanceIngestService {
         return saved;
     }
 
-    private Device findOrRegisterDevice(String serialNumber, String remoteIp) {
-        Device device = deviceRepository.findBySerialNumber(serialNumber).orElseGet(() -> {
-            Device d = new Device();
-            d.setSerialNumber(serialNumber);
-            d.setDeviceName(serialNumber);
-            return d;
-        });
+    private Device findRegisteredDevice(String serialNumber, String remoteIp) {
+        Device device = deviceRepository.findBySerialNumberAndDeletedFalse(serialNumber)
+                .orElseThrow(() -> new AccessDeniedException("Biometric device is not registered"));
+        if (device.getCompany() == null || device.getCompany().getId() == null) {
+            throw new AccessDeniedException("Biometric device is not assigned to a company");
+        }
         device.setLastSeenAt(LocalDateTime.now(applicationClock));
         device.setLastIpAddress(remoteIp);
         return deviceRepository.save(device);
@@ -138,14 +144,17 @@ public class AttendanceIngestService {
             return null;
         }
 
-        Employee employee = employeeRepository.findByBiometricDeviceUserIdAndDeletedFalse(devicePin).orElse(null);
+        Employee employee = employeeRepository.findByBiometricDeviceUserIdAndDeletedFalse(devicePin)
+            .filter(candidate -> candidate.getCompany() != null
+                && Objects.equals(candidate.getCompany().getId(), device.getCompany().getId()))
+            .orElse(null);
 
         AttendanceRecord record = new AttendanceRecord();
         record.setEmployee(employee);
         record.setEmployeeName(employee != null ? employee.getFullName() : "Unmapped (PIN " + devicePin + ")");
         record.setDeviceUserId(devicePin);
         record.setPunchTime(punchTime);
-        record.setPunchType(resolvePunchType(statusCode, devicePin, punchTime));
+        record.setPunchType(resolvePunchType(device.getSerialNumber(), statusCode, devicePin, punchTime));
         record.setVerifyMode(VERIFY_MODE_LABELS.getOrDefault(verifyCode, "Unknown"));
         record.setDeviceSerialNumber(device.getSerialNumber());
         record.setDeviceName(device.getDeviceName());
@@ -156,13 +165,14 @@ public class AttendanceIngestService {
         return attendanceRecordRepository.save(record);
     }
 
-    private String resolvePunchType(String statusCode, String devicePin, LocalDateTime punchTime) {
+    private String resolvePunchType(String serialNumber, String statusCode, String devicePin, LocalDateTime punchTime) {
         if (statusCode != null && STATUS_TO_PUNCH_TYPE.containsKey(statusCode)) {
             return STATUS_TO_PUNCH_TYPE.get(statusCode);
         }
         LocalDateTime startOfDay = punchTime.toLocalDate().atStartOfDay();
         LocalDateTime endOfDay = startOfDay.plusDays(1);
-        long punchesToday = attendanceRecordRepository.countByDeviceUserIdAndPunchTimeBetween(devicePin, startOfDay, endOfDay);
+        long punchesToday = attendanceRecordRepository.countByDeviceSerialNumberAndDeviceUserIdAndPunchTimeBetween(
+            serialNumber, devicePin, startOfDay, endOfDay);
         return (punchesToday % 2 == 0) ? "IN" : "OUT";
     }
 }

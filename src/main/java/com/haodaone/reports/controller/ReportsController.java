@@ -93,7 +93,8 @@ public class ReportsController {
                 byDepartment,
                 scope.isEmpty() ? employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(30)) : employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndIdInAndDeletedFalse(companyId, now.minusDays(30), ids),
                 scope.isEmpty() ? employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndDeletedFalse(companyId, now.minusDays(90)) : employeeRepository.countByCompany_IdAndDateOfJoiningGreaterThanEqualAndIdInAndDeletedFalse(companyId, now.minusDays(90), ids),
-                employeeRepository.countSeparationsSinceForCompany(companyId, LocalDateTime.now().minusDays(90))
+                scope.isEmpty() ? employeeRepository.countSeparationsSinceForCompany(companyId, LocalDateTime.now().minusDays(90))
+                        : employeeRepository.countSeparationsSinceForCompanyAndEmployees(companyId, ids, LocalDateTime.now().minusDays(90))
         );
     }
 
@@ -128,7 +129,8 @@ public class ReportsController {
                 start, end,
                 scope.isEmpty() ? attendanceRecordRepository.countByCompany_IdAndPunchTimeBetween(companyId, startDateTime, endDateTime) : attendanceRecordRepository.countScopedByCompanyAndEmployees(companyId, employeeIds, startDateTime, endDateTime),
                 scope.isEmpty() ? attendanceRecordRepository.countDistinctEmployeesPunchedBetweenForCompany(companyId, startDateTime, endDateTime) : attendanceRecordRepository.countDistinctScopedByCompanyAndEmployees(companyId, employeeIds, startDateTime, endDateTime),
-                countStatus(companyId, EmploymentStatus.ACTIVE),
+                scope.isEmpty() ? countStatus(companyId, EmploymentStatus.ACTIVE)
+                        : employeeRepository.countByCompany_IdAndStatusInAndIdInAndDeletedFalse(companyId, EmploymentStatus.aliases(EmploymentStatus.ACTIVE), employeeIds),
                 daily,
                 byDepartment
         );
@@ -162,7 +164,7 @@ public class ReportsController {
     }
 
     @GetMapping("/recruitment")
-    @PreAuthorize("hasAuthority('REPORTS_VIEW')")
+        @PreAuthorize("hasAuthority('REPORTS_VIEW') and @authorizationService.hasOrganizationScope('REPORTS_VIEW')")
     public RecruitmentReportDTO recruitmentReport() {
         Long companyId = requiredTenant();
         Map<String, Long> byStage = new LinkedHashMap<>();

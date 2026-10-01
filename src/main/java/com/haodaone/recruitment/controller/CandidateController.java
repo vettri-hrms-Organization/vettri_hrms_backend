@@ -43,7 +43,7 @@ public class CandidateController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public List<CandidateDTO> listAll(@RequestParam(required = false) Long jobOpeningId) {
         return candidateService.listAll(jobOpeningId);
     }
@@ -65,7 +65,7 @@ public class CandidateController {
      * pulling both entity types and merging by timestamp.
      */
     @GetMapping("/{id}/timeline")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public List<AuditLog> timeline(@PathVariable Long id) {
         candidateService.getById(id); // 404s cleanly if the candidate doesn't exist, same as every other /{id} endpoint here
 
@@ -84,61 +84,61 @@ public class CandidateController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public CandidateDTO getById(@PathVariable Long id) {
         return candidateService.getById(id);
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public ResponseEntity<CandidateDTO> create(@Valid @RequestBody CandidateDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(candidateService.create(request));
     }
 
     /** HR's initial screening decision on an APPLIED candidate: shortlist, hold, or reject (with optional reason, rating, remarks). */
     @PatchMapping("/{id}/review")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO review(@PathVariable Long id, @Valid @RequestBody CandidateDTO.ReviewRequest request) {
         return candidateService.review(id, request);
     }
 
     /** Free-text recruiter notes on this candidate - see CandidateService#updateNotes for why this stays a single overwritable field rather than a note-per-entry history. */
     @PatchMapping("/{id}/notes")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO updateNotes(@PathVariable Long id, @Valid @RequestBody CandidateDTO.UpdateNotesRequest request) {
         return candidateService.updateNotes(id, request);
     }
 
     /** Round-by-round advancement (or hold/reject) once past the initial review. Also how HR records Reject/Hold after the HR interview - "Select for Manager Round" instead goes through /assign-manager below, since it needs scheduling details. */
     @PatchMapping("/{id}/advance")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO advance(@PathVariable Long id, @Valid @RequestBody CandidateDTO.AdvanceStageRequest request) {
         return candidateService.advance(id, request);
     }
 
     /** "Select for Manager Round": assigns the hiring manager + schedule, advances the candidate to ROUND2, and emails both parties. */
     @PostMapping("/{id}/assign-manager")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO assignManagerRound(@PathVariable Long id, @Valid @RequestBody CandidateDTO.AssignManagerRequest request) {
         return candidateService.assignManagerRound(id, request);
     }
 
     /** After Round 3 (final/management interview) clears. */
     @PostMapping("/{id}/generate-offer")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO generateOffer(@PathVariable Long id, @Valid @RequestBody CandidateDTO.OfferRequest request) {
         return candidateService.generateOffer(id, request);
     }
 
     /** Recorded by HR once the candidate confirms acceptance - auto-creates the employee profile and starts onboarding. */
     @PostMapping("/{id}/accept-offer")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO acceptOffer(@PathVariable Long id) {
         return candidateService.acceptOffer(id);
     }
 
     @GetMapping("/{id}/resume")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public ResponseEntity<InputStreamResource> downloadResume(@PathVariable Long id) {
         CandidateDTO candidate = candidateService.getById(id);
         InputStreamResource resource = resumeStorageService.retrieve(resumeKeyOf(id));
@@ -156,7 +156,7 @@ public class CandidateController {
      * same pattern as previewOfferLetter below, which this mirrors.
      */
     @GetMapping("/{id}/resume/preview")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public ResponseEntity<InputStreamResource> previewResume(@PathVariable Long id) {
         CandidateDTO candidate = candidateService.getById(id);
         InputStreamResource resource = resumeStorageService.retrieve(resumeKeyOf(id));
@@ -174,7 +174,7 @@ public class CandidateController {
 
     /** HR uploads (or replaces) the offer letter document once an offer has been generated. */
     @PostMapping(value = "/{id}/offer-letter", consumes = "multipart/form-data")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO uploadOfferLetter(@PathVariable Long id, @RequestPart("file") MultipartFile file) {
         return candidateService.uploadOfferLetter(id, file);
     }
@@ -185,7 +185,7 @@ public class CandidateController {
      * bytes as downloadOfferLetter, different Content-Disposition.
      */
     @GetMapping("/{id}/offer-letter/preview")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public ResponseEntity<InputStreamResource> previewOfferLetter(@PathVariable Long id) {
         CandidateDTO candidate = candidateService.getById(id);
         InputStreamResource resource = offerLetterStorageService.retrieve(candidateService.getOfferLetterKey(id));
@@ -197,7 +197,7 @@ public class CandidateController {
     }
 
     @GetMapping("/{id}/offer-letter")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public ResponseEntity<InputStreamResource> downloadOfferLetter(@PathVariable Long id) {
         CandidateDTO candidate = candidateService.getById(id);
         InputStreamResource resource = offerLetterStorageService.retrieve(candidateService.getOfferLetterKey(id));
@@ -210,7 +210,7 @@ public class CandidateController {
 
     /** Emails the uploaded offer letter to the candidate and moves the stage to OFFER_LETTER_SENT. Same endpoint covers the initial send and any later resend. */
     @PostMapping("/{id}/send-offer-letter")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public CandidateDTO sendOfferLetter(@PathVariable Long id) {
         return candidateService.sendOfferLetter(id);
     }

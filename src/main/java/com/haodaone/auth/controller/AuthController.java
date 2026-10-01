@@ -1,11 +1,14 @@
 package com.haodaone.auth.controller;
 
 import com.haodaone.auth.dto.ChangePasswordRequest;
+import com.haodaone.auth.dto.ForgotPasswordRequest;
 import com.haodaone.auth.dto.LoginRequest;
 import com.haodaone.auth.dto.LoginResponse;
+import com.haodaone.auth.dto.ResetPasswordRequest;
 import com.haodaone.auth.dto.RefreshRequest;
 import com.haodaone.auth.dto.RegisterRequest;
 import com.haodaone.auth.service.AuthService;
+import com.haodaone.auth.service.PasswordResetService;
 import com.haodaone.auth.service.RegistrationService;
 import com.haodaone.auth.service.VerificationService;
 import com.haodaone.employee.repository.EmployeeRepository;
@@ -26,19 +29,35 @@ public class AuthController {
     private final AuthService authService;
     private final RegistrationService registrationService;
     private final VerificationService verificationService;
+    private final PasswordResetService passwordResetService;
     private final EmployeeRepository employeeRepository;
 
     public AuthController(AuthService authService, RegistrationService registrationService,
-                          VerificationService verificationService, EmployeeRepository employeeRepository) {
+                          VerificationService verificationService, PasswordResetService passwordResetService,
+                          EmployeeRepository employeeRepository) {
         this.authService = authService;
         this.registrationService = registrationService;
         this.verificationService = verificationService;
+        this.passwordResetService = passwordResetService;
         this.employeeRepository = employeeRepository;
     }
 
     @GetMapping("/verify-email")
     public ResponseEntity<Map<String, String>> verifyEmail(@RequestParam(required = false) String token) {
         return ResponseEntity.ok(Map.of("status", verificationService.verify(token)));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> requestPasswordReset(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request.identifier());
+        return ResponseEntity.accepted().body(Map.of(
+                "message", "If an account matches that identifier, a reset link will be sent."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request.token(), request.password());
+        return ResponseEntity.ok(Map.of("message", "Password reset successfully."));
     }
 
     @PostMapping("/login")

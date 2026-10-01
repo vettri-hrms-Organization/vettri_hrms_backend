@@ -17,7 +17,7 @@ public class RequisitionController {
     }
 
     @PostMapping("/{id}/close")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public JobOpeningDTO close(@PathVariable Long id, @Valid @RequestBody CloseRequisitionRequest request) {
         return jobOpeningService.close(id, request);
     }

@@ -354,6 +354,17 @@ public class EmailService {
             sendSafely(toEmail, customerName, "Verify your Vettri HRMS email", body, EmailChannel.SYSTEM, null);
             }
 
+            public void sendPasswordResetEmail(String toEmail, String customerName, String rawToken, long expiryMinutes) {
+            String resetLink = applicationUrl() + "/reset-password?token="
+                + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
+            String body = brandedBody("Reset your Vettri HRMS password", "Hi " + escape(customerName) + ",",
+                "We received a request to reset your Vettri HRMS password.",
+                button("Choose a new password", resetLink)
+                    + row("Expires", "This one-time reset link expires in " + expiryMinutes + " minutes."),
+                "If you did not request this change, you can ignore this email. Your password will remain unchanged.");
+            sendSafely(toEmail, customerName, "Reset your Vettri HRMS password", body, EmailChannel.SYSTEM, null);
+            }
+
     public void sendPaymentSuccessEmail(String toEmail, String customerName, String organizationName,
                                         String plan, Integer employeeCount, String billingCycle,
                                         java.math.BigDecimal amount, String paymentDate,

@@ -10,6 +10,8 @@ import com.haodaone.recruitment.entity.Candidate;
 import com.haodaone.recruitment.entity.Interview;
 import com.haodaone.recruitment.repository.CandidateRepository;
 import com.haodaone.recruitment.repository.InterviewRepository;
+import com.haodaone.security.AuthorizationService;
+import com.haodaone.tenant.TenantContext;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -34,15 +36,17 @@ public class InterviewService {
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
     private final EmailService emailService;
+    private final AuthorizationService authorizationService;
 
     public InterviewService(InterviewRepository interviewRepository, CandidateRepository candidateRepository,
                              EmployeeRepository employeeRepository, AuditLogService auditLogService,
-                             EmailService emailService) {
+                             EmailService emailService, AuthorizationService authorizationService) {
         this.interviewRepository = interviewRepository;
         this.candidateRepository = candidateRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
         this.emailService = emailService;
+        this.authorizationService = authorizationService;
     }
 
     /**
@@ -53,7 +57,8 @@ public class InterviewService {
      */
     @Transactional(readOnly = true)
     public List<InterviewDTO> byCandidate(Long candidateId) {
-        return interviewRepository.findAllByCandidateIdAndDeletedFalseOrderByScheduledAtDesc(candidateId).stream()
+        Long companyId = requiredTenant();
+        return interviewRepository.findAllByCandidate_IdAndCandidate_JobOpening_Company_IdAndDeletedFalseOrderByScheduledAtDesc(candidateId, companyId).stream()
                 .map(InterviewDTO::from)
                 .toList();
     }
@@ -61,7 +66,7 @@ public class InterviewService {
     /** Same lazy-relation issue as byCandidate() above. */
     @Transactional(readOnly = true)
     public List<InterviewDTO> upcoming() {
-        return interviewRepository.findAllByStatusOrderByScheduledAtAsc("SCHEDULED").stream()
+        return interviewRepository.findAllByStatusAndCandidate_JobOpening_Company_IdAndDeletedFalseOrderByScheduledAtAsc("SCHEDULED", requiredTenant()).stream()
                 .map(InterviewDTO::from)
                 .toList();
     }
@@ -79,7 +84,11 @@ public class InterviewService {
     public List<InterviewDTO> myInterviews() {
         Employee me = currentEmployee()
                 .orElseThrow(() -> new BadRequestException("Your account isn't linked to an employee profile, so you have no assigned interviews."));
-        return interviewRepository.findAllByInterviewer_IdAndDeletedFalseOrderByScheduledAtDesc(me.getId()).stream()
+        Long companyId = requiredTenant();
+        if (me.getCompany() == null || !companyId.equals(me.getCompany().getId())) {
+            throw new ResourceNotFoundException("Employee not found in current company");
+        }
+        return interviewRepository.findAllByInterviewer_IdAndCandidate_JobOpening_Company_IdAndDeletedFalseOrderByScheduledAtDesc(me.getId(), companyId).stream()
                 .map(InterviewDTO::fromWithCandidateContext)
                 .toList();
     }
@@ -94,8 +103,7 @@ public class InterviewService {
      */
     @Transactional(readOnly = true)
     public void resendInvite(Long id, boolean toManager, boolean toCandidate) {
-        Interview interview = interviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview not found: " + id));
+        Interview interview = findForCurrentCompany(id);
 
         if (interview.getMeetingLink() == null || interview.getMeetingLink().isBlank()) {
             throw new BadRequestException("This interview has no Google Meet link on file to resend.");
@@ -133,8 +141,9 @@ public class InterviewService {
      */
     @Transactional
     public InterviewDTO schedule(InterviewDTO.CreateRequest request) {
-        Candidate candidate = candidateRepository.findById(request.getCandidateId())
-                .orElseThrow(() -> new BadRequestException("Unknown candidate: " + request.getCandidateId()));
+        Long companyId = requiredTenant();
+        Candidate candidate = candidateRepository.findByIdAndJobOpening_Company_IdAndDeletedFalse(request.getCandidateId(), companyId)
+            .orElseThrow(() -> new BadRequestException("Unknown candidate: " + request.getCandidateId()));
 
         String requiredStage = ROUND_STAGE.get(request.getRoundNumber());
         if (requiredStage == null) {
@@ -154,7 +163,7 @@ public class InterviewService {
         interview.setStatus("SCHEDULED");
 
         if (request.getInterviewerId() != null) {
-            Employee interviewer = employeeRepository.findById(request.getInterviewerId())
+            Employee interviewer = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getInterviewerId(), companyId)
                     .orElseThrow(() -> new BadRequestException("Unknown interviewer: " + request.getInterviewerId()));
             interview.setInterviewer(interviewer);
         }
@@ -167,8 +176,7 @@ public class InterviewService {
 
     @Transactional
     public InterviewDTO submitFeedback(Long id, InterviewDTO.FeedbackRequest request) {
-        Interview interview = interviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview not found: " + id));
+        Interview interview = findForCurrentCompany(id);
 
         interview.setRating(request.getRating());
         interview.setFeedback(request.getFeedback());
@@ -202,8 +210,7 @@ public class InterviewService {
      */
     @Transactional
     public InterviewDTO submitDecision(Long id, InterviewDTO.DecisionRequest request) {
-        Interview interview = interviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview not found: " + id));
+        Interview interview = findForCurrentCompany(id);
 
         if (interview.getRoundNumber() != 2 && interview.getRoundNumber() != 3) {
             throw new BadRequestException("Only manager-round (2) and final-round (3) interviews take a decision here - use the feedback endpoint for round 1.");
@@ -251,7 +258,7 @@ public class InterviewService {
         boolean hasFullManageAuthority = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch("RECRUITMENT_MANAGE"::equals);
-        if (hasFullManageAuthority) {
+        if (hasFullManageAuthority && authorizationService.hasOrganizationScope("RECRUITMENT_MANAGE")) {
             return;
         }
         Employee me = currentEmployee().orElse(null);
@@ -268,5 +275,16 @@ public class InterviewService {
             return Optional.empty();
         }
         return employeeRepository.findByUser_UsernameAndDeletedFalse(authentication.getName());
+    }
+
+    private Interview findForCurrentCompany(Long id) {
+        return interviewRepository.findByIdAndCandidate_JobOpening_Company_IdAndDeletedFalse(id, requiredTenant())
+                .orElseThrow(() -> new ResourceNotFoundException("Interview not found: " + id));
+    }
+
+    private Long requiredTenant() {
+        Long companyId = TenantContext.getCurrentTenant();
+        if (companyId == null) throw new BadRequestException("Company context is required");
+        return companyId;
     }
 }

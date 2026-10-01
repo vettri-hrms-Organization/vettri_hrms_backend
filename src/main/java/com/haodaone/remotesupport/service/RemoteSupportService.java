@@ -23,16 +23,29 @@ public class RemoteSupportService {
     private final RustDeskConfiguration rustDesk;
     public RemoteSupportService(RemoteSupportJobRepository jobs, MonitoredDeviceRepository devices, RemoteSupportCredentialService credentials, AuditLogService audit, RustDeskConfiguration rustDesk) { this.jobs=jobs; this.devices=devices; this.credentials=credentials; this.audit=audit; this.rustDesk=rustDesk; }
     @Transactional public RemoteSupportDTO.Response request(Long deviceId, RemoteSupportOperation operation, Long userId) {
+        if (operation == RemoteSupportOperation.DISABLE) {
+            throw new BadRequestException("Remote support disable is not supported by the current RustDesk automation adapter");
+        }
         Long companyId=tenant(); MonitoredDevice device=devices.findByIdAndCompany_IdAndDeletedFalse(deviceId,companyId).orElseThrow(() -> new ResourceNotFoundException("Device not found in current company: "+deviceId));
         if (!device.isOnline()) throw new BadRequestException("The selected device is offline");
         if (operation != RemoteSupportOperation.DETECT && credentials.isConfigured()) {
             credentials.store(device.getCompany(), deviceId, credentials.generate(), RemoteSupportStatus.QUEUED);
         }
         RemoteSupportJob job=new RemoteSupportJob(); job.setCompany(device.getCompany()); job.setDevice(device); job.setRequestedBy(userId); job.setOperation(operation); job.setStatus(RemoteSupportStatus.JOB_CREATED); job.setCorrelationId(UUID.randomUUID().toString()); RemoteSupportJob saved=jobs.save(job);
-        audit.log("RemoteSupportJob",saved.getId(),"REQUEST","Remote support "+operation+" requested for device '"+device.getDeviceName()+"'"); return RemoteSupportDTO.Response.from(saved, null);
+        audit.log("RemoteSupportJob",saved.getId(),"REQUEST","Remote support "+operation+" requested for device '"+device.getDeviceName()+"'"); return RemoteSupportDTO.Response.from(saved);
     }
-    @Transactional(readOnly=true) public List<RemoteSupportDTO.Response> list(Long deviceId){ ensure(deviceId); return jobs.findByCompany_IdAndDevice_IdAndDeletedFalseOrderByCreatedAtDesc(tenant(),deviceId).stream().map(job -> RemoteSupportDTO.Response.from(job, decryptPasswordForJob(job))).toList(); }
-    @Transactional(readOnly=true) public RemoteSupportDTO.Response get(Long deviceId,Long jobId){ RemoteSupportJob job=find(jobId,deviceId); return RemoteSupportDTO.Response.from(job, decryptPasswordForJob(job)); }
+    @Transactional(readOnly=true) public List<RemoteSupportDTO.Response> list(Long deviceId){ ensure(deviceId); return jobs.findByCompany_IdAndDevice_IdAndDeletedFalseOrderByCreatedAtDesc(tenant(),deviceId).stream().map(RemoteSupportDTO.Response::from).toList(); }
+    @Transactional(readOnly=true) public RemoteSupportDTO.Response get(Long deviceId,Long jobId){ return RemoteSupportDTO.Response.from(find(jobId,deviceId)); }
+    @Transactional public RemoteSupportDTO.CredentialResponse revealCredential(Long deviceId, Long jobId) {
+        RemoteSupportJob job = find(jobId, deviceId);
+        if (job.getStatus() != RemoteSupportStatus.READY
+                || (job.getOperation() != RemoteSupportOperation.CONFIGURE && job.getOperation() != RemoteSupportOperation.ROTATE)
+                || !credentials.isConfigured()) {
+            throw new BadRequestException("A ready remote-support credential is not available for this job");
+        }
+        audit.log("RemoteSupportJob", jobId, "CREDENTIAL_REVEALED", "Remote support credential explicitly revealed");
+        return new RemoteSupportDTO.CredentialResponse(credentials.decryptForAgent(deviceId));
+    }
     @Transactional(readOnly=true) public List<RemoteSupportDTO.AgentJob> agentJobs(MonitoredDevice device){ if(device==null||device.getId()==null)return List.of(); return jobs.findByDevice_IdAndStatusInAndDeletedFalseOrderByCreatedAtAsc(device.getId(), List.of(RemoteSupportStatus.QUEUED, RemoteSupportStatus.JOB_CREATED)).stream().map(job -> {
         String password = null;
         if ((job.getOperation()==RemoteSupportOperation.CONFIGURE || job.getOperation()==RemoteSupportOperation.ROTATE) && credentials.isConfigured()) {
@@ -78,17 +91,6 @@ public class RemoteSupportService {
     @Transactional public RemoteSupportDTO.Response disable(Long deviceId,Long userId){ return request(deviceId,RemoteSupportOperation.DISABLE,userId); }
     private RemoteSupportJob find(Long id,Long deviceId){return jobs.findByIdAndCompany_IdAndDevice_IdAndDeletedFalse(id,tenant(),deviceId).orElseThrow(()->new ResourceNotFoundException("Remote support job not found"));}
     private void ensure(Long id){devices.findByIdAndCompany_IdAndDeletedFalse(id,tenant()).orElseThrow(()->new ResourceNotFoundException("Device not found"));}
-    private String decryptPasswordForJob(RemoteSupportJob job){
-        if (job == null || job.getDevice() == null || job.getDevice().getId() == null) return null;
-        if ((job.getOperation() == RemoteSupportOperation.CONFIGURE || job.getOperation() == RemoteSupportOperation.ROTATE) && credentials.isConfigured()) {
-            try {
-                return credentials.decryptForAgent(job.getDevice().getId());
-            } catch (Exception ex) {
-                return null;
-            }
-        }
-        return null;
-    }
     private Long tenant(){Long id=TenantContext.getCurrentTenant();if(id==null)throw new BadRequestException("Company context is required");return id;}
     private String limit(String v,int max){return v==null?null:v.length()<=max?v:v.substring(0,max);}
 }

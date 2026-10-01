@@ -22,31 +22,31 @@ public class JobOpeningController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public List<JobOpeningDTO> listAll() {
         return jobOpeningService.listAll();
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public ResponseEntity<JobOpeningDTO> create(@Valid @RequestBody JobOpeningDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(jobOpeningService.create(request));
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public JobOpeningDTO setStatus(@PathVariable Long id, @RequestBody Map<String, String> body) {
         return jobOpeningService.setStatus(id, body.get("status"));
     }
 
     @PostMapping("/{id}/close")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public JobOpeningDTO close(@PathVariable Long id, @Valid @RequestBody CloseRequisitionRequest request) {
         return jobOpeningService.close(id, request);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         jobOpeningService.delete(id);
         return ResponseEntity.noContent().build();

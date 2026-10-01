@@ -1,10 +1,16 @@
 package com.haodaone.attendance.dto;
 
 import com.haodaone.attendance.entity.Device;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
 public class DeviceDTO {
+    public record RegisterRequest(
+            @NotBlank @Size(max = 50) String serialNumber,
+            @NotBlank @Size(max = 100) String deviceName) { }
+
     private Long id;
     private String serialNumber;
     private String deviceName;

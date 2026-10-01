@@ -20,13 +20,13 @@ public class InterviewController {
     }
 
     @GetMapping("/candidate/{candidateId}")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public List<InterviewDTO> byCandidate(@PathVariable Long candidateId) {
         return interviewService.byCandidate(candidateId);
     }
 
     @GetMapping("/upcoming")
-    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
     public List<InterviewDTO> upcoming() {
         return interviewService.upcoming();
     }
@@ -38,20 +38,20 @@ public class InterviewController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public ResponseEntity<InterviewDTO> schedule(@Valid @RequestBody InterviewDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(interviewService.schedule(request));
     }
 
     @PatchMapping("/{id}/feedback")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public InterviewDTO submitFeedback(@PathVariable Long id, @Valid @RequestBody InterviewDTO.FeedbackRequest request) {
         return interviewService.submitFeedback(id, request);
     }
 
     /** Re-sends the manager/candidate assignment emails for an already-scheduled interview - see the "Resend Invite" button on the candidate detail view. */
     @PostMapping("/{id}/resend-invite")
-    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE')")
+    @PreAuthorize("hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')")
     public ResponseEntity<Void> resendInvite(@PathVariable Long id, @RequestBody(required = false) InterviewDTO.ResendInviteRequest request) {
         InterviewDTO.ResendInviteRequest body = request != null ? request : new InterviewDTO.ResendInviteRequest();
         interviewService.resendInvite(id, body.isToManager(), body.isToCandidate());
@@ -66,7 +66,7 @@ public class InterviewController {
      * restricts them to interviews they're actually assigned to.
      */
     @PatchMapping("/{id}/decision")
-    @PreAuthorize("hasAnyAuthority('RECRUITMENT_MANAGE', 'INTERVIEW_DECISION')")
+    @PreAuthorize("(hasAuthority('RECRUITMENT_MANAGE') and @authorizationService.hasOrganizationScope('RECRUITMENT_MANAGE')) or hasAuthority('INTERVIEW_DECISION')")
     public InterviewDTO submitDecision(@PathVariable Long id, @Valid @RequestBody InterviewDTO.DecisionRequest request) {
         return interviewService.submitDecision(id, request);
     }
