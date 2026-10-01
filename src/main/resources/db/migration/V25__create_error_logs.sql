@@ -13,14 +13,115 @@ CREATE TABLE IF NOT EXISTS error_logs (
     created_at TIMESTAMP(6) WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS error_type VARCHAR(255);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS stack_trace TEXT;
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS request_uri VARCHAR(1000);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS request_method VARCHAR(20);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS username VARCHAR(150);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS company_id BIGINT;
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS http_status INTEGER;
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS source VARCHAR(500);
-ALTER TABLE error_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP(6) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'error_type'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN error_type VARCHAR(255);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'error_message'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN error_message TEXT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'stack_trace'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN stack_trace TEXT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'request_uri'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN request_uri VARCHAR(1000);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'request_method'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN request_method VARCHAR(20);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'username'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN username VARCHAR(150);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'ip_address'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN ip_address VARCHAR(64);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'company_id'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN company_id BIGINT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'http_status'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN http_status INTEGER;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'source'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN source VARCHAR(500);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'error_logs'
+          AND column_name = 'created_at'
+    ) THEN
+        ALTER TABLE public.error_logs ADD COLUMN created_at TIMESTAMP(6) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+END $$;
