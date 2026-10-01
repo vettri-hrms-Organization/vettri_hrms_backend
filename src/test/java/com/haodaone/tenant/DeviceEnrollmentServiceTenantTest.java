@@ -1,6 +1,7 @@
 package com.haodaone.tenant;
 
 import com.haodaone.audit.service.AuditLogService;
+import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
@@ -16,6 +17,7 @@ import org.mockito.Mockito;
 import java.util.List;
 
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class DeviceEnrollmentServiceTenantTest {
 
@@ -52,12 +54,11 @@ public class DeviceEnrollmentServiceTenantTest {
     }
 
     @Test
-    void listAll_usesGlobalRepoWhenNoTenantContext() {
+    void listAll_requiresTenantContext() {
         TenantContext.clear();
-        when(deviceRepository.findAllByDeletedFalseOrderByDeviceNameAsc()).thenReturn(List.of());
 
-        deviceEnrollmentService.listAll();
+        assertThrows(BadRequestException.class, () -> deviceEnrollmentService.listAll());
 
-        verify(deviceRepository, times(1)).findAllByDeletedFalseOrderByDeviceNameAsc();
+        verifyNoInteractions(deviceRepository);
     }
 }

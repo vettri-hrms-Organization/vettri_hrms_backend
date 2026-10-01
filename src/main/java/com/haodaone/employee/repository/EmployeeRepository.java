@@ -191,8 +191,6 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     @EntityGraph(attributePaths = {"department", "designation", "reportingManager"})
     Page<Employee> searchPagedByDepartmentForCompany(@Param("companyId") Long companyId, @Param("term") String term, @Param("departmentId") Long departmentId, Pageable pageable);
 
-    /** Highest numeric suffix currently in use for employee codes with the given prefix - used to generate the next code. */
-    @Query(value = "select coalesce(max(cast(substring(e.employee_id, :prefixLength + 1) as integer)), 0) " +
-            "from employee e where e.employee_id like concat(:prefix, '%')", nativeQuery = true)
-    Integer findMaxEmployeeCodeSuffix(@Param("prefix") String prefix, @Param("prefixLength") int prefixLength);
+    @Query("select e.employeeCode from Employee e where e.employeeCode like concat(:prefix, '%')")
+    List<String> findEmployeeCodesByPrefix(@Param("prefix") String prefix);
 }

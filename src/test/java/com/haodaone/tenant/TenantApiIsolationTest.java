@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.transaction.TestTransaction;
 
 import java.util.List;
 import java.util.Set;
@@ -69,24 +70,27 @@ public class TenantApiIsolationTest {
         // Create companies
         Company a = new Company();
         a.setName("Company A");
-        companyRepository.save(a);
+        a = companyRepository.save(a);
 
         Company b = new Company();
         b.setName("Company B");
-        companyRepository.save(b);
+        b = companyRepository.save(b);
 
         // Permission + Role
-        Permission p = new Permission();
-        p.setCode("MONITORING_VIEW");
-        p.setDescription("View monitored devices");
-        p.setModule("MONITORING");
-        permissionRepository.save(p);
+        Permission p = permissionRepository.findByCode("MONITORING_VIEW")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("MONITORING_VIEW");
+                permission.setDescription("View monitored devices");
+                permission.setModule("MONITORING");
+                return permissionRepository.save(permission);
+            });
 
         Role r = new Role();
         r.setName("MONITORING_VIEWER");
         r.setLabel("Monitoring Viewer");
         r.setPermissions(Set.of(p));
-        roleRepository.save(r);
+        r = roleRepository.save(r);
 
         // Users
         User userA = new User();
@@ -96,7 +100,7 @@ public class TenantApiIsolationTest {
         userA.setPasswordHash(passwordEncoder.encode("password"));
         userA.setRoles(Set.of(r));
         userA.setCompany(a);
-        userRepository.save(userA);
+        userA = userRepository.save(userA);
 
         User userB = new User();
         userB.setUsername("userB@example.com");
@@ -105,8 +109,8 @@ public class TenantApiIsolationTest {
         userB.setPasswordHash(passwordEncoder.encode("password"));
         userB.setRoles(Set.of(r));
         userB.setCompany(b);
-        userRepository.save(userB);
-
+        userB = userRepository.save(userB);
+        userRepository.flush();
         // Device under company B
         MonitoredDevice deviceB = new MonitoredDevice();
         deviceB.setDeviceId("dev-b-1");
@@ -114,11 +118,14 @@ public class TenantApiIsolationTest {
         deviceB.setAgentTokenHash("hash-b-1");
         deviceB.setCompany(b);
         deviceB.setActive(true);
-        deviceRepository.save(deviceB);
+        deviceB = deviceRepository.save(deviceB);
 
         // Generate access tokens
         String tokenA = jwtService.generateAccessToken(userA.getUsername(), List.of(r.getName()));
         String tokenB = jwtService.generateAccessToken(userB.getUsername(), List.of(r.getName()));
+        deviceRepository.flush();
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
 
         // Company A user should be forbidden from viewing company B's device
         mockMvc.perform(get("/api/monitoring/devices/" + deviceB.getId())
