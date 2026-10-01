@@ -139,4 +139,62 @@ public class TenantApiIsolationTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    public void requirementsApi_requiresViewPermission() throws Exception {
+        Company company = new Company();
+        company.setName("Requirements API Company");
+        company = companyRepository.save(company);
+
+        Permission requirementView = permissionRepository.findByCode("REQUIREMENT_VIEW")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("REQUIREMENT_VIEW");
+                permission.setDescription("View business requirements");
+                permission.setModule("Requirements");
+                return permissionRepository.save(permission);
+            });
+
+        String suffix = java.util.UUID.randomUUID().toString();
+        Role employeeRole = new Role();
+        employeeRole.setName("REQUIREMENTS_EMPLOYEE_" + suffix);
+        employeeRole.setLabel("Employee");
+        employeeRole.setPermissions(Set.of());
+        employeeRole = roleRepository.save(employeeRole);
+
+        Role hrRole = new Role();
+        hrRole.setName("REQUIREMENTS_HR_" + suffix);
+        hrRole.setLabel("HR");
+        hrRole.setPermissions(Set.of(requirementView));
+        hrRole = roleRepository.save(hrRole);
+
+        User employee = createApiUser("requirements-employee-" + suffix, employeeRole, company);
+        User hr = createApiUser("requirements-hr-" + suffix, hrRole, company);
+        String employeeToken = jwtService.generateAccessToken(employee.getUsername(), List.of(employeeRole.getName()));
+        String hrToken = jwtService.generateAccessToken(hr.getUsername(), List.of(hrRole.getName()));
+        userRepository.flush();
+        TestTransaction.flagForCommit();
+        TestTransaction.end();
+
+        mockMvc.perform(get("/api/requirements")
+                        .header("Authorization", "Bearer " + employeeToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/requirements")
+                        .header("Authorization", "Bearer " + hrToken)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+    }
+
+    private User createApiUser(String username, Role role, Company company) {
+        User user = new User();
+        user.setUsername(username);
+        user.setEmail(username + "@example.com");
+        user.setFullName(username);
+        user.setPasswordHash(passwordEncoder.encode("password"));
+        user.setRoles(Set.of(role));
+        user.setCompany(company);
+        return userRepository.save(user);
+    }
 }

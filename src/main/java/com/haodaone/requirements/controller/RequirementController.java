@@ -16,7 +16,7 @@ import java.util.List;
 public class RequirementController {
     private final RequirementService service;
     public RequirementController(RequirementService service) { this.service = service; }
-    @GetMapping @PreAuthorize("isAuthenticated()") public List<RequirementDTO> list(@RequestParam(required = false) RequirementStatus status) { return service.list(status); }
+    @GetMapping @PreAuthorize("hasAuthority('REQUIREMENT_VIEW')") public List<RequirementDTO> list(@RequestParam(required = false) RequirementStatus status) { return service.list(status); }
     @PostMapping @PreAuthorize("hasAuthority('REQUIREMENT_MANAGE')") public ResponseEntity<RequirementDTO> create(@Valid @RequestBody RequirementDTO.WriteRequest request, @AuthenticationPrincipal CustomUserPrincipal principal) { return ResponseEntity.status(201).body(service.create(request, principal)); }
     @PutMapping("/{id}") @PreAuthorize("hasAuthority('REQUIREMENT_MANAGE')") public RequirementDTO update(@PathVariable Long id, @Valid @RequestBody RequirementDTO.WriteRequest request) { return service.update(id, request); }
     @PatchMapping("/{id}/status") @PreAuthorize("hasAuthority('REQUIREMENT_MANAGE')") public RequirementDTO status(@PathVariable Long id, @RequestBody RequirementDTO.StatusRequest request, @AuthenticationPrincipal CustomUserPrincipal principal) { return service.changeStatus(id, request, principal.getUser()); }
