@@ -103,4 +103,24 @@ public class UserRoleAssignmentPolicyTest {
 
         assertThrows(AccessDeniedException.class, () -> userService.assignRoles(80L, Set.of("SUPER_ADMIN")));
     }
+
+    @Test
+    void userCannotAssignRolesToTheirOwnAccount() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("self", null, "ROLE_COMPANY_ADMIN"));
+        TenantContext.setCurrentTenant(7L);
+
+        Company company = new Company();
+        company.setId(7L);
+        User self = new User();
+        self.setId(80L);
+        self.setUsername("self");
+        self.setCompany(company);
+        self.setActive(true);
+        self.setAccountStatus("ACTIVE");
+
+        when(userRepository.findByIdAndCompanyIdAndDeletedFalse(80L, 7L)).thenReturn(Optional.of(self));
+        when(userRepository.findByUsernameAndDeletedFalse("self")).thenReturn(Optional.of(self));
+
+        assertThrows(AccessDeniedException.class, () -> userService.assignRoles(80L, Set.of("IT_ADMINISTRATOR")));
+    }
 }

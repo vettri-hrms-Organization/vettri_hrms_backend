@@ -9,6 +9,8 @@ import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.security.JwtService;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
@@ -96,6 +98,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         r.setName("EMP_VIEWER");
         r.setLabel("Employee Viewer");
         r.setPermissions(Set.of(p));
+        r.setPermissionScopes(Set.of(scope(r, p)));
         r = roleRepository.save(r);
 
         User userA = new User();
@@ -170,6 +173,7 @@ public class EmployeeAndAttendanceApiIsolationTest {
         r.setName("ATT_VIEWER");
         r.setLabel("Attendance Viewer");
         r.setPermissions(Set.of(p));
+        r.setPermissionScopes(Set.of(scope(r, p)));
         r = roleRepository.save(r);
 
         User userA = new User();
@@ -229,6 +233,14 @@ public class EmployeeAndAttendanceApiIsolationTest {
                         .header("Authorization", "Bearer " + tokenB)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
+    }
+
+    private RolePermissionScope scope(Role role, Permission permission) {
+        RolePermissionScope scope = new RolePermissionScope();
+        scope.setRole(role);
+        scope.setPermission(permission);
+        scope.setScope(PermissionScope.ORGANIZATION);
+        return scope;
     }
 
     @Test

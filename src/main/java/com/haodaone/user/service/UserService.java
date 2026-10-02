@@ -114,6 +114,15 @@ public class UserService {
     @Transactional
     public UserDTO assignRoles(Long id, Set<String> roleNames) {
         User user = findActiveOrThrow(id);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null) {
+            userRepository.findByUsernameAndDeletedFalse(authentication.getName())
+                    .or(() -> userRepository.findByEmailIgnoreCaseAndDeletedFalse(authentication.getName()))
+                    .filter(actor -> actor.getId().equals(user.getId()))
+                    .ifPresent(actor -> {
+                        throw new AccessDeniedException("Users cannot change their own roles.");
+                    });
+        }
         validateRequestedRoles(roleNames);
         Set<Role> roles = new HashSet<>();
         Long companyId = requiredTenant();

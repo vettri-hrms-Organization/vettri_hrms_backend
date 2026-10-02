@@ -9,6 +9,7 @@ import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.MessageDigest;
@@ -73,6 +74,7 @@ public class DeviceEnrollmentService {
      */
     @Transactional
     public MonitoredDeviceDTO.EnrollResponse enroll(MonitoredDeviceDTO.EnrollRequest request) {
+        requireManageScope(request.getEmployeeId());
         MonitoredDevice device = new MonitoredDevice();
         device.setDeviceName(request.getDeviceName());
         device.setDeviceId("PENDING-" + java.util.UUID.randomUUID());
@@ -125,6 +127,7 @@ public class DeviceEnrollmentService {
         MonitoredDevice device = findOrThrow(id);
 
         if (request.getEmployeeId() != null) {
+            requireManageScope(request.getEmployeeId());
             Employee employee = findEmployeeInTenant(request.getEmployeeId())
                     .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
             device.setEmployee(employee);
@@ -205,6 +208,15 @@ public class DeviceEnrollmentService {
         return tenantId == null
                 ? employeeRepository.findById(employeeId)
                 : employeeRepository.findByIdAndCompany_IdAndDeletedFalse(employeeId, tenantId);
+    }
+
+    private void requireManageScope(Long employeeId) {
+        boolean allowed = employeeId == null
+                ? authorizationService.hasOrganizationScope("MONITORING_MANAGE")
+                : authorizationService.isAllowed("MONITORING_MANAGE", "EMPLOYEE", employeeId);
+        if (!allowed) {
+            throw new AccessDeniedException("The requested device assignment is outside your monitoring scope.");
+        }
     }
 
     private String generateRawToken() {

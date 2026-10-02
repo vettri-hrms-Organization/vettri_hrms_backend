@@ -8,6 +8,8 @@ import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import com.haodaone.security.JwtService;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
@@ -85,11 +87,20 @@ public class TenantApiIsolationTest {
                 permission.setModule("MONITORING");
                 return permissionRepository.save(permission);
             });
+        Permission itManagementAccess = permissionRepository.findByCode("IT_MANAGEMENT_ACCESS")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("IT_MANAGEMENT_ACCESS");
+                permission.setDescription("Access IT Management");
+                permission.setModule("IT Management");
+                return permissionRepository.save(permission);
+            });
 
         Role r = new Role();
         r.setName("MONITORING_VIEWER");
         r.setLabel("Monitoring Viewer");
-        r.setPermissions(Set.of(p));
+        r.setPermissions(Set.of(p, itManagementAccess));
+        r.setPermissionScopes(Set.of(scope(r, p), scope(r, itManagementAccess)));
         r = roleRepository.save(r);
 
         // Users
@@ -138,6 +149,14 @@ public class TenantApiIsolationTest {
                         .header("Authorization", "Bearer " + tokenB)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
+    }
+
+    private RolePermissionScope scope(Role role, Permission permission) {
+        RolePermissionScope scope = new RolePermissionScope();
+        scope.setRole(role);
+        scope.setPermission(permission);
+        scope.setScope(PermissionScope.ORGANIZATION);
+        return scope;
     }
 
     @Test

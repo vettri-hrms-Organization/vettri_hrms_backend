@@ -87,7 +87,11 @@ public class MonitoringQueryService {
                     "Monitored device not found: " + deviceId
             );
         }
-        if (device.get().getEmployee() != null && !authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", device.get().getEmployee().getId())) {
+        if (device.get().getEmployee() == null) {
+            if (!authorizationService.hasOrganizationScope("MONITORING_VIEW")) {
+                return Page.empty(createPageable(page, size));
+            }
+        } else if (!authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", device.get().getEmployee().getId())) {
             return Page.empty(createPageable(page, size));
         }
 

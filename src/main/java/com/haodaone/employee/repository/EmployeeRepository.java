@@ -25,6 +25,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.reportingManager.id = :managerId")
     List<Long> findIdsByCompanyAndReportingManager(@Param("companyId") Long companyId, @Param("managerId") Long managerId);
 
+    @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.team.id = :teamId")
+    List<Long> findIdsByCompanyAndTeam(@Param("companyId") Long companyId, @Param("teamId") Long teamId);
+
     @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.department.id = :departmentId")
     List<Long> findIdsByCompanyAndDepartment(@Param("companyId") Long companyId, @Param("departmentId") Long departmentId);
 

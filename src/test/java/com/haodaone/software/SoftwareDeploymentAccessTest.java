@@ -11,6 +11,8 @@ import com.haodaone.software.repository.SoftwarePackageRepository;
 import com.haodaone.software.repository.SoftwareVersionRepository;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
@@ -81,11 +83,20 @@ public class SoftwareDeploymentAccessTest {
                 permission.setModule("Software");
                 return permissionRepository.save(permission);
             });
+        Permission itManagementAccess = permissionRepository.findByCode("IT_MANAGEMENT_ACCESS")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("IT_MANAGEMENT_ACCESS");
+                permission.setDescription("Access IT Management");
+                permission.setModule("IT Management");
+                return permissionRepository.save(permission);
+            });
 
         Role adminRole = new Role();
         adminRole.setName("SOFTWARE_ADMIN");
         adminRole.setLabel("Software Admin");
-        adminRole.setPermissions(Set.of(softwareDeploy));
+        adminRole.setPermissions(Set.of(softwareDeploy, itManagementAccess));
+        adminRole.setPermissionScopes(Set.of(scope(adminRole, softwareDeploy), scope(adminRole, itManagementAccess)));
         adminRole = roleRepository.save(adminRole);
 
         User admin = new User();
@@ -123,6 +134,14 @@ public class SoftwareDeploymentAccessTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"softwareVersionId\":" + version.getId() + ",\"targetDeviceIds\":[" + device.getId() + "]}"))
                     .andExpect(status().isCreated());
+    }
+
+    private RolePermissionScope scope(Role role, Permission permission) {
+        RolePermissionScope scope = new RolePermissionScope();
+        scope.setRole(role);
+        scope.setPermission(permission);
+        scope.setScope(PermissionScope.ORGANIZATION);
+        return scope;
     }
 
     @Test

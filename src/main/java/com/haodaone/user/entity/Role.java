@@ -25,7 +25,7 @@ public class Role extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String label;
 
-    /** System-defined roles (SUPER_ADMIN, HR_ADMIN, MANAGER, EMPLOYEE) can't be deleted or renamed from the UI. */
+    /** System-defined platform roles can't be deleted or modified from the UI. */
     @Column(name = "system_defined", nullable = false)
     private boolean systemDefined = false;
 

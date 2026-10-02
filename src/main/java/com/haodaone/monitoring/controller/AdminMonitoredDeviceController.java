@@ -19,7 +19,7 @@ public class AdminMonitoredDeviceController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#id) or @companySecurity.isSuperAdmin())")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#id) or @companySecurity.isSuperAdmin())")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         deviceEnrollmentService.deleteDevice(id);
         return ResponseEntity.noContent().build();

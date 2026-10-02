@@ -75,8 +75,7 @@ public class DataSeeder implements CommandLineRunner {
                         "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
-                    "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW", "MONITORING_VIEW",
-                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
+                    "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",
                     "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                     "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         // Company Admin - company-scoped administrative role. Permissions are the same
@@ -89,23 +88,45 @@ public class DataSeeder implements CommandLineRunner {
                         "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                     "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW", "MONITORING_VIEW", "MONITORING_MANAGE",
+                    "IT_MANAGEMENT_ACCESS",
                     "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
                     "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                     "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
                 permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
-                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "MONITORING_VIEW",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                         "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         Role employee = seedRole("EMPLOYEE", "Baseline self-service access", permissionsByCode(
             "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
             "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+        Role hrExecutive = seedRole("HR_EXECUTIVE", "HR operations without role administration, payroll management, or IT access",
+                permissionsByCode("EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
+                        "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
+                        "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                        "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+        Role hrCoordinator = seedRole("HR_COORDINATOR", "Basic HR coordination without approval, role administration, or IT access",
+                permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_VIEW", "RECRUITMENT_VIEW",
+                        "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+        Role departmentManager = seedRole("DEPARTMENT_MANAGER", "Department-scoped people and workflow management",
+                permissionsByCode("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE",
+                        "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                        "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+        Role itAdministrator = seedRole("IT_ADMINISTRATOR", "IT operations without remote support or biometric administration",
+                permissionsByCode("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "SOFTWARE_VIEW", "SOFTWARE_MANAGE"));
 
         syncRoleScopes(superAdmin, PermissionScope.ORGANIZATION);
         syncRoleScopes(employee, PermissionScope.SELF);
         syncRoleScopes(roleRepository.findByName("MANAGER").orElseThrow(), PermissionScope.TEAM);
         syncRoleScopes(roleRepository.findByName("HR_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
         syncRoleScopes(roleRepository.findByName("COMPANY_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
+        syncRoleScopes(hrExecutive, PermissionScope.ORGANIZATION);
+        syncRoleScopes(hrCoordinator, PermissionScope.ORGANIZATION);
+        syncRoleScopes(departmentManager, PermissionScope.DEPARTMENT);
+        syncRoleScopes(itAdministrator, PermissionScope.ORGANIZATION);
 
         seedSuperAdminUser(superAdmin);
         seedDefaultLeaveTypes();
@@ -164,6 +185,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"REPORTS_VIEW", "View executive, attendance, leave, and recruitment reports", "Reports"},
                 new String[]{"MONITORING_VIEW", "View monitored devices and employee activity sessions", "Monitoring"},
                 new String[]{"MONITORING_MANAGE", "Enroll/decommission monitored devices, rotate agent tokens, and push directives", "Monitoring"},
+                new String[]{"IT_MANAGEMENT_ACCESS", "Access IT Management tools for devices and software", "IT Management"},
                 new String[]{"SOFTWARE_VIEW", "View software catalog, versions, and deployment history", "Software"},
                 new String[]{"SOFTWARE_DEPLOY", "Create and queue software deployments to managed devices", "Software"},
                 new String[]{"SOFTWARE_MANAGE", "Create, edit, and control software packages and installer versions", "Software"}
@@ -195,11 +217,16 @@ public class DataSeeder implements CommandLineRunner {
 
     private Role seedRole(String name, String description, Set<Permission> permissions) {
         return roleRepository.findByName(name)
-                .map(existing -> syncSystemRolePermissions(existing, permissions))
+                .map(existing -> {
+                    if (existing.isSystemDefined()) {
+                        existing.setLabel(roleLabel(name));
+                    }
+                    return syncSystemRolePermissions(existing, permissions);
+                })
                 .orElseGet(() -> {
                     Role role = new Role();
                     role.setName(name);
-                    role.setLabel(name);
+                    role.setLabel(roleLabel(name));
                     role.setDescription(description);
                     role.setSystemDefined(true);
                     role.setPermissions(permissions);
@@ -209,25 +236,33 @@ public class DataSeeder implements CommandLineRunner {
                 });
     }
 
-    /**
-     * System roles are code-defined, not admin-defined - so unlike a
-     * custom role (where we'd never silently change what an admin
-     * configured), it's correct to union in any permission codes this
-     * version of the seeder expects but an older run didn't have yet.
-     * This is what makes upgrading from Phase 0 -> Phase 1 (or any later
-     * phase that adds permissions) work without a manual migration step.
-     */
+    private String roleLabel(String name) {
+        return switch (name) {
+            case "COMPANY_ADMIN" -> "Organization Administrator";
+            case "HR_ADMIN" -> "HR Manager";
+            case "MANAGER" -> "Team Lead";
+            case "EMPLOYEE" -> "Employee";
+            case "SUPER_ADMIN" -> "Platform Administrator";
+            case "HR_EXECUTIVE" -> "HR Executive";
+            case "HR_COORDINATOR" -> "HR Coordinator";
+            case "DEPARTMENT_MANAGER" -> "Department Manager";
+            case "IT_ADMINISTRATOR" -> "IT Administrator";
+            default -> name;
+        };
+    }
+
     private Role syncSystemRolePermissions(Role role, Set<Permission> expectedPermissions) {
         if (!role.isSystemDefined()) {
             return role;
         }
-        Set<Permission> merged = new HashSet<>(role.getPermissions());
-        int before = merged.size();
-        merged.addAll(expectedPermissions);
-        if (merged.size() != before) {
-            role.setPermissions(merged);
+        Set<String> currentCodes = role.getPermissions().stream().map(Permission::getCode)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> expectedCodes = expectedPermissions.stream().map(Permission::getCode)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!currentCodes.equals(expectedCodes)) {
+            role.setPermissions(new HashSet<>(expectedPermissions));
             role = roleRepository.save(role);
-            log.info("Synced {} newly-available permission(s) onto system role '{}'", merged.size() - before, role.getName());
+            log.info("Synchronized permissions for system role '{}'", role.getName());
         }
         return role;
     }
@@ -260,17 +295,25 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void syncRoleScopes(Role role, PermissionScope defaultScope) {
-        Set<String> existing = new java.util.HashSet<>();
-        for (RolePermissionScope scope : role.getPermissionScopes()) {
-            existing.add(scope.getPermission().getCode());
+        if (!role.isSystemDefined()) {
+            return;
         }
+        Set<String> permissionCodes = role.getPermissions().stream()
+                .map(Permission::getCode)
+                .collect(java.util.stream.Collectors.toSet());
+        role.getPermissionScopes().removeIf(scope -> !permissionCodes.contains(scope.getPermission().getCode()));
         for (Permission permission : role.getPermissions()) {
-            if (existing.contains(permission.getCode())) continue;
-            RolePermissionScope scope = new RolePermissionScope();
-            scope.setRole(role);
-            scope.setPermission(permission);
+            RolePermissionScope scope = role.getPermissionScopes().stream()
+                    .filter(existing -> permission.getCode().equals(existing.getPermission().getCode()))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        RolePermissionScope created = new RolePermissionScope();
+                        created.setRole(role);
+                        created.setPermission(permission);
+                        role.getPermissionScopes().add(created);
+                        return created;
+                    });
             scope.setScope(defaultScope);
-            role.getPermissionScopes().add(scope);
         }
         roleRepository.save(role);
     }

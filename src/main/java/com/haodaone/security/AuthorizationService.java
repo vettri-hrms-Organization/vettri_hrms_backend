@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -61,10 +62,10 @@ public class AuthorizationService {
                 .map(RolePermissionScope::getScope)
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(PermissionScope.class)));
         if (scopes.isEmpty()) {
-            scopes = EnumSet.of(PermissionScope.ORGANIZATION);
+            return false;
         }
         if (resourceId == null || resourceType == null) {
-            return true;
+            return scopes.contains(PermissionScope.ORGANIZATION);
         }
         if (!"EMPLOYEE".equalsIgnoreCase(resourceType)) {
             return scopes.contains(PermissionScope.ORGANIZATION);
@@ -79,8 +80,12 @@ public class AuthorizationService {
 
         if (scopes.contains(PermissionScope.SELF) && current.getId().equals(target.getId())) return true;
         if (scopes.contains(PermissionScope.TEAM)
-                && target.getReportingManager() != null
-                && current.getId().equals(target.getReportingManager().getId())) return true;
+                && current.getCompany() != null
+                && target.getCompany() != null
+                && Objects.equals(current.getCompany().getId(), target.getCompany().getId())
+                && current.getTeam() != null
+                && target.getTeam() != null
+                && current.getTeam().getId().equals(target.getTeam().getId())) return true;
         return scopes.contains(PermissionScope.DEPARTMENT)
                 && current.getDepartment() != null
                 && target.getDepartment() != null
@@ -104,8 +109,7 @@ public class AuthorizationService {
                 .filter(this::currentlyValid)
                 .map(RolePermissionScope::getScope)
                 .collect(Collectors.toSet());
-        return scopes.isEmpty() && hasAuthority(authentication, permissionCode)
-                ? Set.of(PermissionScope.ORGANIZATION) : scopes;
+        return scopes;
     }
 
     /**
@@ -128,7 +132,9 @@ public class AuthorizationService {
         if (current == null) return Optional.of(Set.of());
         Set<Long> ids = new HashSet<>();
         if (scopes.contains(PermissionScope.SELF)) ids.add(current.getId());
-        if (scopes.contains(PermissionScope.TEAM)) ids.addAll(employeeRepository.findIdsByCompanyAndReportingManager(companyId, current.getId()));
+        if (scopes.contains(PermissionScope.TEAM) && current.getTeam() != null) {
+            ids.addAll(employeeRepository.findIdsByCompanyAndTeam(companyId, current.getTeam().getId()));
+        }
         if (scopes.contains(PermissionScope.DEPARTMENT) && current.getDepartment() != null) {
             ids.addAll(employeeRepository.findIdsByCompanyAndDepartment(companyId, current.getDepartment().getId()));
         }

@@ -6,6 +6,7 @@ import com.haodaone.user.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -22,13 +23,23 @@ public class CompanySecurity {
     private final EmployeeRepository employeeRepository;
     private final MonitoredDeviceRepository monitoredDeviceRepository;
     private final UserRepository userRepository;
+    private final AuthorizationService authorizationService;
+
+    @Autowired
+    public CompanySecurity(EmployeeRepository employeeRepository,
+                           MonitoredDeviceRepository monitoredDeviceRepository,
+                           UserRepository userRepository,
+                           AuthorizationService authorizationService) {
+        this.employeeRepository = employeeRepository;
+        this.monitoredDeviceRepository = monitoredDeviceRepository;
+        this.userRepository = userRepository;
+        this.authorizationService = authorizationService;
+    }
 
     public CompanySecurity(EmployeeRepository employeeRepository,
                            MonitoredDeviceRepository monitoredDeviceRepository,
                            UserRepository userRepository) {
-        this.employeeRepository = employeeRepository;
-        this.monitoredDeviceRepository = monitoredDeviceRepository;
-        this.userRepository = userRepository;
+        this(employeeRepository, monitoredDeviceRepository, userRepository, null);
     }
 
     private Authentication auth() {
@@ -98,12 +109,13 @@ public class CompanySecurity {
     public boolean canManageDevice(Long deviceId) {
         if (deviceId == null) return false;
         if (isSuperAdmin()) return true;
-        if (!isCompanyAdmin() && !isHrAdmin()) return false;
         Optional<Long> myCompany = currentCompanyId();
         if (myCompany.isEmpty()) return false;
-        return monitoredDeviceRepository.findById(deviceId)
-                .map(d -> d.getCompany() != null && myCompany.get().equals(d.getCompany().getId()))
-                .orElse(false);
+        return monitoredDeviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, myCompany.get())
+                .filter(device -> device.getEmployee() == null
+                        ? authorizationService != null && authorizationService.hasOrganizationScope("MONITORING_MANAGE")
+                        : authorizationService != null && authorizationService.isAllowed("MONITORING_MANAGE", "EMPLOYEE", device.getEmployee().getId()))
+                .isPresent();
     }
 
     /** True if caller can view the given device (same-company or super admin). */
@@ -112,9 +124,11 @@ public class CompanySecurity {
         if (isSuperAdmin()) return true;
         Optional<Long> myCompany = currentCompanyId();
         if (myCompany.isEmpty()) return false;
-        return monitoredDeviceRepository.findById(deviceId)
-                .map(d -> d.getCompany() != null && myCompany.get().equals(d.getCompany().getId()))
-                .orElse(false);
+        return monitoredDeviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, myCompany.get())
+                .filter(device -> device.getEmployee() == null
+                        ? authorizationService != null && authorizationService.hasOrganizationScope("MONITORING_VIEW")
+                        : authorizationService != null && authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", device.getEmployee().getId()))
+                .isPresent();
     }
 
     /** True if caller can manage users (role assignments / activation) for the given user id. */

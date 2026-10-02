@@ -42,6 +42,7 @@ public class DeviceLimitEnforcementTest {
 
         // Set tenant in context so companyId is available
         com.haodaone.tenant.TenantContext.setCurrentTenant(7L);
+        when(authorizationService.hasOrganizationScope("MONITORING_MANAGE")).thenReturn(true);
 
         assertThrows(BadRequestException.class, () -> deviceEnrollmentService.enroll(req));
 

@@ -25,31 +25,31 @@ public class SoftwareController {
     }
 
     @GetMapping("/packages")
-    @PreAuthorize("hasAuthority('SOFTWARE_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('SOFTWARE_VIEW', null, null)")
     public List<SoftwarePackageDTO> listPackages() {
         return softwareManagementService.listPackages();
     }
 
     @GetMapping("/packages/{id}")
-    @PreAuthorize("hasAuthority('SOFTWARE_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('SOFTWARE_VIEW', null, null)")
     public SoftwarePackageDTO getPackage(@PathVariable Long id) {
         return softwareManagementService.getPackage(id);
     }
 
     @PostMapping("/packages")
-    @PreAuthorize("hasAuthority('SOFTWARE_MANAGE')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('SOFTWARE_MANAGE', null, null)")
     public ResponseEntity<SoftwarePackageDTO> createPackage(@Valid @RequestBody SoftwarePackageDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(softwareManagementService.createPackage(request));
     }
 
     @GetMapping("/packages/{packageId}/versions")
-    @PreAuthorize("hasAuthority('SOFTWARE_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('SOFTWARE_VIEW', null, null)")
     public List<SoftwareVersionDTO> listVersions(@PathVariable Long packageId) {
         return softwareManagementService.listVersions(packageId);
     }
 
     @PostMapping("/packages/{packageId}/versions")
-    @PreAuthorize("hasAuthority('SOFTWARE_MANAGE')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('SOFTWARE_MANAGE', null, null)")
     public ResponseEntity<SoftwareVersionDTO> createVersion(@PathVariable Long packageId,
                                                            @Valid @RequestPart("metadata") SoftwareVersionDTO.CreateRequest request,
                                                            @RequestPart("installer") MultipartFile installer) {
@@ -57,19 +57,19 @@ public class SoftwareController {
     }
 
     @GetMapping("/deployments")
-    @PreAuthorize("hasAuthority('SOFTWARE_VIEW') or hasAuthority('SOFTWARE_DEPLOY')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and (@authorizationService.isAllowed('SOFTWARE_VIEW', null, null) or @authorizationService.isAllowed('SOFTWARE_DEPLOY', null, null))")
     public List<SoftwareDeploymentDTO> listDeployments() {
         return softwareManagementService.listDeployments();
     }
 
     @GetMapping("/deployments/{id}/targets")
-    @PreAuthorize("hasAuthority('SOFTWARE_VIEW') or hasAuthority('SOFTWARE_DEPLOY')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and (@authorizationService.isAllowed('SOFTWARE_VIEW', null, null) or @authorizationService.isAllowed('SOFTWARE_DEPLOY', null, null))")
     public List<SoftwareDeploymentTargetDTO> deploymentTargets(@PathVariable Long id) {
         return softwareManagementService.listDeploymentTargets(id);
     }
 
     @PostMapping("/deployments")
-    @PreAuthorize("hasAuthority('SOFTWARE_DEPLOY') or hasAuthority('SOFTWARE_MANAGE')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and (@authorizationService.isAllowed('SOFTWARE_DEPLOY', null, null) or @authorizationService.isAllowed('SOFTWARE_MANAGE', null, null))")
     public ResponseEntity<SoftwareDeploymentDTO> createDeployment(@Valid @RequestBody SoftwareDeploymentDTO.CreateRequest request,
                                                                    @org.springframework.security.core.annotation.AuthenticationPrincipal CustomUserPrincipal principal) {
         return ResponseEntity.status(201).body(softwareManagementService.createDeployment(request, principal.getId()));

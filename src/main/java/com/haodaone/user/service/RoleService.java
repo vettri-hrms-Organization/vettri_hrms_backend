@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
+import java.util.Locale;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.user.entity.PermissionScope;
@@ -49,13 +50,19 @@ public class RoleService {
     @Transactional
     public RoleDTO create(CreateRoleRequest request) {
         Long companyId = requiredTenant();
-        if (roleRepository.findByNameAndCompany_Id(request.getName(), companyId).isPresent()) {
-            throw new BadRequestException("Role '" + request.getName() + "' already exists");
+        String roleName = request.getName().trim();
+        if (Set.of("SUPER_ADMIN", "COMPANY_ADMIN", "HR_ADMIN", "MANAGER", "EMPLOYEE",
+                "HR_EXECUTIVE", "HR_COORDINATOR", "DEPARTMENT_MANAGER", "IT_ADMINISTRATOR")
+                .contains(roleName.toUpperCase(Locale.ROOT))) {
+            throw new BadRequestException("Role name '" + roleName + "' is reserved for a system role");
+        }
+        if (roleRepository.findByNameAndCompany_Id(roleName, companyId).isPresent()) {
+            throw new BadRequestException("Role '" + roleName + "' already exists");
         }
 
         Role role = new Role();
-        role.setName(request.getName());
-        role.setLabel(request.getName());
+        role.setName(roleName);
+        role.setLabel(roleName);
         role.setDescription(request.getDescription());
         role.setSystemDefined(false);
         companyRepository.findById(companyId).ifPresent(role::setCompany);
@@ -116,10 +123,15 @@ public class RoleService {
     private void applyScopes(Role role, Map<String, PermissionScope> requestedScopes) {
         role.getPermissionScopes().clear();
         for (Permission permission : role.getPermissions()) {
+            PermissionScope requestedScope = requestedScopes.getOrDefault(permission.getCode(), PermissionScope.ORGANIZATION);
+            if (Set.of("IT_MANAGEMENT_ACCESS", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE")
+                    .contains(permission.getCode()) && requestedScope != PermissionScope.ORGANIZATION) {
+                throw new BadRequestException(permission.getCode() + " requires Company scope");
+            }
             RolePermissionScope scope = new RolePermissionScope();
             scope.setRole(role);
             scope.setPermission(permission);
-            scope.setScope(requestedScopes.getOrDefault(permission.getCode(), PermissionScope.ORGANIZATION));
+            scope.setScope(requestedScope);
             role.getPermissionScopes().add(scope);
         }
     }

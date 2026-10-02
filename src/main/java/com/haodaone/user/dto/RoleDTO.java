@@ -10,6 +10,7 @@ import com.haodaone.user.entity.PermissionScope;
 public class RoleDTO {
     private Long id;
     private String name;
+    private String label;
     private String description;
     private boolean systemDefined;
     private List<PermissionDTO> permissions;
@@ -20,6 +21,7 @@ public class RoleDTO {
         RoleDTO dto = new RoleDTO();
         dto.id = role.getId();
         dto.name = role.getName();
+        dto.label = role.getLabel();
         dto.description = role.getDescription();
         dto.systemDefined = role.isSystemDefined();
         dto.permissions = role.getPermissions().stream().map(PermissionDTO::from).toList();
@@ -37,6 +39,10 @@ public class RoleDTO {
 
     public String getName() {
         return name;
+    }
+
+    public String getLabel() {
+        return label;
     }
 
     public String getDescription() {

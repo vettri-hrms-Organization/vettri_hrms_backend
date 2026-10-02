@@ -3,6 +3,7 @@ package com.haodaone.security;
 import com.haodaone.company.entity.Company;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.org.entity.Team;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.attendance.repository.WfhRequestRepository;
 import com.haodaone.tenant.TenantContext;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -57,22 +59,60 @@ class AuthorizationServiceTest {
     }
 
     @Test
-    void teamScopeAllowsDirectReportsOnly() {
+    void teamScopeAllowsTeamMembersButNotDirectReportsFromOtherTeams() {
         Company company = company(1L);
         User user = user(10L, company);
         Employee manager = employee(10L, company);
-        Employee report = employee(11L, company);
-        report.setReportingManager(manager);
-        Employee unrelated = employee(12L, company);
+        Team development = team(20L);
+        Team marketing = team(21L);
+        manager.setTeam(development);
+        Employee teammate = employee(11L, company);
+        teammate.setTeam(development);
+        Employee directReportOutsideTeam = employee(12L, company);
+        directReportOutsideTeam.setTeam(marketing);
+        directReportOutsideTeam.setReportingManager(manager);
         grant(user, "ATTENDANCE_VIEW", PermissionScope.TEAM);
         authenticate(user, "ATTENDANCE_VIEW");
         TenantContext.setCurrentTenant(1L);
         when(employeeRepository.findByUser_IdAndDeletedFalse(10L)).thenReturn(Optional.of(manager));
-        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(11L, 1L)).thenReturn(Optional.of(report));
-        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(12L, 1L)).thenReturn(Optional.of(unrelated));
+        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(11L, 1L)).thenReturn(Optional.of(teammate));
+        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(12L, 1L)).thenReturn(Optional.of(directReportOutsideTeam));
 
         assertTrue(service.isAllowed("ATTENDANCE_VIEW", "EMPLOYEE", 11L));
         assertFalse(service.isAllowed("ATTENDANCE_VIEW", "EMPLOYEE", 12L));
+    }
+
+    @Test
+    void missingScopeDoesNotFallBackToOrganization() {
+        Company company = company(1L);
+        User user = user(10L, company);
+        Employee target = employee(11L, company);
+        Permission permission = new Permission();
+        permission.setCode("EMPLOYEE_VIEW");
+        Role role = new Role();
+        role.setName("TEST");
+        role.setPermissions(Set.of(permission));
+        user.setRoles(Set.of(role));
+        authenticate(user, "EMPLOYEE_VIEW");
+        TenantContext.setCurrentTenant(1L);
+        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(11L, 1L)).thenReturn(Optional.of(target));
+
+        assertFalse(service.isAllowed("EMPLOYEE_VIEW", "EMPLOYEE", 11L));
+    }
+
+    @Test
+    void teamEmployeeListUsesTeamMembership() {
+        Company company = company(1L);
+        User user = user(10L, company);
+        Employee manager = employee(10L, company);
+        manager.setTeam(team(20L));
+        grant(user, "MONITORING_VIEW", PermissionScope.TEAM);
+        authenticate(user, "MONITORING_VIEW");
+        TenantContext.setCurrentTenant(1L);
+        when(employeeRepository.findByUser_IdAndDeletedFalse(10L)).thenReturn(Optional.of(manager));
+        when(employeeRepository.findIdsByCompanyAndTeam(1L, 20L)).thenReturn(java.util.List.of(10L, 11L));
+
+        assertEquals(Optional.of(Set.of(10L, 11L)), service.resolveEmployeeIds("MONITORING_VIEW"));
     }
 
     @Test
@@ -141,5 +181,11 @@ class AuthorizationServiceTest {
         Company company = new Company();
         company.setId(id);
         return company;
+    }
+
+    private Team team(Long id) {
+        Team team = new Team();
+        team.setId(id);
+        return team;
     }
 }
