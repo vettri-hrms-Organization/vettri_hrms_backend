@@ -2,6 +2,7 @@ package com.haodaone.document;
 
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
+import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.document.dto.EmployeeDocumentDTO;
 import com.haodaone.document.repository.EmployeeDocumentRepository;
 import com.haodaone.document.service.EmployeeDocumentS3StorageService;
@@ -68,24 +69,24 @@ public class EmployeeDocumentUploadReviewWorkflowTest {
 
         MockMultipartFile file = new MockMultipartFile(
                 "file",
-                "aadhaar.docx",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "aadhaar.pdf",
+                "application/pdf",
                 "test-pdf-content".getBytes()
         );
         String objectKey = "employee-documents/" + company.getId() + "/" + employee.getId()
-                + "/AADHAAR/8f31c2-document.docx";
+                + "/AADHAAR/8f31c2-document.pdf";
         when(documentStorageService.store(any(), eq(company.getId()), eq(employee.getId()), eq("AADHAAR")))
-                .thenReturn(new EmployeeDocumentS3StorageService.StoredFile(objectKey, "aadhaar.docx",
+                .thenReturn(new EmployeeDocumentS3StorageService.StoredFile(objectKey, "aadhaar.pdf",
                         file.getSize(), file.getContentType()));
 
         EmployeeDocumentDTO created = employeeDocumentService.upload(
                 employee.getId(),
                 file,
                 "AADHAAR",
-                "ABC123",
-                LocalDate.now().minusYears(1),
-                LocalDate.now().plusYears(2),
-                "Passport copy"
+                null,
+                null,
+                null,
+                null
         );
 
         assertNotNull(created.getId());
@@ -93,14 +94,65 @@ public class EmployeeDocumentUploadReviewWorkflowTest {
         assertEquals(objectKey, created.getS3ObjectKey());
         var persisted = employeeDocumentRepository.findById(created.getId()).orElseThrow();
         assertEquals("AADHAAR", persisted.getDocumentType());
-        assertEquals("aadhaar.docx", persisted.getOriginalFileName());
+        assertEquals("aadhaar.pdf", persisted.getOriginalFileName());
         assertEquals(file.getSize(), persisted.getFileSizeBytes());
+        assertNull(persisted.getDocumentNumber());
+        assertNull(persisted.getIssueDate());
+        assertNull(persisted.getExpiryDate());
 
         EmployeeDocumentDTO reviewed = employeeDocumentService.review(created.getId(), true, null);
         assertEquals("APPROVED", reviewed.getStatus());
         assertNull(reviewed.getRejectionReason());
 
         assertEquals(1, employeeDocumentRepository.findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(company.getId(), employee.getId()).size());
+    }
+
+    @Test
+    void pan_without_expiry_can_be_uploaded() {
+        Company company = new Company();
+        company.setName("PanCo");
+        company = companyRepository.save(company);
+        TenantContext.setCurrentTenant(company.getId());
+
+        Employee employee = new Employee();
+        employee.setCompany(company);
+        employee.setEmployeeCode("EMP-101");
+        employee.setFirstName("Pan");
+        employee.setLastName("User");
+        employee.setEmail("pan.user+doc@example.com");
+        employee.setDateOfJoining(LocalDate.now().minusMonths(3));
+        employee = employeeRepository.save(employee);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "pan.pdf",
+                "application/pdf",
+                "test-pdf-content".getBytes()
+        );
+        String objectKey = "employee-documents/" + company.getId() + "/" + employee.getId()
+                + "/PAN/8f31c2-document.pdf";
+        when(documentStorageService.store(any(), eq(company.getId()), eq(employee.getId()), eq("PAN")))
+                .thenReturn(new EmployeeDocumentS3StorageService.StoredFile(objectKey, "pan.pdf",
+                        file.getSize(), file.getContentType()));
+
+        EmployeeDocumentDTO created = employeeDocumentService.upload(
+                employee.getId(), file, "PAN", null, null, null, null);
+
+        assertNull(created.getDocumentNumber());
+        assertNull(created.getIssueDate());
+        assertNull(created.getExpiryDate());
+        assertNull(employeeDocumentRepository.findById(created.getId()).orElseThrow().getExpiryDate());
+    }
+
+    @Test
+    void passport_upload_still_requires_expiry_date() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "passport.pdf", "application/pdf", "test-pdf-content".getBytes());
+
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> employeeDocumentService.upload(1L, file, "PASSPORT", null, null, null, null));
+
+        assertEquals("Expiry date is required.", exception.getMessage());
     }
 
     @Test

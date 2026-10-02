@@ -32,6 +32,7 @@ public class EmployeeDocumentService {
     private static final Set<String> VALID_TYPES = Set.of(
             "AADHAAR", "PAN", "EXPERIENCE_LETTER", "ID_PROOF", "PASSPORT", "WORK_VISA",
             "PROFESSIONAL_CERTIFICATION", "EMPLOYMENT_CONTRACT", "OTHER");
+    private static final Set<String> TYPES_WITHOUT_EXPIRY = Set.of("AADHAAR", "PAN");
 
     private static final int DEFAULT_LOOKAHEAD_DAYS = 30;
 
@@ -78,7 +79,11 @@ public class EmployeeDocumentService {
         if (!VALID_TYPES.contains(request.getDocumentType())) {
             throw new BadRequestException("Unknown document type: " + request.getDocumentType() + ". Must be one of " + VALID_TYPES);
         }
-        if (request.getIssueDate() != null && request.getIssueDate().isAfter(request.getExpiryDate())) {
+        if (!TYPES_WITHOUT_EXPIRY.contains(request.getDocumentType()) && request.getExpiryDate() == null) {
+            throw new BadRequestException("Expiry date is required.");
+        }
+        if (request.getIssueDate() != null && request.getExpiryDate() != null
+                && request.getIssueDate().isAfter(request.getExpiryDate())) {
             throw new BadRequestException("Issue date can't be after the expiry date.");
         }
 
@@ -115,10 +120,10 @@ public class EmployeeDocumentService {
         if (!VALID_TYPES.contains(documentType)) {
             throw new BadRequestException("Unknown document type: " + documentType + ". Must be one of " + VALID_TYPES);
         }
-        if (expiryDate == null) {
+        if (expiryDate == null && !TYPES_WITHOUT_EXPIRY.contains(documentType)) {
             throw new BadRequestException("Expiry date is required.");
         }
-        if (issueDate != null && issueDate.isAfter(expiryDate)) {
+        if (issueDate != null && expiryDate != null && issueDate.isAfter(expiryDate)) {
             throw new BadRequestException("Issue date can't be after the expiry date.");
         }
 

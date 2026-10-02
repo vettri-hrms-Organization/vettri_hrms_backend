@@ -34,7 +34,7 @@ public class EmployeeDocument extends BaseEntity {
     @Column(name = "issue_date")
     private LocalDate issueDate;
 
-    @Column(name = "expiry_date", nullable = false)
+    @Column(name = "expiry_date")
     private LocalDate expiryDate;
 
     @Column(nullable = false, length = 30)

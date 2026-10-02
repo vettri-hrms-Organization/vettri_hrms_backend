@@ -52,10 +52,10 @@ public class EmployeeDocumentController {
                                                    @RequestParam("documentType") String documentType,
                                                    @RequestParam(value = "documentNumber", required = false) String documentNumber,
                                                    @RequestParam(value = "issueDate", required = false) String issueDate,
-                                                   @RequestParam("expiryDate") String expiryDate,
+                                                   @RequestParam(value = "expiryDate", required = false) String expiryDate,
                                                    @RequestParam(value = "notes", required = false) String notes) {
         LocalDate parsedIssueDate = parseDate("issueDate", issueDate, true);
-        LocalDate parsedExpiryDate = parseDate("expiryDate", expiryDate, false);
+        LocalDate parsedExpiryDate = parseDate("expiryDate", expiryDate, true);
         return ResponseEntity.status(201).body(documentService.upload(employeeId, file, documentType, documentNumber, parsedIssueDate, parsedExpiryDate, notes));
     }
 

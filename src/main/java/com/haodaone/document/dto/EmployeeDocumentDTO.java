@@ -153,7 +153,6 @@ public class EmployeeDocumentDTO {
         private String documentNumber;
         private LocalDate issueDate;
 
-        @NotNull(message = "Expiry date is required")
         private LocalDate expiryDate;
 
         private String notes;
@@ -240,7 +239,6 @@ public class EmployeeDocumentDTO {
         private String documentNumber;
         private LocalDate issueDate;
 
-        @NotNull(message = "Expiry date is required")
         private LocalDate expiryDate;
 
         private String notes;
