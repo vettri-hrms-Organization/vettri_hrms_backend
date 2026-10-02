@@ -23,14 +23,21 @@ public class GoalService {
     private final GoalRepository goalRepository;
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
+    private final com.haodaone.security.EmployeeSecurity employeeSecurity;
 
-    public GoalService(GoalRepository goalRepository, EmployeeRepository employeeRepository, AuditLogService auditLogService) {
+    public GoalService(GoalRepository goalRepository, EmployeeRepository employeeRepository, AuditLogService auditLogService,
+                       com.haodaone.security.AuthorizationService authorizationService,
+                       com.haodaone.security.EmployeeSecurity employeeSecurity) {
         this.goalRepository = goalRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
+        this.authorizationService = authorizationService;
+        this.employeeSecurity = employeeSecurity;
     }
 
     public List<GoalDTO> byEmployee(Long employeeId) {
+        requireEmployeeAccess("PERFORMANCE_VIEW", employeeId, true);
         return goalRepository.findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByTargetDateAsc(requiredTenant(), employeeId).stream()
                 .map(GoalDTO::from)
                 .toList();
@@ -42,6 +49,7 @@ public class GoalService {
                 .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
         Long companyId = requiredTenant();
         if (employee.getCompany() == null || !companyId.equals(employee.getCompany().getId())) throw new BadRequestException("Employee is not in this company");
+        requireEmployeeAccess("PERFORMANCE_MANAGE", employee.getId(), false);
 
         Goal goal = new Goal();
         goal.setEmployee(employee);
@@ -63,6 +71,7 @@ public class GoalService {
         }
         Goal goal = goalRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Goal not found: " + id));
+        requireEmployeeAccess("PERFORMANCE_MANAGE", goal.getEmployee().getId(), false);
 
         goal.setProgressPercent(request.getProgressPercent());
         goal.setStatus(request.getStatus());
@@ -74,4 +83,12 @@ public class GoalService {
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }
+
+    private void requireEmployeeAccess(String permissionCode, Long employeeId, boolean allowSelf) {
+        if (!authorizationService.isAllowed(permissionCode, "EMPLOYEE", employeeId)
+                && !(allowSelf && employeeSecurity.isSelf(employeeId))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    permissionCode + " is not authorized for this employee.");
+        }
+    }
 }

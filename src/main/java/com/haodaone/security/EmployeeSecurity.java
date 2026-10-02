@@ -2,6 +2,7 @@ package com.haodaone.security;
 
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
+import com.haodaone.tenant.TenantContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -47,7 +48,9 @@ public class EmployeeSecurity {
         }
         return currentEmployeeId()
                 .flatMap(myId -> leaveRequestRepository.findById(leaveRequestId)
-                        .map(lr -> lr.getEmployee() != null && myId.equals(lr.getEmployee().getId())))
+                        .map(lr -> lr.getEmployee() != null && myId.equals(lr.getEmployee().getId())
+                                && lr.getCompany() != null
+                                && java.util.Objects.equals(TenantContext.getCurrentTenant(), lr.getCompany().getId())))
                 .orElse(false);
     }
 

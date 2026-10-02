@@ -67,31 +67,12 @@ public class DataSeeder implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         seedPermissions();
-        Role superAdmin = seedRole("SUPER_ADMIN", "Full platform access", allPermissions());
+        Role superAdmin =         seedRole("SUPER_ADMIN", "Full platform access", allPermissions());
         seedRole("HR_ADMIN", "HR administration - full platform HR management short of user/role administration",
-                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "AUDIT_VIEW",
-                        "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
-                        "REQUIREMENT_VIEW", "REQUIREMENT_MANAGE",
-                        "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
-                        "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
-                        "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
-                    "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",
-                    "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
-        // Company Admin - company-scoped administrative role. Permissions are the same
-        // functional set as HR_ADMIN but this role is intended to be scoped to a
-        // single tenant/company (tenant enforcement is enforced server-side).
+                permissionsByCode(hrManagerPermissionCodes().toArray(String[]::new)));
+        // Workspace administration remains separate from HR, payroll, monitoring, and IT access.
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
-                permissionsByCode("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_IMPORT", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
-                    "REQUIREMENT_VIEW", "REQUIREMENT_MANAGE",
-                        "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
-                        "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
-                        "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
-                    "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW", "MONITORING_VIEW", "MONITORING_MANAGE",
-                    "IT_MANAGEMENT_ACCESS",
-                    "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
-                    "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+                permissionsByCode(companyAdminPermissionCodes().toArray(String[]::new)));
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
                 permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
                 "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "MONITORING_VIEW",
@@ -116,13 +97,14 @@ public class DataSeeder implements CommandLineRunner {
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                         "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
         Role itAdministrator = seedRole("IT_ADMINISTRATOR", "IT operations without remote support or biometric administration",
-                permissionsByCode("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "SOFTWARE_VIEW", "SOFTWARE_MANAGE"));
+                permissionsByCode(itAdministratorPermissionCodes().toArray(String[]::new)));
 
         syncRoleScopes(superAdmin, PermissionScope.ORGANIZATION);
         syncRoleScopes(employee, PermissionScope.SELF);
         syncRoleScopes(roleRepository.findByName("MANAGER").orElseThrow(), PermissionScope.TEAM);
         syncRoleScopes(roleRepository.findByName("HR_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
-        syncRoleScopes(roleRepository.findByName("COMPANY_ADMIN").orElseThrow(), PermissionScope.ORGANIZATION);
+        Role companyAdmin = roleRepository.findByName("COMPANY_ADMIN").orElseThrow();
+        syncRoleScopes(companyAdmin, PermissionScope.ORGANIZATION);
         syncRoleScopes(hrExecutive, PermissionScope.ORGANIZATION);
         syncRoleScopes(hrCoordinator, PermissionScope.ORGANIZATION);
         syncRoleScopes(departmentManager, PermissionScope.DEPARTMENT);
@@ -156,6 +138,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"USER_VIEW", "View user accounts", "User Management"},
                 new String[]{"USER_CREATE", "Create user accounts", "User Management"},
                 new String[]{"USER_MANAGE", "Activate, deactivate, and reassign roles for user accounts", "User Management"},
+                new String[]{"USER_PERMISSION_GRANT", "Grant and revoke user-specific permissions within authorized scopes", "User Management"},
                 new String[]{"ROLE_ASSIGN", "Assign roles to user accounts", "Role Management"},
                 new String[]{"ROLE_VIEW", "View roles and permissions", "Role Management"},
                 new String[]{"ROLE_MANAGE", "Create roles and assign permissions", "Role Management"},
@@ -313,7 +296,9 @@ public class DataSeeder implements CommandLineRunner {
                         role.getPermissionScopes().add(created);
                         return created;
                     });
-            scope.setScope(defaultScope);
+            scope.setScope(role.getName().equals("COMPANY_ADMIN")
+                    ? companyAdminScope(permission.getCode())
+                    : defaultScope);
         }
         roleRepository.save(role);
     }
@@ -324,5 +309,37 @@ public class DataSeeder implements CommandLineRunner {
             permissionRepository.findByCode(code).ifPresent(result::add);
         }
         return result;
+    }
+
+    static Set<String> companyAdminPermissionCodes() {
+        return Set.of("USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
+                "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+    }
+
+    static PermissionScope companyAdminScope(String permissionCode) {
+        return switch (permissionCode) {
+            case "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW" ->
+                    PermissionScope.SELF;
+            default -> PermissionScope.ORGANIZATION;
+        };
+    }
+
+    static Set<String> hrManagerPermissionCodes() {
+        return Set.of("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "AUDIT_VIEW",
+                "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                "REQUIREMENT_VIEW", "REQUIREMENT_MANAGE",
+                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
+                "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
+                "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",
+                "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+    }
+
+    static Set<String> itAdministratorPermissionCodes() {
+        return Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "SOFTWARE_VIEW", "SOFTWARE_MANAGE");
     }
 }

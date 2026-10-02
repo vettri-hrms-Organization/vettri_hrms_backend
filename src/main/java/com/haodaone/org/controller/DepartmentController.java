@@ -26,20 +26,20 @@ public class DepartmentController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ORG_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_MANAGE')")
     public ResponseEntity<DepartmentDTO> create(@Valid @RequestBody DepartmentDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(departmentService.create(request));
     }
 
     @PatchMapping("/{id}/activate")
-    @PreAuthorize("hasAuthority('ORG_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_MANAGE')")
     public ResponseEntity<Void> activate(@PathVariable Long id) {
         departmentService.setActive(id, true);
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/deactivate")
-    @PreAuthorize("hasAuthority('ORG_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_MANAGE')")
     public ResponseEntity<Void> deactivate(@PathVariable Long id) {
         departmentService.setActive(id, false);
         return ResponseEntity.noContent().build();

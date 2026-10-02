@@ -27,21 +27,29 @@ public class SalaryStructureService {
     private final SalaryStructureRepository salaryStructureRepository;
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
+    private final com.haodaone.security.AuthorizationService authorizationService;
+    private final com.haodaone.security.EmployeeSecurity employeeSecurity;
 
     public SalaryStructureService(SalaryStructureRepository salaryStructureRepository, EmployeeRepository employeeRepository,
-                                   AuditLogService auditLogService) {
+                                   AuditLogService auditLogService,
+                                   com.haodaone.security.AuthorizationService authorizationService,
+                                   com.haodaone.security.EmployeeSecurity employeeSecurity) {
         this.salaryStructureRepository = salaryStructureRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
+        this.authorizationService = authorizationService;
+        this.employeeSecurity = employeeSecurity;
     }
 
     public SalaryStructureDTO getCurrent(Long employeeId) {
+        requireEmployeeAccess("SALARY_VIEW", employeeId, true);
         return salaryStructureRepository.findByEmployee_Company_IdAndEmployeeIdAndActiveTrueAndDeletedFalse(requiredTenant(), employeeId)
                 .map(SalaryStructureDTO::from)
                 .orElse(null);
     }
 
     public List<SalaryStructureDTO> getHistory(Long employeeId) {
+        requireEmployeeAccess("SALARY_VIEW", employeeId, true);
         return salaryStructureRepository.findByEmployee_Company_IdAndEmployeeIdAndDeletedFalseOrderByEffectiveFromDescCreatedAtDesc(requiredTenant(), employeeId)
                 .stream().map(SalaryStructureDTO::from).toList();
     }
@@ -61,6 +69,10 @@ public class SalaryStructureService {
         }
         Long companyId = requiredTenant();
         if (employee.getCompany() == null || !companyId.equals(employee.getCompany().getId())) throw new BadRequestException("Employee is not in this company");
+        if (!authorizationService.isAllowed("SALARY_MANAGE", "EMPLOYEE", employee.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "SALARY_MANAGE is not authorized for this employee.");
+        }
 
         salaryStructureRepository.findByEmployeeIdAndActiveTrueAndDeletedFalse(employee.getId())
                 .ifPresent(previous -> {
@@ -92,4 +104,12 @@ public class SalaryStructureService {
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }
+
+    private void requireEmployeeAccess(String permissionCode, Long employeeId, boolean allowSelf) {
+        if (!authorizationService.isAllowed(permissionCode, "EMPLOYEE", employeeId)
+                && !(allowSelf && employeeSecurity.isSelf(employeeId))) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    permissionCode + " is not authorized for this employee.");
+        }
+    }
 }

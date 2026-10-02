@@ -3,6 +3,7 @@ package com.haodaone.security;
 import com.haodaone.user.entity.Permission;
 import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.User;
+import com.haodaone.user.entity.UserPermissionGrant;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -11,6 +12,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.List;
 
 /**
  * Adapts our User entity to Spring Security's UserDetails contract.
@@ -22,13 +24,23 @@ import java.util.stream.Collectors;
 public class CustomUserPrincipal implements UserDetails {
 
     private final User user;
+    private final List<UserPermissionGrant> permissionGrants;
 
     public CustomUserPrincipal(User user) {
+        this(user, List.of());
+    }
+
+    public CustomUserPrincipal(User user, List<UserPermissionGrant> permissionGrants) {
         this.user = user;
+        this.permissionGrants = List.copyOf(permissionGrants);
     }
 
     public User getUser() {
         return user;
+    }
+
+    public List<UserPermissionGrant> getPermissionGrants() {
+        return permissionGrants;
     }
 
     public Long getId() {
@@ -49,6 +61,17 @@ public class CustomUserPrincipal implements UserDetails {
                 authorities.add(new SimpleGrantedAuthority(permission.getCode()));
             }
         }
+        permissionGrants.stream()
+                .filter(UserPermissionGrant::isActive)
+                .filter(grant -> user.getCompany() != null && grant.getCompany() != null
+                        && user.getCompany().getId().equals(grant.getCompany().getId())
+                        && grant.getUser() != null && user.getId().equals(grant.getUser().getId())
+                        && grant.getPermission() != null && !grant.getPermission().isDeleted()
+                        && grant.getScope() != null
+                        && grant.getScope() != com.haodaone.user.entity.PermissionScope.CUSTOM)
+                .map(grant -> grant.getPermission().getCode())
+                .map(SimpleGrantedAuthority::new)
+                .forEach(authorities::add);
         return authorities;
     }
 

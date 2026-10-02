@@ -39,9 +39,15 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
     List<LeaveRequest> findAllByEmployeeIdInAndStatusOrderByStartDateAsc(List<Long> employeeIds, String status);
 
+    @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
+    List<LeaveRequest> findAllByCompany_IdAndEmployeeIdInAndStatusOrderByStartDateAsc(Long companyId, List<Long> employeeIds, String status);
+
     /** Team-scoped equivalent of findAllByOrderByStartDateDesc - every status, not just one. */
     @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
     List<LeaveRequest> findAllByEmployeeIdInOrderByStartDateDesc(List<Long> employeeIds);
+
+    @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
+    List<LeaveRequest> findAllByCompany_IdAndEmployeeIdInOrderByStartDateDesc(Long companyId, List<Long> employeeIds);
 
     List<LeaveRequest> findAllByOrderByStartDateDesc();
 

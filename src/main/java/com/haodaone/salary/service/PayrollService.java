@@ -51,6 +51,7 @@ public class PayrollService {
     }
 
     public List<PayrollRunSummaryDTO> listRuns() {
+        requireOrganizationPermission("SALARY_VIEW");
         Long companyId = requiredTenant();
         var scope = authorizationService.resolveEmployeeIds("SALARY_VIEW");
         if (scope.isPresent() && scope.get().isEmpty()) return List.of();
@@ -61,12 +62,14 @@ public class PayrollService {
     }
 
     public PayrollRunDTO getRun(Long runId) {
+        requireOrganizationPermission("SALARY_VIEW");
+        return getRunData(runId);
+    }
+
+    private PayrollRunDTO getRunData(Long runId) {
         PayrollRun run = findRunOrThrow(runId);
-        var scope = authorizationService.resolveEmployeeIds("SALARY_VIEW");
-        if (scope.isPresent() && scope.get().isEmpty()) return PayrollRunDTO.of(run, List.of());
-        List<PayrollItem> items = scope.isEmpty()
-            ? payrollItemRepository.findByPayrollRunIdAndDeletedFalseOrderByEmployee_FirstNameAsc(runId)
-            : payrollItemRepository.findByPayrollRun_Company_IdAndPayrollRunIdAndEmployeeIdInAndDeletedFalseOrderByEmployee_FirstNameAsc(requiredTenant(), runId, scope.get());
+        List<PayrollItem> items = payrollItemRepository.findByPayrollRun_Company_IdAndPayrollRunIdAndDeletedFalseOrderByEmployee_FirstNameAsc(
+                requiredTenant(), runId);
         return PayrollRunDTO.of(run, items);
     }
 
@@ -77,6 +80,7 @@ public class PayrollService {
      */
     @Transactional
     public PayrollRunDTO createRun(CreatePayrollRunRequest request) {
+        requireOrganizationPermission("SALARY_MANAGE");
         Long companyId = requiredTenant();
         payrollRunRepository.findByPeriodYearAndPeriodMonthAndCompany_IdAndDeletedFalse(request.getPeriodYear(), request.getPeriodMonth(), companyId)
                 .ifPresent(existing -> {
@@ -118,12 +122,13 @@ public class PayrollService {
 
         auditLogService.log("PayrollRun", savedRun.getId(), "CREATE",
                 "Opened payroll run for " + request.getPeriodMonth() + "/" + request.getPeriodYear() + " with " + included + " employee(s)");
-        return getRun(savedRun.getId());
+        return getRunData(savedRun.getId());
     }
 
     /** Toggles a single employee's line between PENDING and ON_HOLD while the run is still DRAFT. */
     @Transactional
     public PayrollItemDTO setItemHold(Long runId, Long itemId, UpdatePayrollItemRequest request) {
+        requireOrganizationPermission("SALARY_MANAGE");
         PayrollRun run = findRunOrThrow(runId);
         if (!PayrollRunStatus.DRAFT.equals(run.getStatus())) {
             throw new BadRequestException("Employees can only be held or released while the run is still in DRAFT");
@@ -146,6 +151,7 @@ public class PayrollService {
     /** DRAFT -> PROCESSED: locks in totals across every non-held item and stamps processedAt. */
     @Transactional
     public PayrollRunDTO process(Long runId) {
+        requireOrganizationPermission("SALARY_MANAGE");
         PayrollRun run = findRunOrThrow(runId);
         if (!PayrollRunStatus.DRAFT.equals(run.getStatus())) {
             throw new BadRequestException("Only a DRAFT run can be processed");
@@ -173,12 +179,13 @@ public class PayrollService {
         auditLogService.log("PayrollRun", saved.getId(), "PROCESS",
                 "Processed payroll for " + saved.getPeriodMonth() + "/" + saved.getPeriodYear()
                         + " - net payout " + saved.getTotalNet());
-        return getRun(saved.getId());
+        return getRunData(saved.getId());
     }
 
     /** PROCESSED -> PAID: stamps every processed item (and the run) with a payment date. */
     @Transactional
     public PayrollRunDTO markPaid(Long runId, MarkPaidRequest request) {
+        requireOrganizationPermission("SALARY_MANAGE");
         PayrollRun run = findRunOrThrow(runId);
         if (!PayrollRunStatus.PROCESSED.equals(run.getStatus())) {
             throw new BadRequestException("Only a PROCESSED run can be marked as paid");
@@ -200,12 +207,13 @@ public class PayrollService {
 
         auditLogService.log("PayrollRun", saved.getId(), "MARK_PAID",
                 "Marked payroll for " + saved.getPeriodMonth() + "/" + saved.getPeriodYear() + " as paid on " + paymentDate);
-        return getRun(saved.getId());
+        return getRunData(saved.getId());
     }
 
     /** DRAFT -> CANCELLED, for a run opened against the wrong period. Never allowed once processed. */
     @Transactional
     public void cancel(Long runId) {
+        requireOrganizationPermission("SALARY_MANAGE");
         PayrollRun run = findRunOrThrow(runId);
         if (!PayrollRunStatus.DRAFT.equals(run.getStatus())) {
             throw new BadRequestException("Only a DRAFT run can be cancelled");
@@ -235,5 +243,12 @@ public class PayrollService {
         Long tenant = TenantContext.getCurrentTenant();
         if (tenant == null) throw new BadRequestException("Company context is required");
         return tenant;
+    }
+
+    private void requireOrganizationPermission(String permissionCode) {
+        if (!authorizationService.hasOrganizationScope(permissionCode)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    permissionCode + " requires ORGANIZATION scope.");
+        }
     }
 }

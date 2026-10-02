@@ -26,7 +26,7 @@ public class TeamController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ORG_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_MANAGE')")
     public ResponseEntity<TeamDTO> create(@Valid @RequestBody TeamDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(teamService.create(request));
     }

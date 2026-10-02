@@ -33,7 +33,7 @@ public class DeviceController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('DEVICE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('DEVICE_MANAGE')")
     public List<DeviceDTO> listAll() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {
@@ -43,7 +43,7 @@ public class DeviceController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('DEVICE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('DEVICE_MANAGE')")
     public DeviceDTO register(@Valid @RequestBody DeviceDTO.RegisterRequest request) {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) throw new BadRequestException("Company context is required");
@@ -63,7 +63,7 @@ public class DeviceController {
     }
 
     @PatchMapping("/{id}/rename")
-    @PreAuthorize("hasAuthority('DEVICE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('DEVICE_MANAGE')")
     public DeviceDTO rename(@PathVariable Long id, @RequestBody Map<String, String> body) {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {

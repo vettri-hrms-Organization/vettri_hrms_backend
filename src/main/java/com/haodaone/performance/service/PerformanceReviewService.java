@@ -22,14 +22,17 @@ public class PerformanceReviewService {
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    private final com.haodaone.security.EmployeeSecurity employeeSecurity;
 
     public PerformanceReviewService(PerformanceReviewRepository performanceReviewRepository,
                                      EmployeeRepository employeeRepository, AuditLogService auditLogService,
-                                     com.haodaone.security.AuthorizationService authorizationService) {
+                                     com.haodaone.security.AuthorizationService authorizationService,
+                                     com.haodaone.security.EmployeeSecurity employeeSecurity) {
         this.performanceReviewRepository = performanceReviewRepository;
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
         this.authorizationService = authorizationService;
+        this.employeeSecurity = employeeSecurity;
     }
 
     public List<PerformanceReviewDTO> listAll() {
@@ -42,6 +45,11 @@ public class PerformanceReviewService {
     }
 
     public List<PerformanceReviewDTO> byEmployee(Long employeeId) {
+        if (!authorizationService.isAllowed("PERFORMANCE_VIEW", "EMPLOYEE", employeeId)
+                && !employeeSecurity.isSelf(employeeId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "PERFORMANCE_VIEW is not authorized for this employee.");
+        }
         return performanceReviewRepository.findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByCreatedAtDesc(requiredTenant(), employeeId).stream()
                 .map(PerformanceReviewDTO::from)
                 .toList();
@@ -53,6 +61,7 @@ public class PerformanceReviewService {
                 .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
         Long companyId = requiredTenant();
         if (employee.getCompany() == null || !companyId.equals(employee.getCompany().getId())) throw new BadRequestException("Employee is not in this company");
+        requireScopedPermission("PERFORMANCE_MANAGE", employee.getId());
 
         PerformanceReview review = new PerformanceReview();
         review.setEmployee(employee);
@@ -80,6 +89,7 @@ public class PerformanceReviewService {
     public PerformanceReviewDTO submit(Long id) {
         PerformanceReview review = performanceReviewRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Performance review not found: " + id));
+        requireScopedPermission("PERFORMANCE_MANAGE", review.getEmployee().getId());
 
         if (!review.getStatus().equals("DRAFT")) {
             throw new BadRequestException("Only draft reviews can be submitted (current status: " + review.getStatus() + ")");
@@ -96,6 +106,13 @@ public class PerformanceReviewService {
     public PerformanceReviewDTO acknowledge(Long id) {
         PerformanceReview review = performanceReviewRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Performance review not found: " + id));
+        Long employeeId = review.getEmployee().getId();
+        if (!employeeSecurity.isSelf(employeeId)
+                && !authorizationService.isAllowed("PERFORMANCE_VIEW", "EMPLOYEE", employeeId)
+                && !authorizationService.isAllowed("PERFORMANCE_MANAGE", "EMPLOYEE", employeeId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "PERFORMANCE_VIEW is not authorized for this employee.");
+        }
 
         if (!review.getStatus().equals("SUBMITTED")) {
             throw new BadRequestException("Only submitted reviews can be acknowledged (current status: " + review.getStatus() + ")");
@@ -108,4 +125,11 @@ public class PerformanceReviewService {
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }
+
+    private void requireScopedPermission(String permissionCode, Long employeeId) {
+        if (!authorizationService.isAllowed(permissionCode, "EMPLOYEE", employeeId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    permissionCode + " is not authorized for this employee.");
+        }
+    }
 }

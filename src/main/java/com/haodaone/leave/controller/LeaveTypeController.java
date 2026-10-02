@@ -26,13 +26,13 @@ public class LeaveTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('LEAVE_MANAGE')")
     public ResponseEntity<LeaveTypeDTO> create(@Valid @RequestBody LeaveTypeDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(leaveTypeService.create(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('LEAVE_MANAGE')")
     public LeaveTypeDTO update(@PathVariable Long id, @Valid @RequestBody LeaveTypeDTO.CreateRequest request) {
         return leaveTypeService.update(id, request);
     }

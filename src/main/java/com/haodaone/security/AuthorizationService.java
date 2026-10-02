@@ -8,6 +8,8 @@ import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.entity.User;
+import com.haodaone.user.entity.UserPermissionGrant;
+import com.haodaone.user.repository.UserPermissionGrantRepository;
 import com.haodaone.user.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -29,14 +31,17 @@ public class AuthorizationService {
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final WfhRequestRepository wfhRequestRepository;
+    private final UserPermissionGrantRepository permissionGrantRepository;
 
     public AuthorizationService(UserRepository userRepository, EmployeeRepository employeeRepository,
                                LeaveRequestRepository leaveRequestRepository,
-                               WfhRequestRepository wfhRequestRepository) {
+                               WfhRequestRepository wfhRequestRepository,
+                               UserPermissionGrantRepository permissionGrantRepository) {
         this.userRepository = userRepository;
         this.employeeRepository = employeeRepository;
         this.leaveRequestRepository = leaveRequestRepository;
         this.wfhRequestRepository = wfhRequestRepository;
+        this.permissionGrantRepository = permissionGrantRepository;
     }
 
     @Transactional(readOnly = true)
@@ -55,12 +60,7 @@ public class AuthorizationService {
             return false;
         }
 
-        Set<PermissionScope> scopes = user.getRoles().stream()
-                .flatMap(role -> role.getPermissionScopes().stream())
-                .filter(scope -> permissionCode.equals(scope.getPermission().getCode()))
-                .filter(this::currentlyValid)
-                .map(RolePermissionScope::getScope)
-                .collect(Collectors.toCollection(() -> EnumSet.noneOf(PermissionScope.class)));
+        Set<PermissionScope> scopes = getScopesForUser(user, permissionCode, tenantId);
         if (scopes.isEmpty()) {
             return false;
         }
@@ -87,6 +87,10 @@ public class AuthorizationService {
                 && target.getTeam() != null
                 && current.getTeam().getId().equals(target.getTeam().getId())) return true;
         return scopes.contains(PermissionScope.DEPARTMENT)
+                && current.getCompany() != null
+                && tenantId.equals(current.getCompany().getId())
+                && target.getCompany() != null
+                && tenantId.equals(target.getCompany().getId())
                 && current.getDepartment() != null
                 && target.getDepartment() != null
                 && current.getDepartment().getId().equals(target.getDepartment().getId());
@@ -100,16 +104,67 @@ public class AuthorizationService {
     @Transactional(readOnly = true)
     public Set<PermissionScope> getScopes(String permissionCode) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !isAccountActive(authentication)) return Set.of();
+        if (authentication == null || !authentication.isAuthenticated() || !isAccountActive(authentication)) return Set.of();
         User user = currentUser(authentication);
-        if (user == null) return Set.of();
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (user == null || user.getCompany() == null || tenantId == null
+                || !tenantId.equals(user.getCompany().getId())) return Set.of();
+        return getScopesForUser(user, permissionCode, tenantId);
+    }
+
+    private Set<PermissionScope> getScopesForUser(User user, String permissionCode, Long tenantId) {
         Set<PermissionScope> scopes = user.getRoles().stream()
                 .flatMap(role -> role.getPermissionScopes().stream())
                 .filter(scope -> permissionCode.equals(scope.getPermission().getCode()))
+                .filter(scope -> !scope.getPermission().isDeleted())
                 .filter(this::currentlyValid)
                 .map(RolePermissionScope::getScope)
-                .collect(Collectors.toSet());
+                .filter(scope -> scope != null && scope != PermissionScope.CUSTOM)
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(PermissionScope.class)));
+        permissionGrantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(
+                        tenantId, user.getId()).stream()
+                .filter(UserPermissionGrant::isActive)
+                .filter(grant -> grant.getCompany() != null && tenantId.equals(grant.getCompany().getId()))
+                .filter(grant -> grant.getUser() != null && user.getId().equals(grant.getUser().getId()))
+                .filter(grant -> grant.getPermission() != null && !grant.getPermission().isDeleted())
+                .filter(grant -> permissionCode.equals(grant.getPermission().getCode()))
+                .map(UserPermissionGrant::getScope)
+                .filter(scope -> scope != null && scope != PermissionScope.CUSTOM)
+                .forEach(scopes::add);
         return scopes;
+    }
+
+    public boolean canManageUserPermissionGrants() {
+        return hasAuthority(SecurityContextHolder.getContext().getAuthentication(), "USER_PERMISSION_GRANT")
+                && getScopes("USER_PERMISSION_GRANT").contains(PermissionScope.ORGANIZATION);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canDelegatePermission(String permissionCode, PermissionScope requestedScope, Long recipientUserId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (requestedScope == null || requestedScope == PermissionScope.CUSTOM
+                || authentication == null || !authentication.isAuthenticated() || !isAccountActive(authentication)
+                || !hasAuthority(authentication, "USER_PERMISSION_GRANT")
+                || !canManageUserPermissionGrants()) return false;
+
+        Long tenantId = TenantContext.getCurrentTenant();
+        User grantor = currentUser(authentication);
+        if (tenantId == null || grantor == null || grantor.getCompany() == null
+                || !tenantId.equals(grantor.getCompany().getId())) return false;
+        User recipient = userRepository.findByIdAndCompanyIdAndDeletedFalse(recipientUserId, tenantId).orElse(null);
+        if (recipient == null || !recipient.isActive()
+                || !"ACTIVE".equalsIgnoreCase(recipient.getAccountStatus())
+                || recipient.getId().equals(grantor.getId())) return false;
+
+        Set<PermissionScope> grantorScopes = getScopesForUser(grantor, permissionCode, tenantId);
+        if (grantorScopes.isEmpty()) return false;
+        Employee grantorEmployee = employeeRepository.findByUser_IdAndDeletedFalse(grantor.getId()).orElse(null);
+        Employee recipientEmployee = employeeRepository.findByUser_IdAndDeletedFalse(recipient.getId()).orElse(null);
+        if (grantorScopes.contains(PermissionScope.ORGANIZATION)) return true;
+        if (!isEmployeeInTenant(grantorEmployee, tenantId)
+                || !isEmployeeInTenant(recipientEmployee, tenantId)) return false;
+        return requestedScopeIsWithinGrantorScope(
+                requestedScope, grantorScopes, grantorEmployee, recipientEmployee, tenantId);
     }
 
     /**
@@ -129,7 +184,9 @@ public class AuthorizationService {
         Set<PermissionScope> scopes = getScopes(permissionCode);
         if (scopes.contains(PermissionScope.ORGANIZATION)) return Optional.empty();
         Employee current = employeeRepository.findByUser_IdAndDeletedFalse(user.getId()).orElse(null);
-        if (current == null) return Optional.of(Set.of());
+        if (current == null || current.getCompany() == null || !companyId.equals(current.getCompany().getId())) {
+            return Optional.of(Set.of());
+        }
         Set<Long> ids = new HashSet<>();
         if (scopes.contains(PermissionScope.SELF)) ids.add(current.getId());
         if (scopes.contains(PermissionScope.TEAM) && current.getTeam() != null) {
@@ -156,7 +213,60 @@ public class AuthorizationService {
     }
 
     public boolean hasOrganizationScope(String permissionCode) {
-        return getScopes(permissionCode).contains(PermissionScope.ORGANIZATION);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated() && isAccountActive(authentication)
+                && isSuperAdmin(authentication)) {
+            return TenantContext.getCurrentTenant() != null;
+        }
+        return authentication != null && authentication.isAuthenticated() && isAccountActive(authentication)
+                && hasAuthority(authentication, permissionCode)
+                && getScopes(permissionCode).contains(PermissionScope.ORGANIZATION);
+    }
+
+    private boolean requestedScopeIsWithinGrantorScope(PermissionScope requestedScope,
+                                                       Set<PermissionScope> grantorScopes,
+                                                       Employee grantor,
+                                                       Employee recipient,
+                                                       Long tenantId) {
+        if (requestedScope == PermissionScope.SELF) {
+            return employeeIsWithinScope(grantorScopes, grantor, recipient);
+        }
+        if (requestedScope == PermissionScope.TEAM) {
+            if (recipient.getTeam() == null) return false;
+            if (grantorScopes.contains(PermissionScope.TEAM) && grantor.getTeam() != null
+                    && grantor.getTeam().getId().equals(recipient.getTeam().getId())) return true;
+            Set<Long> teamMembers = new HashSet<>(employeeRepository.findIdsByCompanyAndTeam(
+                    tenantId, recipient.getTeam().getId()));
+            return !teamMembers.isEmpty() && teamMembers.stream()
+                    .map(id -> employeeRepository.findByIdAndCompany_IdAndDeletedFalse(id, tenantId).orElse(null))
+                    .allMatch(member -> member != null && employeeIsWithinScope(grantorScopes, grantor, member));
+        }
+        if (requestedScope == PermissionScope.DEPARTMENT) {
+            if (recipient.getDepartment() == null) return false;
+            if (grantorScopes.contains(PermissionScope.DEPARTMENT) && grantor.getDepartment() != null
+                    && grantor.getDepartment().getId().equals(recipient.getDepartment().getId())) return true;
+            Set<Long> departmentMembers = new HashSet<>(employeeRepository.findIdsByCompanyAndDepartment(
+                    tenantId, recipient.getDepartment().getId()));
+            return !departmentMembers.isEmpty() && departmentMembers.stream()
+                    .map(id -> employeeRepository.findByIdAndCompany_IdAndDeletedFalse(id, tenantId).orElse(null))
+                    .allMatch(member -> member != null && employeeIsWithinScope(grantorScopes, grantor, member));
+        }
+        return false;
+    }
+
+    private boolean employeeIsWithinScope(Set<PermissionScope> scopes, Employee grantor, Employee target) {
+        if (scopes.contains(PermissionScope.ORGANIZATION)) return true;
+        if (scopes.contains(PermissionScope.SELF) && grantor.getId().equals(target.getId())) return true;
+        if (scopes.contains(PermissionScope.TEAM) && grantor.getTeam() != null && target.getTeam() != null
+                && grantor.getTeam().getId().equals(target.getTeam().getId())) return true;
+        return scopes.contains(PermissionScope.DEPARTMENT)
+                && grantor.getDepartment() != null && target.getDepartment() != null
+                && grantor.getDepartment().getId().equals(target.getDepartment().getId());
+    }
+
+    private boolean isEmployeeInTenant(Employee employee, Long tenantId) {
+        return employee != null && !employee.isDeleted() && employee.getCompany() != null
+                && tenantId.equals(employee.getCompany().getId());
     }
 
     @Transactional(readOnly = true)

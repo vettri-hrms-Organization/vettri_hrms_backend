@@ -29,25 +29,25 @@ public class RoleController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ROLE_MANAGE')")
     public ResponseEntity<RoleDTO> create(@Valid @RequestBody CreateRoleRequest request) {
         return ResponseEntity.status(201).body(roleService.create(request));
     }
 
     @PutMapping("/{id}/permissions")
-    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ROLE_MANAGE')")
     public RoleDTO updatePermissions(@PathVariable Long id, @RequestBody Set<String> permissionCodes) {
         return roleService.updatePermissions(id, permissionCodes);
     }
 
     @PutMapping("/{id}/permissions-scopes")
-    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ROLE_MANAGE')")
     public RoleDTO updatePermissionsAndScopes(@PathVariable Long id, @RequestBody UpdateRolePermissionsRequest request) {
         return roleService.updatePermissions(id, request);
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ROLE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ROLE_MANAGE')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         roleService.delete(id);
         return ResponseEntity.noContent().build();

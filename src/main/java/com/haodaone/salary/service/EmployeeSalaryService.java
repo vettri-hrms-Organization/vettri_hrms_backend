@@ -46,14 +46,17 @@ public class EmployeeSalaryService {
     private final SalaryStructureRepository salaryStructureRepository;
     private final PayrollItemRepository payrollItemRepository;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    private final com.haodaone.security.EmployeeSecurity employeeSecurity;
 
     public EmployeeSalaryService(EmployeeRepository employeeRepository, SalaryStructureRepository salaryStructureRepository,
                                   PayrollItemRepository payrollItemRepository,
-                                  com.haodaone.security.AuthorizationService authorizationService) {
+                                  com.haodaone.security.AuthorizationService authorizationService,
+                                  com.haodaone.security.EmployeeSecurity employeeSecurity) {
         this.employeeRepository = employeeRepository;
         this.salaryStructureRepository = salaryStructureRepository;
         this.payrollItemRepository = payrollItemRepository;
         this.authorizationService = authorizationService;
+        this.employeeSecurity = employeeSecurity;
     }
 
     @Transactional(readOnly = true)
@@ -83,6 +86,11 @@ public class EmployeeSalaryService {
         Long companyId = requiredTenant();
         Employee employee = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(employeeId, companyId)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + employeeId));
+        if (!authorizationService.isAllowed("SALARY_VIEW", "EMPLOYEE", employeeId)
+                && !employeeSecurity.isSelf(employeeId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "SALARY_VIEW is not authorized for this employee.");
+        }
 
         SalaryStructureDTO current = salaryStructureRepository.findByEmployee_Company_IdAndEmployeeIdAndActiveTrueAndDeletedFalse(companyId, employeeId)
                 .map(SalaryStructureDTO::from).orElse(null);

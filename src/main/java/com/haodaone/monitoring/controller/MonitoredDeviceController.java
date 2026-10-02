@@ -25,7 +25,7 @@ public class MonitoredDeviceController {
     }
 
     @GetMapping
-    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_VIEW')")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.hasOrganizationScope('MONITORING_VIEW')")
     public List<MonitoredDeviceDTO> listAll() {
         return deviceEnrollmentService.listAll();
     }

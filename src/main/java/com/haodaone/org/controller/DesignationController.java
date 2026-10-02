@@ -26,7 +26,7 @@ public class DesignationController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ORG_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_MANAGE')")
     public ResponseEntity<DesignationDTO> create(@Valid @RequestBody DesignationDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(designationService.create(request));
     }

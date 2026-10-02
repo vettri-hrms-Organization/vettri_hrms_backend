@@ -87,7 +87,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<UserDTO> me(@AuthenticationPrincipal CustomUserPrincipal principal) {
-        UserDTO dto = UserDTO.from(principal.getUser());
+        UserDTO dto = UserDTO.from(principal.getUser(), principal.getPermissionGrants());
         employeeRepository.findByUser_UsernameAndDeletedFalse(principal.getUsername())
             .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(principal.getUser().getEmail()))
                 .ifPresent(employee -> dto.setEmployeeId(employee.getId()));

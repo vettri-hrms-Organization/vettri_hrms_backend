@@ -26,13 +26,13 @@ public class HolidayController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('LEAVE_MANAGE')")
     public ResponseEntity<HolidayDTO> create(@Valid @RequestBody HolidayDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(holidayService.create(request));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('LEAVE_MANAGE')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         holidayService.delete(id);
         return ResponseEntity.noContent().build();

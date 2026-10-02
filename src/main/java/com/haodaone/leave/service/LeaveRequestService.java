@@ -15,7 +15,6 @@ import com.haodaone.leave.repository.HolidayRepository;
 import com.haodaone.leave.repository.LeaveBalanceRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.leave.repository.LeaveTypeRepository;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,10 +74,11 @@ public class LeaveRequestService {
         if (employeeIds == null || employeeIds.isEmpty()) {
             return List.of();
         }
+        Long companyId = requiredTenant();
         List<Long> ids = new java.util.ArrayList<>(employeeIds);
         List<LeaveRequest> requests = (status == null || status.isBlank())
-                ? leaveRequestRepository.findAllByEmployeeIdInOrderByStartDateDesc(ids)
-                : leaveRequestRepository.findAllByEmployeeIdInAndStatusOrderByStartDateAsc(ids, status.toUpperCase());
+                ? leaveRequestRepository.findAllByCompany_IdAndEmployeeIdInOrderByStartDateDesc(companyId, ids)
+                : leaveRequestRepository.findAllByCompany_IdAndEmployeeIdInAndStatusOrderByStartDateAsc(companyId, ids, status.toUpperCase());
         return requests.stream().map(LeaveRequestDTO::from).toList();
     }
 
@@ -92,13 +92,13 @@ public class LeaveRequestService {
      */
     @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listForManagerTeam(String username, String status) {
-        Employee me = employeeRepository.findByUser_UsernameAndDeletedFalse(username).orElse(null);
-        if (me == null) {
-            return List.of();
-        }
-        List<Long> teamIds = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(me.getId())
-                .stream().map(Employee::getId).toList();
-        return listForEmployees(teamIds, status);
+        var scope = authorizationService.resolveEmployeeIds("LEAVE_APPROVE");
+        if (scope.isPresent()) return listForEmployees(scope.get(), status);
+        Long companyId = requiredTenant();
+        List<LeaveRequest> requests = (status == null || status.isBlank())
+                ? leaveRequestRepository.findAllByCompany_IdOrderByStartDateDesc(companyId)
+                : leaveRequestRepository.findAllByCompany_IdAndStatusOrderByStartDateAsc(companyId, status.toUpperCase());
+        return requests.stream().map(LeaveRequestDTO::from).toList();
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +185,10 @@ public class LeaveRequestService {
         LeaveRequest leaveRequest = leaveRequestRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Leave request not found: " + id));
         if (leaveRequest.getCompany() == null || !requiredTenant().equals(leaveRequest.getCompany().getId())) throw new ResourceNotFoundException("Leave request not found: " + id);
+        if (!authorizationService.isAllowed("LEAVE_APPROVE", "EMPLOYEE", leaveRequest.getEmployee().getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "LEAVE_APPROVE is not authorized for this employee.");
+        }
 
         if (!DECIDABLE.contains(leaveRequest.getStatus())) {
             throw new BadRequestException("Only pending requests can be approved or rejected (current status: " + leaveRequest.getStatus() + ")");
@@ -206,6 +210,12 @@ public class LeaveRequestService {
         LeaveRequest leaveRequest = leaveRequestRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Leave request not found: " + id));
         if (leaveRequest.getCompany() == null || !requiredTenant().equals(leaveRequest.getCompany().getId())) throw new ResourceNotFoundException("Leave request not found: " + id);
+        boolean owner = currentEmployee().map(employee -> employee.getId().equals(leaveRequest.getEmployee().getId())).orElse(false);
+        boolean approver = authorizationService.isAllowed("LEAVE_APPROVE", "EMPLOYEE", leaveRequest.getEmployee().getId());
+        if (!owner && !approver) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Only the request owner or an authorized leave approver can cancel this request.");
+        }
 
         if (leaveRequest.getStatus().equals("CANCELLED") || leaveRequest.getStatus().equals("REJECTED")) {
             throw new BadRequestException("This request is already " + leaveRequest.getStatus().toLowerCase());
@@ -248,17 +258,23 @@ public class LeaveRequestService {
                 if (request.getEmployeeId().equals(current.getId())) {
                     return current;
                 }
-                boolean canApplyForOthers = authentication.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority)
-                        .anyMatch("LEAVE_APPLY"::equals);
-                if (!canApplyForOthers) {
-                    throw new BadRequestException("Employees can only apply leave for themselves");
+                if (!authorizationService.isAllowed("LEAVE_APPLY", "EMPLOYEE", request.getEmployeeId())) {
+                    throw new org.springframework.security.access.AccessDeniedException(
+                            "LEAVE_APPLY is not authorized for this employee.");
                 }
             }
         }
 
-        return employeeRepository.findById(request.getEmployeeId())
+        Employee target = employeeRepository.findById(request.getEmployeeId())
                 .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
+        if (target.getCompany() == null || !requiredTenant().equals(target.getCompany().getId())) {
+            throw new BadRequestException("Employee is not in this company");
+        }
+        if (!authorizationService.isAllowed("LEAVE_APPLY", "EMPLOYEE", target.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "LEAVE_APPLY is not authorized for this employee.");
+        }
+        return target;
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }

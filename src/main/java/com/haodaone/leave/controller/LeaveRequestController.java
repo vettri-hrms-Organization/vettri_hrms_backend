@@ -69,7 +69,7 @@ public class LeaveRequestController {
      * downstream can be reached with an unauthorized employeeId.
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('LEAVE_APPLY') or hasAuthority('SELF_LEAVE_APPLY') or @employeeSecurity.isSelf(#request.employeeId)")
+    @PreAuthorize("@employeeSecurity.isSelf(#request.employeeId) or @authorizationService.isAllowed('LEAVE_APPLY', 'EMPLOYEE', #request.employeeId)")
     public ResponseEntity<LeaveRequestDTO> apply(@Valid @RequestBody ApplyLeaveRequest request) {
         return ResponseEntity.status(201).body(leaveRequestService.apply(request));
     }
@@ -87,7 +87,7 @@ public class LeaveRequestController {
     }
 
     @PatchMapping("/{id}/cancel")
-    @PreAuthorize("hasAuthority('LEAVE_APPLY') or hasAuthority('LEAVE_APPROVE') or @employeeSecurity.ownsLeaveRequest(#id)")
+    @PreAuthorize("@authorizationService.isAllowedLeaveRequest('LEAVE_APPROVE', #id) or @employeeSecurity.ownsLeaveRequest(#id)")
     public LeaveRequestDTO cancel(@PathVariable Long id) {
         return leaveRequestService.cancel(id);
     }

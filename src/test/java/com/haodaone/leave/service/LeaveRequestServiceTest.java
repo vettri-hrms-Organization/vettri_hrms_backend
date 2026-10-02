@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -109,8 +110,37 @@ class LeaveRequestServiceTest {
         when(employeeRepository.findByUser_UsernameAndDeletedFalse("alice")).thenReturn(Optional.of(loggedIn));
 
         assertThatThrownBy(() -> leaveRequestService.apply(request))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("Employees can only apply leave for themselves");
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("LEAVE_APPLY is not authorized for this employee");
+    }
+
+    @Test
+    void leaveApplyPermissionAloneCannotCancelAnotherEmployeesRequest() {
+        Company company = new Company();
+        company.setId(42L);
+        Employee loggedIn = new Employee();
+        loggedIn.setId(100L);
+        loggedIn.setCompany(company);
+        Employee requestOwner = new Employee();
+        requestOwner.setId(200L);
+        requestOwner.setCompany(company);
+        LeaveRequest request = new LeaveRequest();
+        request.setId(99L);
+        request.setCompany(company);
+        request.setEmployee(requestOwner);
+        request.setStatus("PENDING");
+        request.setStartDate(LocalDate.now().plusDays(5));
+        request.setEndDate(LocalDate.now().plusDays(6));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "pw",
+                        List.of(new SimpleGrantedAuthority("LEAVE_APPLY"))));
+        when(employeeRepository.findByUser_UsernameAndDeletedFalse("alice")).thenReturn(Optional.of(loggedIn));
+        when(leaveRequestRepository.findById(99L)).thenReturn(Optional.of(request));
+        when(authorizationService.isAllowed("LEAVE_APPROVE", "EMPLOYEE", 200L)).thenReturn(false);
+
+        assertThatThrownBy(() -> leaveRequestService.cancel(99L))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("request owner or an authorized leave approver");
     }
 
     @Test

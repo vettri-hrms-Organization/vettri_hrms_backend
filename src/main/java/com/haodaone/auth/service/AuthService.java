@@ -14,6 +14,7 @@ import com.haodaone.security.JwtService;
 import com.haodaone.user.dto.UserDTO;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.UserRepository;
+import com.haodaone.user.repository.UserPermissionGrantRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuditLogService auditLogService;
     private final EmployeeRepository employeeRepository;
+    private final UserPermissionGrantRepository permissionGrantRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Value("${app.jwt.refresh-token-expiry-days:7}")
@@ -54,7 +56,8 @@ public class AuthService {
                         PasswordEncoder passwordEncoder,
                         JwtService jwtService,
                         AuditLogService auditLogService,
-                        EmployeeRepository employeeRepository) {
+                        EmployeeRepository employeeRepository,
+                        UserPermissionGrantRepository permissionGrantRepository) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.loginHistoryRepository = loginHistoryRepository;
@@ -62,11 +65,14 @@ public class AuthService {
         this.jwtService = jwtService;
         this.auditLogService = auditLogService;
         this.employeeRepository = employeeRepository;
+        this.permissionGrantRepository = permissionGrantRepository;
     }
 
     /** Every UserDTO handed back to the frontend needs this resolved the same way - see UserDTO#getEmployeeId. */
     private UserDTO toUserDTO(User user) {
-        UserDTO dto = UserDTO.from(user);
+        UserDTO dto = UserDTO.from(user, user.getCompany() == null ? List.of()
+                : permissionGrantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(
+                        user.getCompany().getId(), user.getId()));
         employeeRepository.findByUser_UsernameAndDeletedFalse(user.getUsername())
                 .ifPresent(employee -> dto.setEmployeeId(employee.getId()));
         return dto;
