@@ -180,6 +180,9 @@ public class EmployeeDocumentService {
     public EmployeeDocumentDTO review(Long id, boolean approved, String rejectionReason) {
         EmployeeDocument doc = documentRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + id));
+        if (!EmployeeDocument.STATUS_PENDING_REVIEW.equals(doc.getStatus())) {
+            throw new BadRequestException("Only pending documents can be reviewed.");
+        }
 
         if (approved) {
             doc.setStatus(EmployeeDocument.STATUS_APPROVED);
@@ -194,7 +197,7 @@ public class EmployeeDocumentService {
 
         String normalizedReason = rejectionReason == null ? "" : rejectionReason.trim();
         if (normalizedReason.isEmpty()) {
-            throw new IllegalArgumentException("A rejection reason is required when rejecting a document.");
+            throw new BadRequestException("A rejection reason is required when rejecting a document.");
         }
         doc.setStatus(EmployeeDocument.STATUS_REJECTED);
         doc.setRejectionReason(normalizedReason);

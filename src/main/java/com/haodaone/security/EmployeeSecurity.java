@@ -3,6 +3,8 @@ package com.haodaone.security;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.tenant.TenantContext;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -39,6 +41,19 @@ public class EmployeeSecurity {
             return false;
         }
         return currentEmployeeId().map(employeeId::equals).orElse(false);
+    }
+
+    /** Employees upload only their own documents; HR and administrative users review instead. */
+    public boolean canUploadOwnDocuments(Long employeeId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        boolean isReviewerOrAdministrator = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority -> authority.equals("EMPLOYEE_MANAGE")
+                        || authority.equals("ROLE_HR_ADMIN"));
+        return !isReviewerOrAdministrator && isSelf(employeeId);
     }
 
     /** True if the given leave request was filed by the currently authenticated login. */

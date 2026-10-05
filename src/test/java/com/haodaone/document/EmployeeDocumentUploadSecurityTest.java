@@ -1,7 +1,10 @@
 package com.haodaone.document;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
+import com.haodaone.document.entity.EmployeeDocument;
+import com.haodaone.document.repository.EmployeeDocumentRepository;
 import com.haodaone.document.service.EmployeeDocumentS3StorageService;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -36,11 +40,14 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -64,6 +71,9 @@ class EmployeeDocumentUploadSecurityTest {
     private EmployeeRepository employeeRepository;
 
     @Autowired
+    private EmployeeDocumentRepository documentRepository;
+
+    @Autowired
     private PermissionRepository permissionRepository;
 
     @Autowired
@@ -74,6 +84,9 @@ class EmployeeDocumentUploadSecurityTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -115,7 +128,7 @@ class EmployeeDocumentUploadSecurityTest {
     }
 
     @Test
-    void hrCanUploadForEmployeeWithinDepartmentScope() throws Exception {
+    void hrCannotUploadEmployeeDocumentEvenWithinAuthorizedScope() throws Exception {
         Company company = createCompany();
         Department department = createDepartment(company);
         User hrUser = createUser(company, "department-hr");
@@ -127,9 +140,9 @@ class EmployeeDocumentUploadSecurityTest {
         commitSetup();
 
         mockMvc.perform(uploadRequest(target.getId(), "AADHAAR").header("Authorization", bearer(token)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
 
-        verify(documentStorageService).store(any(MultipartFile.class), eq(company.getId()),
+        verify(documentStorageService, never()).store(any(MultipartFile.class), eq(company.getId()),
                 eq(target.getId()), eq("AADHAAR"));
     }
 
@@ -169,15 +182,67 @@ class EmployeeDocumentUploadSecurityTest {
     @Test
     void authenticatedMultipartUploadStillValidatesDocumentFields() throws Exception {
         Company company = createCompany();
-        User hrUser = createUser(company, "validation-hr");
-        Employee hrEmployee = createEmployee(company, hrUser, "ValidationHr", null);
-        grantEmployeeManage(hrUser, company, PermissionScope.ORGANIZATION);
-        String token = tokenFor(hrUser);
+        User employeeUser = createUser(company, "validation-employee");
+        Employee employee = createEmployee(company, employeeUser, "ValidationEmployee", null);
+        String token = tokenFor(employeeUser);
         commitSetup();
 
-        mockMvc.perform(uploadRequest(hrEmployee.getId(), "PASSPORT")
+        mockMvc.perform(uploadRequest(employee.getId(), "PASSPORT")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void hrCanReviewPendingDocumentWithinDepartmentScope() throws Exception {
+        Company company = createCompany();
+        Department department = createDepartment(company);
+        User employeeUser = createUser(company, "reviewee");
+        Employee employee = createEmployee(company, employeeUser, "Reviewee", department);
+        User hrUser = createUser(company, "authorized-reviewer");
+        createEmployee(company, hrUser, "AuthorizedReviewer", department);
+        grantEmployeeManage(hrUser, company, PermissionScope.DEPARTMENT);
+        String employeeToken = tokenFor(employeeUser);
+        String hrToken = tokenFor(hrUser);
+        stubStorage(company, employee, "AADHAAR");
+        commitSetup();
+
+        long documentId = uploadAndReadDocumentId(employee, employeeToken);
+
+        mockMvc.perform(post("/api/documents/{id}/review", documentId)
+                        .header("Authorization", bearer(hrToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"approved\":true}"))
+                .andExpect(status().isOk());
+
+        assertEquals(EmployeeDocument.STATUS_APPROVED,
+                documentRepository.findById(documentId).orElseThrow().getStatus());
+    }
+
+    @Test
+    void hrCannotReviewDocumentOutsideAuthorizedDepartmentScope() throws Exception {
+        Company company = createCompany();
+        Department hrDepartment = createDepartment(company);
+        Department otherDepartment = createDepartment(company);
+        User employeeUser = createUser(company, "out-of-scope-reviewee");
+        Employee employee = createEmployee(company, employeeUser, "OutOfScopeReviewee", otherDepartment);
+        User hrUser = createUser(company, "out-of-scope-reviewer");
+        createEmployee(company, hrUser, "ScopedReviewer", hrDepartment);
+        grantEmployeeManage(hrUser, company, PermissionScope.DEPARTMENT);
+        String employeeToken = tokenFor(employeeUser);
+        String hrToken = tokenFor(hrUser);
+        stubStorage(company, employee, "AADHAAR");
+        commitSetup();
+
+        long documentId = uploadAndReadDocumentId(employee, employeeToken);
+
+        mockMvc.perform(post("/api/documents/{id}/review", documentId)
+                        .header("Authorization", bearer(hrToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"approved\":true}"))
+                .andExpect(status().isForbidden());
+
+        assertEquals(EmployeeDocument.STATUS_PENDING_REVIEW,
+                documentRepository.findById(documentId).orElseThrow().getStatus());
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder uploadRequest(
@@ -185,6 +250,16 @@ class EmployeeDocumentUploadSecurityTest {
         return multipart(UPLOAD_PATH, employeeId)
                 .file(new MockMultipartFile("file", "identity.pdf", "application/pdf", new byte[]{1, 2, 3}))
                 .param("documentType", documentType);
+    }
+
+    private long uploadAndReadDocumentId(Employee employee, String token) throws Exception {
+        String response = mockMvc.perform(uploadRequest(employee.getId(), "AADHAAR")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).get("id").asLong();
     }
 
     private Company createCompany() {

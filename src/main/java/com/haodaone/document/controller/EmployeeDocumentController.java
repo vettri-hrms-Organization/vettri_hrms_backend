@@ -40,13 +40,13 @@ public class EmployeeDocumentController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE')")
+    @PreAuthorize("@employeeSecurity.canUploadOwnDocuments(#request.employeeId)")
     public ResponseEntity<EmployeeDocumentDTO> create(@Valid @RequestBody EmployeeDocumentDTO.CreateRequest request) {
         return ResponseEntity.status(201).body(documentService.create(request));
     }
 
     @PostMapping(value = "/employee/{employeeId}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_MANAGE', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@employeeSecurity.canUploadOwnDocuments(#employeeId)")
     public ResponseEntity<EmployeeDocumentDTO> upload(@PathVariable Long employeeId,
                                                    @RequestPart("file") MultipartFile file,
                                                    @RequestParam("documentType") String documentType,
@@ -72,7 +72,7 @@ public class EmployeeDocumentController {
     }
 
     @PostMapping("/{id}/review")
-    @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE')")
+    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_MANAGE', 'EMPLOYEE', @employeeDocumentService.resolveEmployeeIdForDocument(#id))")
     public ResponseEntity<EmployeeDocumentDTO> review(@PathVariable Long id,
                                                     @Valid @RequestBody EmployeeDocumentDTO.ReviewRequest request) {
         if (request.getApproved() == null) {
@@ -82,7 +82,7 @@ public class EmployeeDocumentController {
     }
 
     @GetMapping("/{id}/download")
-    @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE') or @employeeSecurity.isSelf(@employeeDocumentService.resolveEmployeeIdForDocument(#id))")
+    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_VIEW', 'EMPLOYEE', @employeeDocumentService.resolveEmployeeIdForDocument(#id)) or @authorizationService.isAllowed('EMPLOYEE_MANAGE', 'EMPLOYEE', @employeeDocumentService.resolveEmployeeIdForDocument(#id)) or @employeeSecurity.isSelf(@employeeDocumentService.resolveEmployeeIdForDocument(#id))")
     public ResponseEntity<InputStreamResource> download(@PathVariable Long id) {
         InputStreamResource resource = documentService.download(id);
         String filename = documentService.byEmployee(documentService.resolveEmployeeIdForDocument(id)).stream()
@@ -97,7 +97,7 @@ public class EmployeeDocumentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE')")
+    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_MANAGE', 'EMPLOYEE', @employeeDocumentService.resolveEmployeeIdForDocument(#id))")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         documentService.delete(id);
         return ResponseEntity.noContent().build();

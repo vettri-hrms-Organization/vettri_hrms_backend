@@ -103,6 +103,10 @@ public class EmployeeDocumentUploadReviewWorkflowTest {
         EmployeeDocumentDTO reviewed = employeeDocumentService.review(created.getId(), true, null);
         assertEquals("APPROVED", reviewed.getStatus());
         assertNull(reviewed.getRejectionReason());
+        assertThrows(BadRequestException.class,
+                () -> employeeDocumentService.review(created.getId(), true, null));
+        assertThrows(BadRequestException.class,
+                () -> employeeDocumentService.review(created.getId(), false, "No longer valid"));
 
         assertEquals(1, employeeDocumentRepository.findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(company.getId(), employee.getId()).size());
     }
@@ -192,8 +196,17 @@ public class EmployeeDocumentUploadReviewWorkflowTest {
                 "Needs check"
         );
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+        BadRequestException ex = assertThrows(BadRequestException.class,
                 () -> employeeDocumentService.review(created.getId(), false, null));
         assertTrue(ex.getMessage().contains("rejection reason"));
+
+        EmployeeDocumentDTO rejected = employeeDocumentService.review(
+                created.getId(), false, "  Please provide a readable copy.  ");
+        assertEquals("REJECTED", rejected.getStatus());
+        assertEquals("Please provide a readable copy.", rejected.getRejectionReason());
+        assertThrows(BadRequestException.class,
+                () -> employeeDocumentService.review(created.getId(), true, null));
+        assertThrows(BadRequestException.class,
+                () -> employeeDocumentService.review(created.getId(), false, "another reason"));
     }
 }
