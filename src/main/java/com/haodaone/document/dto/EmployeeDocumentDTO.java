@@ -1,6 +1,7 @@
 package com.haodaone.document.dto;
 
 import com.haodaone.document.entity.EmployeeDocument;
+import com.haodaone.employee.entity.Employee;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,10 +28,14 @@ public class EmployeeDocumentDTO {
     private String notes;
 
     public static EmployeeDocumentDTO from(EmployeeDocument d) {
+        return from(d, d.getEmployee());
+    }
+
+    public static EmployeeDocumentDTO from(EmployeeDocument d, Employee employee) {
         EmployeeDocumentDTO dto = new EmployeeDocumentDTO();
         dto.id = d.getId();
-        dto.employeeId = d.getEmployee().getId();
-        dto.employeeName = d.getEmployee().getFullName();
+        dto.employeeId = employee.getId();
+        dto.employeeName = employee.getFullName();
         dto.documentType = d.getDocumentType();
         dto.documentNumber = d.getDocumentNumber();
         dto.issueDate = d.getIssueDate();

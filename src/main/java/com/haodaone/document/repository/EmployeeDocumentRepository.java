@@ -1,6 +1,7 @@
 package com.haodaone.document.repository;
 
 import com.haodaone.document.entity.EmployeeDocument;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
@@ -8,14 +9,20 @@ import java.util.List;
 import java.util.Set;
 
 public interface EmployeeDocumentRepository extends JpaRepository<EmployeeDocument, Long> {
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(Long companyId, Long employeeId);
 
+    @EntityGraph(attributePaths = "employee")
     java.util.Optional<EmployeeDocument> findByIdAndCompany_IdAndDeletedFalse(Long id, Long companyId);
 
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByEmployeeIdAndDeletedFalseOrderByExpiryDateAsc(Long employeeId);
 
     /** Powers the Dashboard "expiring soon" widget and the Settings-wide expiry list - deliberately unpaginated like Goal/PerformanceReview's per-employee queries, since org-wide expiries within a lookahead window is a naturally bounded list. */
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(LocalDate start, LocalDate end);
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByCompany_IdAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, LocalDate start, LocalDate end);
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdInAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, Set<Long> employeeIds, LocalDate start, LocalDate end);
 }

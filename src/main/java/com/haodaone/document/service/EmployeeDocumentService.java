@@ -11,6 +11,8 @@ import com.haodaone.employee.repository.EmployeeRepository;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
@@ -127,15 +129,16 @@ public class EmployeeDocumentService {
             throw new BadRequestException("Issue date can't be after the expiry date.");
         }
 
-        Employee employee = employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new BadRequestException("Unknown employee: " + employeeId));
         Long companyId = requiredTenant();
+        Employee employee = employeeRepository.findByIdAndDeletedFalse(employeeId)
+                .orElseThrow(() -> new BadRequestException("Unknown employee: " + employeeId));
         if (employee.getCompany() == null || !companyId.equals(employee.getCompany().getId())) {
             throw new BadRequestException("Employee is not in this company");
         }
 
         EmployeeDocumentS3StorageService.StoredFile stored = documentStorageService.store(
             file, companyId, employee.getId(), documentType);
+        deleteStoredFileIfTransactionRollsBack(stored.key());
         EmployeeDocument doc = new EmployeeDocument();
         doc.setEmployee(employee);
         doc.setCompany(employee.getCompany());
@@ -151,10 +154,26 @@ public class EmployeeDocumentService {
         doc.setFileSizeBytes(stored.sizeBytes());
         doc.setUploadedAt(LocalDateTime.now());
 
-        EmployeeDocument saved = documentRepository.save(doc);
+        EmployeeDocument saved = documentRepository.saveAndFlush(doc);
         auditLogService.log("EmployeeDocument", saved.getId(), "UPLOAD",
                 "Uploaded " + saved.getDocumentType() + " for " + employee.getFullName());
-        return EmployeeDocumentDTO.from(saved);
+        return EmployeeDocumentDTO.from(saved, employee);
+    }
+
+    private void deleteStoredFileIfTransactionRollsBack(String key) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            documentStorageService.delete(key);
+            throw new IllegalStateException("Employee document upload requires an active transaction.");
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    documentStorageService.delete(key);
+                }
+            }
+        });
     }
 
     @Transactional
