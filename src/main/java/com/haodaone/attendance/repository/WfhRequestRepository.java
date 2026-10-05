@@ -19,5 +19,6 @@ public interface WfhRequestRepository extends JpaRepository<WfhRequest, Long> {
     List<WfhRequest> findAllByEmployee_IdAndCompany_IdAndDeletedFalseOrderByWorkDateDesc(Long employeeId, Long companyId);
 
     List<WfhRequest> findAllByCompany_IdAndStatusAndDeletedFalseOrderByWorkDateDesc(Long companyId, String status);
+    List<WfhRequest> findAllByCompany_IdAndWorkDateAndDeletedFalse(Long companyId, LocalDate workDate);
     List<WfhRequest> findAllByCompany_IdAndEmployee_IdInAndStatusAndDeletedFalseOrderByWorkDateDesc(Long companyId, Set<Long> employeeIds, String status);
 }

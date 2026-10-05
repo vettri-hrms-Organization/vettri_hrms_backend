@@ -264,6 +264,7 @@ public class AttendancePresenceFlowTest {
     private Company newCompany(String name) {
         Company company = new Company();
         company.setName(name);
+        company.setAttendanceMethod("WEB_APP_ONLY");
         return company;
     }
 }

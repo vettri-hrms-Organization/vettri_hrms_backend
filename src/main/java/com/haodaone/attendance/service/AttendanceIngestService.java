@@ -55,15 +55,18 @@ public class AttendanceIngestService {
     private final EmployeeRepository employeeRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final AttendanceEventPublisher eventPublisher;
+    private final AttendancePolicyService attendancePolicyService;
 
     public AttendanceIngestService(DeviceRepository deviceRepository, EmployeeRepository employeeRepository,
                                     AttendanceRecordRepository attendanceRecordRepository,
                                     AttendanceEventPublisher eventPublisher,
+                                    AttendancePolicyService attendancePolicyService,
                                     Clock applicationClock) {
         this.deviceRepository = deviceRepository;
         this.employeeRepository = employeeRepository;
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.eventPublisher = eventPublisher;
+        this.attendancePolicyService = attendancePolicyService;
         this.applicationClock = applicationClock;
     }
 
@@ -146,7 +149,9 @@ public class AttendanceIngestService {
 
         Employee employee = employeeRepository.findByBiometricDeviceUserIdAndDeletedFalse(devicePin)
             .filter(candidate -> candidate.getCompany() != null
-                && Objects.equals(candidate.getCompany().getId(), device.getCompany().getId()))
+                && Objects.equals(candidate.getCompany().getId(), device.getCompany().getId())
+                && (candidate.getBiometricDeviceId() == null
+                    || Objects.equals(candidate.getBiometricDeviceId(), device.getId())))
             .orElse(null);
 
         AttendanceRecord record = new AttendanceRecord();
@@ -158,6 +163,10 @@ public class AttendanceIngestService {
         record.setVerifyMode(VERIFY_MODE_LABELS.getOrDefault(verifyCode, "Unknown"));
         record.setDeviceSerialNumber(device.getSerialNumber());
         record.setDeviceName(device.getDeviceName());
+        record.setSource("BIOMETRIC");
+        if (employee != null && !attendancePolicyService.isBiometricAllowed(employee, device.getCompany())) {
+            record.setStatus("POLICY_REJECTED");
+        }
         // tenant: inherit from device if present
         record.setCompany(device.getCompany());
         record.setRawLine(line);

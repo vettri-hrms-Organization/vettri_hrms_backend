@@ -22,6 +22,9 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
 
     List<AttendanceRecord> findAllByCompany_IdAndEmployee_IdOrderByPunchTimeDesc(Long companyId, Long employeeId);
 
+    List<AttendanceRecord> findAllByCompany_IdAndEmployee_IdAndPunchTimeBetweenOrderByPunchTimeDesc(
+            Long companyId, Long employeeId, LocalDateTime start, LocalDateTime end);
+
     List<AttendanceRecord> findAllByCompany_IdAndEmployeeIsNullOrderByPunchTimeDesc(Long companyId);
 
     Optional<AttendanceRecord> findByDeviceSerialNumberAndDeviceUserIdAndPunchTime(

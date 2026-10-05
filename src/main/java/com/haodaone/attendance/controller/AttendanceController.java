@@ -5,9 +5,13 @@ import com.haodaone.attendance.entity.AttendanceSession;
 import com.haodaone.attendance.entity.OfficeLocation;
 import com.haodaone.attendance.repository.AttendanceRecordRepository;
 import com.haodaone.attendance.repository.AttendanceSessionRepository;
+import com.haodaone.attendance.repository.AttendanceRegularizationRepository;
+import com.haodaone.attendance.repository.DeviceRepository;
+import com.haodaone.attendance.repository.WfhRequestRepository;
 import com.haodaone.attendance.repository.OfficeLocationRepository;
 import com.haodaone.attendance.service.AttendanceEventPublisher;
 import com.haodaone.attendance.service.AttendanceValidationService;
+import com.haodaone.attendance.service.AttendancePolicyService;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
@@ -54,6 +58,10 @@ public class AttendanceController {
     private final CompanyRepository companyRepository;
     private final Clock applicationClock;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    private final AttendancePolicyService attendancePolicyService;
+    private final AttendanceRegularizationRepository attendanceRegularizationRepository;
+    private final DeviceRepository deviceRepository;
+    private final WfhRequestRepository wfhRequestRepository;
 
     public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
                                AttendanceSessionRepository attendanceSessionRepository,
@@ -65,7 +73,11 @@ public class AttendanceController {
                                AttendanceValidationService attendanceValidationService,
                                CompanyRepository companyRepository,
                                Clock applicationClock,
-                               com.haodaone.security.AuthorizationService authorizationService) {
+                               com.haodaone.security.AuthorizationService authorizationService,
+                               AttendancePolicyService attendancePolicyService,
+                               AttendanceRegularizationRepository attendanceRegularizationRepository,
+                               DeviceRepository deviceRepository,
+                               WfhRequestRepository wfhRequestRepository) {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
@@ -77,6 +89,10 @@ public class AttendanceController {
         this.companyRepository = companyRepository;
         this.applicationClock = applicationClock;
         this.authorizationService = authorizationService;
+        this.attendancePolicyService = attendancePolicyService;
+        this.attendanceRegularizationRepository = attendanceRegularizationRepository;
+        this.deviceRepository = deviceRepository;
+        this.wfhRequestRepository = wfhRequestRepository;
     }
 
     @GetMapping
@@ -118,12 +134,29 @@ public class AttendanceController {
             : attendanceRecordRepository.findScopedByCompanyAndEmployees(companyId, scope.get(), targetDate.atStartOfDay(), targetDate.plusDays(1).atStartOfDay());
         Set<Long> punchedEmployeeIds = attendanceRows
                 .stream()
-                .filter(r -> r.getEmployee() != null)
+                .filter(r -> r.getEmployee() != null && "RECEIVED".equalsIgnoreCase(r.getStatus()))
                 .map(r -> r.getEmployee().getId())
                 .collect(Collectors.toSet());
+        List<AttendanceSession> sessions = scope.isEmpty()
+                ? attendanceSessionRepository.findAllByCompany_IdAndAttendanceDateOrderByCheckInTimeDesc(companyId, targetDate)
+                : attendanceSessionRepository.findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(
+                        companyId, scope.get(), targetDate);
+        sessions.stream().map(AttendanceSession::getEmployee).filter(Objects::nonNull)
+                .map(Employee::getId).forEach(punchedEmployeeIds::add);
 
         Set<Long> onApprovedLeaveIds = leaveRequestRepository.findActiveOnForCompany(companyId, targetDate).stream()
                 .map(lr -> lr.getEmployee().getId())
+                .collect(Collectors.toSet());
+
+        var wfhRequests = wfhRequestRepository.findAllByCompany_IdAndWorkDateAndDeletedFalse(companyId, targetDate);
+        var approvedWfhIds = wfhRequests.stream()
+                .filter(request -> "APPROVED".equalsIgnoreCase(request.getStatus()))
+                .map(request -> request.getEmployee().getId())
+                .collect(Collectors.toSet());
+        var pendingRegularizationIds = attendanceRegularizationRepository
+                .findAllByCompany_IdAndAttendanceDateAndStatusAndDeletedFalseOrderByAttendanceDateAsc(
+                        companyId, targetDate, "PENDING").stream()
+                .map(request -> request.getEmployee().getId())
                 .collect(Collectors.toSet());
 
         var visibleEmployees = scope.isEmpty()
@@ -133,10 +166,43 @@ public class AttendanceController {
                 .filter(e -> "Active".equals(e.getStatus()))
                 .filter(e -> !punchedEmployeeIds.contains(e.getId()))
                 .filter(e -> !onApprovedLeaveIds.contains(e.getId()))
-                .map(EmployeeSummaryDTO::from)
-                .toList();
+                .map(EmployeeSummaryDTO::from).toList();
+        List<AttendanceExceptionItemDTO> exceptionItems = visibleEmployees.stream()
+                .filter(e -> "Active".equals(e.getStatus()))
+                .filter(e -> !punchedEmployeeIds.contains(e.getId()))
+                .map(employee -> {
+                    if (onApprovedLeaveIds.contains(employee.getId())) {
+                        return AttendanceExceptionItemDTO.from(employee, "LEAVE", "On approved leave", "LEAVE", null);
+                    }
+                    String method = attendancePolicyService.effectiveMethod(employee, employee.getCompany());
+                    if (pendingRegularizationIds.contains(employee.getId())) {
+                        return AttendanceExceptionItemDTO.from(employee, "REGULARIZATION_PENDING",
+                                "Attendance regularization is awaiting review", "OFFICE", method);
+                    }
+                    if (approvedWfhIds.contains(employee.getId())) {
+                        return AttendanceExceptionItemDTO.from(employee, "WFH_APPROVED",
+                                "Remote check-in not completed", "WFH", method);
+                    }
+                    if ("WEB_APP_ONLY".equals(method)) {
+                        return AttendanceExceptionItemDTO.from(employee, "WEB_CHECK_IN_MISSING",
+                                "Web/App check-in not completed", "OFFICE", method);
+                    }
+                    if (employee.getBiometricDeviceId() == null || employee.getBiometricDeviceUserId() == null
+                            || employee.getBiometricDeviceUserId().isBlank()) {
+                        return AttendanceExceptionItemDTO.from(employee, "BIOMETRIC_ENROLLMENT_REQUIRED",
+                                "Biometric enrollment or device mapping is required", "OFFICE", method);
+                    }
+                    var device = deviceRepository.findByIdAndCompany_IdAndDeletedFalse(
+                            employee.getBiometricDeviceId(), companyId).orElse(null);
+                    if (device == null || !device.isOnline()) {
+                        return AttendanceExceptionItemDTO.from(employee, "BIOMETRIC_DEVICE_ISSUE",
+                                "Assigned biometric device is unavailable", "OFFICE", method);
+                    }
+                    return AttendanceExceptionItemDTO.from(employee, "BIOMETRIC_PUNCH_MISSING",
+                            "Biometric punch missing", "OFFICE", method);
+                }).toList();
 
-        return new AttendanceExceptionDTO(targetDate, true, missingPunch);
+        return new AttendanceExceptionDTO(targetDate, true, missingPunch, exceptionItems);
     }
 
     @GetMapping("/employee/{employeeId}")
@@ -146,6 +212,15 @@ public class AttendanceController {
         return attendanceRecordRepository.findAllByCompany_IdAndEmployee_IdOrderByPunchTimeDesc(companyId, employeeId).stream()
                 .map(AttendanceRecordDTO::from)
                 .toList();
+    }
+
+    @GetMapping("/employee/{employeeId}/sessions")
+    @PreAuthorize("@authorizationService.isAllowed('ATTENDANCE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
+    public List<AttendanceSessionDTO> employeeSessions(@PathVariable Long employeeId) {
+        Long companyId = requiredTenant();
+        return attendanceSessionRepository
+                .findAllByCompany_IdAndEmployee_IdOrderByAttendanceDateDesc(companyId, employeeId)
+                .stream().map(this::mapSession).toList();
     }
 
     @GetMapping("/unmapped")
@@ -176,6 +251,7 @@ public class AttendanceController {
 
         String normalizedSource = attendanceValidationService.normalizeSource(request.getSource());
         boolean wfh = Boolean.TRUE.equals(request.getWfh()) || "WFH".equalsIgnoreCase(request.getWorkingMode());
+        attendancePolicyService.validateWebCheckIn(employee, company, wfh, LocalDate.now(applicationClock));
         log.info("CHECK-IN LOCATION REQUEST received source={} workingMode={} latitude={} longitude={} accuracy={} timestamp={} officeLocationId={}",
                 normalizedSource, request.getWorkingMode(), request.getLatitude(), request.getLongitude(), request.getAccuracy(), request.getTimestamp(), request.getOfficeLocationId());
         attendanceValidationService.validateManagedDevice(employee, request.getDeviceId(), normalizedSource);
@@ -187,7 +263,8 @@ public class AttendanceController {
         session.setAttendanceDate(serverNow.toLocalDate());
         session.setCheckInTime(serverNow);
         session.setStatus("CHECKED_IN");
-        session.setSource(normalizedSource);
+        session.setSource("WEB_MOBILE".equals(normalizedSource) ? "MOBILE" : "WEB");
+        session.setCheckInSourceDetails(normalizedSource);
         session.setDeviceId(request.getDeviceId());
         session.setWfh(wfh);
 
@@ -242,7 +319,7 @@ public class AttendanceController {
         LocalDateTime now = LocalDateTime.now(applicationClock);
         session.setCheckOutTime(now);
         session.setStatus("CHECKED_OUT");
-        session.setSource(attendanceValidationService.normalizeSource(request.getSource()));
+        session.setCheckOutSourceDetails(attendanceValidationService.normalizeSource(request.getSource()));
         session.setDeviceId(request.getDeviceId());
         if (session.getCheckInTime() != null) {
             session.setDurationMinutes(Duration.between(session.getCheckInTime(), now).toMinutes());

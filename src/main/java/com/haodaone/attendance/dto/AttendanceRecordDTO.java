@@ -15,6 +15,7 @@ public class AttendanceRecordDTO {
     private OffsetDateTime punchTime;
     private String punchType;
     private String verifyMode;
+    private String source;
     private String deviceName;
     private String status;
     private boolean mapped;
@@ -26,6 +27,7 @@ public class AttendanceRecordDTO {
             : record.getPunchTime().atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime();
         dto.punchType = record.getPunchType();
         dto.verifyMode = record.getVerifyMode();
+        dto.source = record.getSource();
         dto.deviceName = record.getDeviceName();
         dto.status = record.getStatus();
         dto.mapped = record.getEmployee() != null;
@@ -73,6 +75,10 @@ public class AttendanceRecordDTO {
 
     public String getVerifyMode() {
         return verifyMode;
+    }
+
+    public String getSource() {
+        return source;
     }
 
     public String getDeviceName() {

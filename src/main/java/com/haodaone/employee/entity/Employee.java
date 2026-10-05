@@ -129,12 +129,34 @@ public class Employee extends BaseEntity {
     @Column(name = "biometric_device_user_id", unique = true, length = 30)
     private String biometricDeviceUserId;
 
+    @Column(name = "attendance_method_override", length = 20)
+    private String attendanceMethodOverride;
+
+    @Column(name = "biometric_device_id")
+    private Long biometricDeviceId;
+
     public String getBiometricDeviceUserId() {
         return biometricDeviceUserId;
     }
 
     public void setBiometricDeviceUserId(String biometricDeviceUserId) {
         this.biometricDeviceUserId = biometricDeviceUserId;
+    }
+
+    public String getAttendanceMethodOverride() {
+        return attendanceMethodOverride;
+    }
+
+    public void setAttendanceMethodOverride(String attendanceMethodOverride) {
+        this.attendanceMethodOverride = attendanceMethodOverride;
+    }
+
+    public Long getBiometricDeviceId() {
+        return biometricDeviceId;
+    }
+
+    public void setBiometricDeviceId(Long biometricDeviceId) {
+        this.biometricDeviceId = biometricDeviceId;
     }
 
     public String getEmployeeCode() {

@@ -3,6 +3,7 @@ package com.haodaone.attendance.service;
 import com.haodaone.attendance.entity.Device;
 import com.haodaone.attendance.repository.AttendanceRecordRepository;
 import com.haodaone.attendance.repository.DeviceRepository;
+import com.haodaone.attendance.service.AttendancePolicyService;
 import com.haodaone.company.entity.Company;
 import com.haodaone.employee.repository.EmployeeRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,7 @@ class AttendanceIngestServiceTest {
                 mock(EmployeeRepository.class),
                 mock(AttendanceRecordRepository.class),
                 mock(AttendanceEventPublisher.class),
+                mock(AttendancePolicyService.class),
                 Clock.fixed(Instant.parse("2026-10-01T00:00:00Z"), ZoneOffset.UTC));
     }
 

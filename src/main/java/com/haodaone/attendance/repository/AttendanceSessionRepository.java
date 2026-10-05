@@ -13,11 +13,15 @@ public interface AttendanceSessionRepository extends JpaRepository<AttendanceSes
     Optional<AttendanceSession> findTopByEmployee_IdAndCompany_IdAndAttendanceDateAndStatusInOrderByCheckInTimeDesc(
             Long employeeId, Long companyId, LocalDate attendanceDate, List<String> statuses);
 
+    @EntityGraph(attributePaths = "employee")
     List<AttendanceSession> findAllByCompany_IdAndAttendanceDateOrderByCheckInTimeDesc(Long companyId, LocalDate attendanceDate);
 
-    List<AttendanceSession> findAllByCompany_IdAndEmployee_IdOrderByAttendanceDateDesc(Long companyId, Long employeeId);
+    @EntityGraph(attributePaths = "employee")
+    List<AttendanceSession> findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(
+            Long companyId, java.util.Collection<Long> employeeIds, LocalDate attendanceDate);
 
-    List<AttendanceSession> findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(Long companyId, List<Long> employeeIds, LocalDate attendanceDate);
+    @EntityGraph(attributePaths = "employee")
+    List<AttendanceSession> findAllByCompany_IdAndEmployee_IdOrderByAttendanceDateDesc(Long companyId, Long employeeId);
 
     Optional<AttendanceSession> findByEmployee_IdAndCompany_IdAndStatusAndAttendanceDate(Long employeeId, Long companyId, String status, LocalDate attendanceDate);
 }

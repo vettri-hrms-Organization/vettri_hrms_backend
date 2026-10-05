@@ -22,6 +22,18 @@ public class Company extends BaseEntity {
     @Column(name = "productive_threshold_percent")
     private Integer productiveThresholdPercent = 80;
 
+    @Column(name = "attendance_method", nullable = false, length = 20)
+    private String attendanceMethod = "HYBRID";
+
+    @Column(name = "manual_regularization_enabled", nullable = false)
+    private boolean manualRegularizationEnabled = true;
+
+    @Column(name = "regularization_approval_required", nullable = false)
+    private boolean regularizationApprovalRequired = true;
+
+    @Column(name = "attendance_grace_minutes", nullable = false)
+    private int attendanceGraceMinutes = 10;
+
     @Column(name = "neutral_threshold_percent")
     private Integer neutralThresholdPercent = 50;
 
@@ -68,6 +80,38 @@ public class Company extends BaseEntity {
 
     public void setProductiveThresholdPercent(Integer value) {
         this.productiveThresholdPercent = value;
+    }
+
+    public String getAttendanceMethod() {
+        return attendanceMethod;
+    }
+
+    public void setAttendanceMethod(String attendanceMethod) {
+        this.attendanceMethod = attendanceMethod;
+    }
+
+    public boolean isManualRegularizationEnabled() {
+        return manualRegularizationEnabled;
+    }
+
+    public void setManualRegularizationEnabled(boolean manualRegularizationEnabled) {
+        this.manualRegularizationEnabled = manualRegularizationEnabled;
+    }
+
+    public boolean isRegularizationApprovalRequired() {
+        return regularizationApprovalRequired;
+    }
+
+    public void setRegularizationApprovalRequired(boolean regularizationApprovalRequired) {
+        this.regularizationApprovalRequired = regularizationApprovalRequired;
+    }
+
+    public int getAttendanceGraceMinutes() {
+        return attendanceGraceMinutes;
+    }
+
+    public void setAttendanceGraceMinutes(int attendanceGraceMinutes) {
+        this.attendanceGraceMinutes = attendanceGraceMinutes;
     }
 
     public Integer getNeutralThresholdPercent() {

@@ -68,6 +68,9 @@ public class AttendanceRecord extends BaseEntity {
     @Column(name = "verify_mode", length = 30)
     private String verifyMode;
 
+    @Column(name = "source", nullable = false, length = 30)
+    private String source = "BIOMETRIC";
+
     @Column(name = "device_serial_number", nullable = false, length = 50)
     private String deviceSerialNumber;
 
@@ -135,6 +138,14 @@ public class AttendanceRecord extends BaseEntity {
 
     public void setVerifyMode(String verifyMode) {
         this.verifyMode = verifyMode;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     public String getDeviceSerialNumber() {
