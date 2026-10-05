@@ -46,7 +46,7 @@ public class EmployeeDocumentController {
     }
 
     @PostMapping(value = "/employee/{employeeId}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE') or @employeeSecurity.isSelf(#employeeId)")
+    @PreAuthorize("@authorizationService.isAllowed('EMPLOYEE_MANAGE', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
     public ResponseEntity<EmployeeDocumentDTO> upload(@PathVariable Long employeeId,
                                                    @RequestPart("file") MultipartFile file,
                                                    @RequestParam("documentType") String documentType,
