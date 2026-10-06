@@ -23,6 +23,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
         List<Employee> findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(Long companyId);
 
+    @EntityGraph(attributePaths = {"department", "team", "designation.department", "reportingManager"})
+    List<Employee> findOrganizationStructureByCompany_IdAndDeletedFalseOrderByFirstNameAsc(Long companyId);
+
     List<Employee> findAllByReportingManagerIdAndDeletedFalse(Long managerId);
 
     @Query("select e.id from Employee e where e.company.id = :companyId and e.deleted = false and e.reportingManager.id = :managerId")
