@@ -41,6 +41,7 @@ public class SalaryStructureService {
         this.employeeSecurity = employeeSecurity;
     }
 
+    @Transactional(readOnly = true)
     public SalaryStructureDTO getCurrent(Long employeeId) {
         requireEmployeeAccess("SALARY_VIEW", employeeId, true);
         return salaryStructureRepository.findByEmployee_Company_IdAndEmployeeIdAndActiveTrueAndDeletedFalse(requiredTenant(), employeeId)
@@ -48,6 +49,7 @@ public class SalaryStructureService {
                 .orElse(null);
     }
 
+    @Transactional(readOnly = true)
     public List<SalaryStructureDTO> getHistory(Long employeeId) {
         requireEmployeeAccess("SALARY_VIEW", employeeId, true);
         return salaryStructureRepository.findByEmployee_Company_IdAndEmployeeIdAndDeletedFalseOrderByEffectiveFromDescCreatedAtDesc(requiredTenant(), employeeId)
