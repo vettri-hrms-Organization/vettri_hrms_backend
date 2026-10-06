@@ -23,5 +23,9 @@ public interface AttendanceSessionRepository extends JpaRepository<AttendanceSes
     @EntityGraph(attributePaths = "employee")
     List<AttendanceSession> findAllByCompany_IdAndEmployee_IdOrderByAttendanceDateDesc(Long companyId, Long employeeId);
 
+    @EntityGraph(attributePaths = "employee")
+    List<AttendanceSession> findAllByCompany_IdAndEmployee_IdAndDeletedFalseAndAttendanceDateBetweenOrderByAttendanceDateDescCheckInTimeDesc(
+            Long companyId, Long employeeId, LocalDate from, LocalDate to);
+
     Optional<AttendanceSession> findByEmployee_IdAndCompany_IdAndStatusAndAttendanceDate(Long employeeId, Long companyId, String status, LocalDate attendanceDate);
 }

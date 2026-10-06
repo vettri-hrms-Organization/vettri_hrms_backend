@@ -36,9 +36,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.stream.Collectors;
 
 @RestController
@@ -212,6 +215,58 @@ public class AttendanceController {
         return attendanceRecordRepository.findAllByCompany_IdAndEmployee_IdOrderByPunchTimeDesc(companyId, employeeId).stream()
                 .map(AttendanceRecordDTO::from)
                 .toList();
+    }
+
+    @GetMapping("/me/history")
+    @PreAuthorize("@authorizationService.canAccessOwnAttendance()")
+    @Transactional(readOnly = true)
+    public List<AttendanceSessionDTO> myAttendanceHistory(
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to) {
+        Employee employee = currentEmployee();
+        Long companyId = requireCompany(employee).getId();
+
+        if (from == null && to == null) {
+            LocalDate today = LocalDate.now(applicationClock);
+            from = today.withDayOfMonth(1);
+            to = today.withDayOfMonth(today.lengthOfMonth());
+        } else if (from == null || to == null) {
+            throw new BadRequestException("Both from and to dates are required");
+        }
+        if (from.isAfter(to)) {
+            throw new BadRequestException("from date must not be after to date");
+        }
+
+        List<AttendanceSessionDTO> history = new ArrayList<>(attendanceSessionRepository
+                .findAllByCompany_IdAndEmployee_IdAndDeletedFalseAndAttendanceDateBetweenOrderByAttendanceDateDescCheckInTimeDesc(
+                        companyId, employee.getId(), from, to)
+                .stream()
+                .map(this::mapSession)
+                .toList());
+
+        LocalDateTime punchStart = from.atStartOfDay();
+        LocalDateTime punchEnd = to.plusDays(1).atStartOfDay().minusNanos(1);
+        attendanceRecordRepository
+                .findAllByCompany_IdAndEmployee_IdAndDeletedFalseAndPunchTimeBetweenOrderByPunchTimeDesc(
+                        companyId, employee.getId(), punchStart, punchEnd)
+                .forEach(record -> {
+                    AttendanceSessionDTO dto = new AttendanceSessionDTO();
+                    dto.setId(record.getId());
+                    dto.setEmployeeId(employee.getId());
+                    dto.setAttendanceDate(record.getPunchTime().toLocalDate());
+                    if ("OUT".equalsIgnoreCase(record.getPunchType())) {
+                        dto.setCheckOutTime(record.getPunchTime());
+                    } else {
+                        dto.setCheckInTime(record.getPunchTime());
+                    }
+                    dto.setStatus(record.getStatus());
+                    dto.setSource(record.getSource());
+                    history.add(dto);
+                });
+
+        history.sort(Comparator.comparing(AttendanceSessionDTO::getAttendanceDate).reversed()
+                .thenComparing(this::historyEventTime, Comparator.nullsLast(Comparator.reverseOrder())));
+        return history;
     }
 
     @GetMapping("/employee/{employeeId}/sessions")
@@ -433,6 +488,10 @@ public class AttendanceController {
         dto.setDurationMinutes(session.getDurationMinutes());
         dto.setWfh(session.isWfh());
         return dto;
+    }
+
+    private OffsetDateTime historyEventTime(AttendanceSessionDTO record) {
+        return record.getCheckInTime() != null ? record.getCheckInTime() : record.getCheckOutTime();
     }
 
     private Employee currentEmployee() {
