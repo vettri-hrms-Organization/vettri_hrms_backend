@@ -61,6 +61,7 @@ public class PayrollService {
                 .stream().map(PayrollRunSummaryDTO::from).toList();
     }
 
+    @Transactional(readOnly = true)
     public PayrollRunDTO getRun(Long runId) {
         requireOrganizationPermission("SALARY_VIEW");
         return getRunData(runId);
