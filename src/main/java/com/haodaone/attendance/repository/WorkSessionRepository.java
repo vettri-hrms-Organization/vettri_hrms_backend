@@ -12,7 +12,13 @@ public interface WorkSessionRepository extends JpaRepository<WorkSession, Long> 
 
     List<WorkSession> findAllByCompany_IdAndSessionDateOrderByLoginTimeDesc(Long companyId, LocalDate sessionDate);
 
+    List<WorkSession> findAllByCompany_IdAndEmployee_IdInAndSessionDateOrderByLoginTimeDesc(
+            Long companyId, java.util.Set<Long> employeeIds, LocalDate sessionDate);
+
     List<WorkSession> findAllByCompany_IdAndWorkingModeAndSessionDateOrderByLoginTimeDesc(Long companyId, String workingMode, LocalDate sessionDate);
+
+    List<WorkSession> findAllByCompany_IdAndEmployee_IdInAndWorkingModeAndSessionDateOrderByLoginTimeDesc(
+            Long companyId, java.util.Set<Long> employeeIds, String workingMode, LocalDate sessionDate);
 
     List<WorkSession> findAllByCompany_IdAndWorkingModeAndSessionDateBetween(Long companyId, String workingMode, LocalDate startDate, LocalDate endDate);
 

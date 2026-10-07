@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -21,31 +22,39 @@ public class AttendanceEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(AttendanceEventPublisher.class);
     private static final long EMITTER_TIMEOUT = 0L;
 
-    private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
+    private final List<Subscriber> emitters = new CopyOnWriteArrayList<>();
 
-    public SseEmitter subscribe() {
+    public SseEmitter subscribe(Long companyId, boolean organizationScope, Set<Long> employeeIds) {
         SseEmitter emitter = new SseEmitter(EMITTER_TIMEOUT);
-        emitters.add(emitter);
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        emitter.onError(ex -> emitters.remove(emitter));
+        Subscriber subscriber = new Subscriber(emitter, companyId, organizationScope, Set.copyOf(employeeIds));
+        emitters.add(subscriber);
+        emitter.onCompletion(() -> emitters.remove(subscriber));
+        emitter.onTimeout(() -> emitters.remove(subscriber));
+        emitter.onError(ex -> emitters.remove(subscriber));
         try {
             emitter.send(SseEmitter.event().name("connected").data("ok"));
         } catch (IOException ex) {
-            emitters.remove(emitter);
+            emitters.remove(subscriber);
         }
         log.debug("New attendance stream subscriber. Active: {}", emitters.size());
         return emitter;
     }
 
-    public void publish(AttendanceRecordDTO record) {
-        for (SseEmitter emitter : emitters) {
+    public void publish(Long companyId, AttendanceRecordDTO record) {
+        for (Subscriber subscriber : emitters) {
+            if (!subscriber.companyId().equals(companyId)
+                    || (!subscriber.organizationScope()
+                    && (record.getEmployeeId() == null || !subscriber.employeeIds().contains(record.getEmployeeId())))) {
+                continue;
+            }
             try {
-                emitter.send(SseEmitter.event().name("attendance").data(record));
+                subscriber.emitter().send(SseEmitter.event().name("attendance").data(record));
             } catch (IOException | IllegalStateException ex) {
-                emitter.complete();
-                emitters.remove(emitter);
+                subscriber.emitter().complete();
+                emitters.remove(subscriber);
             }
         }
     }
+
+    private record Subscriber(SseEmitter emitter, Long companyId, boolean organizationScope, Set<Long> employeeIds) {}
 }

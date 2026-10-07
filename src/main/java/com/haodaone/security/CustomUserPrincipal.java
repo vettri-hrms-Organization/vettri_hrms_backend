@@ -1,7 +1,9 @@
 package com.haodaone.security;
 
 import com.haodaone.user.entity.Permission;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.entity.UserPermissionGrant;
 import org.springframework.security.core.GrantedAuthority;
@@ -11,6 +13,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 import java.util.List;
 
@@ -55,11 +58,20 @@ public class CustomUserPrincipal implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         Set<GrantedAuthority> authorities = new LinkedHashSet<>();
+        LocalDateTime now = LocalDateTime.now();
         for (Role role : user.getRoles()) {
+            if (role.isDeleted()) continue;
             authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getName()));
-            for (Permission permission : role.getPermissions()) {
-                authorities.add(new SimpleGrantedAuthority(permission.getCode()));
-            }
+            Set<String> rolePermissionCodes = role.getPermissions().stream()
+                    .filter(permission -> !permission.isDeleted())
+                    .map(Permission::getCode)
+                    .collect(Collectors.toSet());
+            role.getPermissionScopes().stream()
+                    .filter(scope -> isEffectiveScope(scope, rolePermissionCodes, now))
+                    .map(RolePermissionScope::getPermission)
+                    .map(Permission::getCode)
+                    .map(SimpleGrantedAuthority::new)
+                    .forEach(authorities::add);
         }
         permissionGrants.stream()
                 .filter(UserPermissionGrant::isActive)
@@ -73,6 +85,18 @@ public class CustomUserPrincipal implements UserDetails {
                 .map(SimpleGrantedAuthority::new)
                 .forEach(authorities::add);
         return authorities;
+    }
+
+    private boolean isEffectiveScope(RolePermissionScope scope, Set<String> rolePermissionCodes, LocalDateTime now) {
+        Permission permission = scope.getPermission();
+        PermissionScope permissionScope = scope.getScope();
+        return permission != null
+                && !permission.isDeleted()
+                && rolePermissionCodes.contains(permission.getCode())
+                && permissionScope != null
+                && permissionScope != PermissionScope.CUSTOM
+                && (scope.getValidFrom() == null || !now.isBefore(scope.getValidFrom()))
+                && (scope.getValidUntil() == null || now.isBefore(scope.getValidUntil()));
     }
 
     public java.util.List<String> getRoleNames() {

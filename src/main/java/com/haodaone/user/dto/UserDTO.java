@@ -39,6 +39,7 @@ public class UserDTO {
         dto.mustChangePassword = user.isMustChangePassword();
         dto.lastLoginAt = user.getLastLoginAt();
         dto.roles = user.getRoles().stream()
+                .filter(role -> !role.isDeleted())
                 .map(com.haodaone.user.entity.Role::getName)
                 .collect(Collectors.toList());
 
@@ -46,8 +47,13 @@ public class UserDTO {
         dto.scopes = new HashMap<>();
         LocalDateTime now = LocalDateTime.now();
         user.getRoles().stream()
+                .filter(role -> !role.isDeleted())
                 .flatMap(role -> role.getPermissionScopes().stream())
                 .filter(scope -> scope.getPermission() != null && !scope.getPermission().isDeleted())
+                .filter(scope -> scope.getRole() != null
+                        && scope.getRole().getPermissions().stream()
+                                .anyMatch(permission -> scope.getPermission().getCode().equals(permission.getCode())
+                                        && !permission.isDeleted()))
                 .filter(scope -> scope.getScope() != null && scope.getScope() != PermissionScope.CUSTOM)
                 .filter(scope -> scope.getValidFrom() == null || !now.isBefore(scope.getValidFrom()))
                 .filter(scope -> scope.getValidUntil() == null || now.isBefore(scope.getValidUntil()))

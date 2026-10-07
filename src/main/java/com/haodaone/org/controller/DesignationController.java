@@ -20,7 +20,7 @@ public class DesignationController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORG_VIEW')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_VIEW')")
     public List<DesignationDTO> listAll() {
         return designationService.listAll();
     }

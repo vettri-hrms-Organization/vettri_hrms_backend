@@ -30,6 +30,7 @@ class UserDTOEffectivePermissionsTest {
         role.setName("MANAGER");
         role.setPermissions(Set.of(rolePermission));
         RolePermissionScope roleScope = new RolePermissionScope();
+        roleScope.setRole(role);
         roleScope.setPermission(rolePermission);
         roleScope.setScope(PermissionScope.TEAM);
         role.setPermissionScopes(Set.of(roleScope));

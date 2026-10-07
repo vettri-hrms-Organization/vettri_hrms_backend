@@ -114,7 +114,13 @@ public class AuthorizationService {
 
     private Set<PermissionScope> getScopesForUser(User user, String permissionCode, Long tenantId) {
         Set<PermissionScope> scopes = user.getRoles().stream()
+                .filter(role -> !role.isDeleted())
                 .flatMap(role -> role.getPermissionScopes().stream())
+                .filter(scope -> scope.getRole() != null
+                        && scope.getRole().getPermissions().stream()
+                                .anyMatch(permission -> scope.getPermission() != null
+                                        && permission.getCode().equals(scope.getPermission().getCode())
+                                        && !permission.isDeleted()))
                 .filter(scope -> permissionCode.equals(scope.getPermission().getCode()))
                 .filter(scope -> !scope.getPermission().isDeleted())
                 .filter(this::currentlyValid)

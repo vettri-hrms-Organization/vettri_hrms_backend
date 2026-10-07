@@ -2,6 +2,8 @@ package com.haodaone.monitoring.controller;
 
 import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.service.DeviceEnrollmentService;
+import com.haodaone.employee.dto.EmployeeOptionDTO;
+import com.haodaone.employee.service.EmployeeService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,9 +21,17 @@ import java.util.List;
 public class MonitoredDeviceController {
 
     private final DeviceEnrollmentService deviceEnrollmentService;
+    private final EmployeeService employeeService;
 
-    public MonitoredDeviceController(DeviceEnrollmentService deviceEnrollmentService) {
+    public MonitoredDeviceController(DeviceEnrollmentService deviceEnrollmentService, EmployeeService employeeService) {
         this.deviceEnrollmentService = deviceEnrollmentService;
+        this.employeeService = employeeService;
+    }
+
+    @GetMapping("/employee-options")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE')")
+    public List<EmployeeOptionDTO> employeeOptions() {
+        return employeeService.listSelectorOptions("MONITORING_MANAGE");
     }
 
     @GetMapping

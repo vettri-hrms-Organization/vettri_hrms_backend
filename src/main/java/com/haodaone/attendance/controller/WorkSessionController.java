@@ -9,6 +9,7 @@ import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
+import com.haodaone.security.AuthorizationService;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,15 +30,18 @@ public class WorkSessionController {
     private final EmployeeRepository employeeRepository;
     private final MonitoredDeviceRepository monitoredDeviceRepository;
     private final Clock applicationClock;
+    private final AuthorizationService authorizationService;
 
     public WorkSessionController(WorkSessionRepository workSessionRepository,
                                  EmployeeRepository employeeRepository,
                                  MonitoredDeviceRepository monitoredDeviceRepository,
-                                 Clock applicationClock) {
+                                 Clock applicationClock,
+                                 AuthorizationService authorizationService) {
         this.workSessionRepository = workSessionRepository;
         this.employeeRepository = employeeRepository;
         this.monitoredDeviceRepository = monitoredDeviceRepository;
         this.applicationClock = applicationClock;
+        this.authorizationService = authorizationService;
     }
 
     private Employee currentEmployee() {
@@ -142,10 +146,23 @@ public class WorkSessionController {
 
         List<WorkSession> rows;
         if (companyId != null) {
-            if (mode == null || mode.equalsIgnoreCase("ALL")) {
-                rows = workSessionRepository.findAllByCompany_IdAndSessionDateOrderByLoginTimeDesc(companyId, target);
+            var employeeScope = authorizationService.resolveEmployeeIds("ATTENDANCE_VIEW");
+            if (employeeScope.isPresent() && employeeScope.get().isEmpty()) {
+                return List.of();
+            }
+            if (employeeScope.isEmpty()) {
+                if (mode == null || mode.equalsIgnoreCase("ALL")) {
+                    rows = workSessionRepository.findAllByCompany_IdAndSessionDateOrderByLoginTimeDesc(companyId, target);
+                } else {
+                    rows = workSessionRepository.findAllByCompany_IdAndWorkingModeAndSessionDateOrderByLoginTimeDesc(
+                            companyId, mode.toUpperCase(), target);
+                }
+            } else if (mode == null || mode.equalsIgnoreCase("ALL")) {
+                rows = workSessionRepository.findAllByCompany_IdAndEmployee_IdInAndSessionDateOrderByLoginTimeDesc(
+                        companyId, employeeScope.get(), target);
             } else {
-                rows = workSessionRepository.findAllByCompany_IdAndWorkingModeAndSessionDateOrderByLoginTimeDesc(companyId, mode.toUpperCase(), target);
+                rows = workSessionRepository.findAllByCompany_IdAndEmployee_IdInAndWorkingModeAndSessionDateOrderByLoginTimeDesc(
+                        companyId, employeeScope.get(), mode.toUpperCase(), target);
             }
         } else {
             // No tenant context - return empty to avoid leaking across tenants

@@ -163,6 +163,32 @@ class AuthorizationServiceTest {
     }
 
     @Test
+    void staleRoleScopeCannotBroadenANarrowUserGrant() {
+        Company company = company(1L);
+        User user = user(10L, company);
+        Employee current = employee(10L, company);
+        Employee other = employee(11L, company);
+        Permission stalePermission = new Permission();
+        stalePermission.setCode("MONITORING_VIEW");
+        Role staleRole = new Role();
+        staleRole.setName("STALE_ROLE");
+        RolePermissionScope staleScope = new RolePermissionScope();
+        staleScope.setRole(staleRole);
+        staleScope.setPermission(stalePermission);
+        staleScope.setScope(PermissionScope.ORGANIZATION);
+        staleRole.setPermissionScopes(Set.of(staleScope));
+        user.setRoles(Set.of(staleRole));
+        UserPermissionGrant narrowGrant = userGrant(company, user, "MONITORING_VIEW", PermissionScope.SELF);
+        when(employeeRepository.findByUser_IdAndDeletedFalse(10L)).thenReturn(Optional.of(current));
+        when(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(11L, 1L)).thenReturn(Optional.of(other));
+        authenticateWithGrants(user, "MONITORING_VIEW", narrowGrant);
+        TenantContext.setCurrentTenant(1L);
+
+        assertEquals(Set.of(PermissionScope.SELF), service.getScopes("MONITORING_VIEW"));
+        assertFalse(service.isAllowed("MONITORING_VIEW", "EMPLOYEE", 11L));
+    }
+
+    @Test
     void selfUserGrantAllowsOnlyTheRecipientsOwnEmployeeRecord() {
         Company company = company(1L);
         User user = user(10L, company);

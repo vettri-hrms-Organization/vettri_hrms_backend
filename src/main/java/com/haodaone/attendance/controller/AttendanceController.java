@@ -289,8 +289,12 @@ public class AttendanceController {
     @GetMapping("/stream")
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
     public SseEmitter stream() {
-        requiredTenant();
-        return eventPublisher.subscribe();
+        Long companyId = requiredTenant();
+        var employeeScope = authorizationService.resolveEmployeeIds("ATTENDANCE_VIEW");
+        if (employeeScope.isPresent() && employeeScope.get().isEmpty()) {
+            throw new org.springframework.security.access.AccessDeniedException("No attendance scope is available");
+        }
+        return eventPublisher.subscribe(companyId, employeeScope.isEmpty(), employeeScope.orElse(Set.of()));
     }
 
     @PostMapping("/check-in")
@@ -459,15 +463,17 @@ public class AttendanceController {
     @GetMapping("/team")
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or hasAuthority('LEAVE_APPROVE')")
     public List<AttendanceSessionDTO> teamPresence(@RequestParam(required = false) String date) {
-        Employee manager = currentEmployee();
-        Long companyId = requireCompany(manager).getId();
-        List<Long> teamIds = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(manager.getId())
-                .stream().map(Employee::getId).toList();
-        if (teamIds.isEmpty()) {
+        Long companyId = requiredTenant();
+        var employeeScope = authorizationService.resolveEmployeeIdsForAny("ATTENDANCE_VIEW", "LEAVE_APPROVE");
+        if (employeeScope.isPresent() && employeeScope.get().isEmpty()) {
             return List.of();
         }
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
-        return attendanceSessionRepository.findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(companyId, teamIds, targetDate)
+        var sessions = employeeScope.isEmpty()
+                ? attendanceSessionRepository.findAllByCompany_IdAndAttendanceDateOrderByCheckInTimeDesc(companyId, targetDate)
+                : attendanceSessionRepository.findAllByCompany_IdAndEmployee_IdInAndAttendanceDateOrderByCheckInTimeDesc(
+                        companyId, employeeScope.get(), targetDate);
+        return sessions
                 .stream().map(this::mapSession).toList();
     }
 

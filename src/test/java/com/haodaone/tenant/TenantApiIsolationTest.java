@@ -185,6 +185,11 @@ public class TenantApiIsolationTest {
         hrRole.setName("REQUIREMENTS_HR_" + suffix);
         hrRole.setLabel("HR");
         hrRole.setPermissions(Set.of(requirementView));
+        RolePermissionScope hrScope = new RolePermissionScope();
+        hrScope.setRole(hrRole);
+        hrScope.setPermission(requirementView);
+        hrScope.setScope(PermissionScope.ORGANIZATION);
+        hrRole.getPermissionScopes().add(hrScope);
         hrRole = roleRepository.save(hrRole);
 
         User employee = createApiUser("requirements-employee-" + suffix, employeeRole, company);

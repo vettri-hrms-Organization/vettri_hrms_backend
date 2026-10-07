@@ -124,6 +124,9 @@ public class RoleService {
         role.getPermissionScopes().clear();
         for (Permission permission : role.getPermissions()) {
             PermissionScope requestedScope = requestedScopes.getOrDefault(permission.getCode(), PermissionScope.ORGANIZATION);
+            if (requestedScope == PermissionScope.CUSTOM) {
+                throw new BadRequestException("CUSTOM scope cannot be assigned until custom targets are supported.");
+            }
             if (Set.of("IT_MANAGEMENT_ACCESS", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE")
                     .contains(permission.getCode()) && requestedScope != PermissionScope.ORGANIZATION) {
                 throw new BadRequestException(permission.getCode() + " requires Company scope");

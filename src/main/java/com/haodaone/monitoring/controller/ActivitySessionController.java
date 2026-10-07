@@ -2,6 +2,8 @@ package com.haodaone.monitoring.controller;
 
 import com.haodaone.monitoring.dto.ActivitySessionDTO;
 import com.haodaone.monitoring.service.MonitoringQueryService;
+import com.haodaone.employee.dto.EmployeeOptionDTO;
+import com.haodaone.employee.service.EmployeeService;
 import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,9 +21,17 @@ import java.time.LocalDateTime;
 public class ActivitySessionController {
 
     private final MonitoringQueryService monitoringQueryService;
+    private final EmployeeService employeeService;
 
-    public ActivitySessionController(MonitoringQueryService monitoringQueryService) {
+    public ActivitySessionController(MonitoringQueryService monitoringQueryService, EmployeeService employeeService) {
         this.monitoringQueryService = monitoringQueryService;
+        this.employeeService = employeeService;
+    }
+
+    @GetMapping("/employee-options")
+    @PreAuthorize("hasAuthority('MONITORING_VIEW')")
+    public java.util.List<EmployeeOptionDTO> employeeOptions() {
+        return employeeService.listSelectorOptions("MONITORING_VIEW");
     }
 
     @GetMapping("/search")

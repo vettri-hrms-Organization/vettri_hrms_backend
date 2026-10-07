@@ -74,10 +74,7 @@ public class DataSeeder implements CommandLineRunner {
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
                 permissionsByCode(companyAdminPermissionCodes().toArray(String[]::new)));
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
-                permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
-                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "MONITORING_VIEW",
-                        "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+                permissionsByCode(managerPermissionCodes().toArray(String[]::new)));
         Role employee = seedRole("EMPLOYEE", "Baseline self-service access", permissionsByCode(
             "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
             "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
@@ -96,7 +93,7 @@ public class DataSeeder implements CommandLineRunner {
                         "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                         "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
-        Role itAdministrator = seedRole("IT_ADMINISTRATOR", "IT operations without remote support or biometric administration",
+        Role itAdministrator = seedRole("IT_ADMINISTRATOR", "IT operations for managed devices, monitoring, and software",
                 permissionsByCode(itAdministratorPermissionCodes().toArray(String[]::new)));
 
         syncRoleScopes(superAdmin, PermissionScope.ORGANIZATION);
@@ -201,9 +198,11 @@ public class DataSeeder implements CommandLineRunner {
     private Role seedRole(String name, String description, Set<Permission> permissions) {
         return roleRepository.findByName(name)
                 .map(existing -> {
-                    if (existing.isSystemDefined()) {
-                        existing.setLabel(roleLabel(name));
-                    }
+                    // Reserved role names may predate the system-defined flag.
+                    // Reconcile them with the canonical role policy on startup.
+                    existing.setSystemDefined(true);
+                    existing.setLabel(roleLabel(name));
+                    existing.setDescription(description);
                     return syncSystemRolePermissions(existing, permissions);
                 })
                 .orElseGet(() -> {
@@ -327,11 +326,16 @@ public class DataSeeder implements CommandLineRunner {
         };
     }
 
+    static Set<String> managerPermissionCodes() {
+        return Set.of("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
+                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+    }
+
     static Set<String> hrManagerPermissionCodes() {
-        return Set.of("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN", "AUDIT_VIEW",
-                "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
-                "REQUIREMENT_VIEW", "REQUIREMENT_MANAGE",
-                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "DEVICE_MANAGE",
+        return Set.of("EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
+                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE",
                 "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                 "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                 "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",
@@ -340,6 +344,7 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> itAdministratorPermissionCodes() {
-        return Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "SOFTWARE_VIEW", "SOFTWARE_MANAGE");
+        return Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "MONITORING_MANAGE", "DEVICE_MANAGE",
+                "SOFTWARE_VIEW", "SOFTWARE_MANAGE");
     }
 }

@@ -8,6 +8,7 @@ import com.haodaone.common.exception.ResourceNotFoundException;
 import com.haodaone.employee.dto.CreateEmployeeRequest;
 import com.haodaone.employee.dto.EmployeeDetailDTO;
 import com.haodaone.employee.dto.EmployeeSummaryDTO;
+import com.haodaone.employee.dto.EmployeeOptionDTO;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.org.entity.Department;
@@ -72,6 +73,17 @@ public class EmployeeService {
                 : employeeRepository.searchForPayroll(companyId, search.trim(), null, null))
             : employeeRepository.searchForPayrollInScope(companyId, scope.get(), search == null ? "" : search.trim(), null, null);
         return employees.stream().map(EmployeeSummaryDTO::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<EmployeeOptionDTO> listSelectorOptions(String permissionCode) {
+        Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds(permissionCode);
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        List<Employee> employees = scope.isEmpty()
+                ? employeeRepository.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId)
+                : employeeRepository.findAllByCompany_IdAndIdInAndDeletedFalseOrderByFirstNameAsc(companyId, scope.get());
+        return employees.stream().map(EmployeeOptionDTO::from).toList();
     }
 
     /**

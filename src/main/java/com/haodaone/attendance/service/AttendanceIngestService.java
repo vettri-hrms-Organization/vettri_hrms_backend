@@ -110,7 +110,7 @@ public class AttendanceIngestService {
                 AttendanceRecord record = parseAndSaveLine(line.trim(), device);
                 if (record != null) {
                     saved++;
-                    eventPublisher.publish(AttendanceRecordDTO.from(record));
+                    eventPublisher.publish(record.getCompany().getId(), AttendanceRecordDTO.from(record));
                 }
             } catch (Exception ex) {
                 log.error("Failed to parse ADMS line from SN={}: '{}' - {}", serialNumber, line, ex.getMessage(), ex);

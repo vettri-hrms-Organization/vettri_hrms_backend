@@ -31,19 +31,48 @@ class DataSeederPermissionPolicyTest {
 
     @Test
     void hrManagerDoesNotReceiveMonitoringByDefault() {
-        assertFalse(DataSeeder.hrManagerPermissionCodes().contains("MONITORING_VIEW"));
-        assertFalse(DataSeeder.hrManagerPermissionCodes().contains("IT_MANAGEMENT_ACCESS"));
+        var permissions = DataSeeder.hrManagerPermissionCodes();
+        assertTrue(permissions.contains("EMPLOYEE_VIEW"));
+        assertTrue(permissions.contains("ATTENDANCE_MANAGE"));
+        assertFalse(permissions.contains("USER_VIEW"));
+        assertFalse(permissions.contains("ROLE_ASSIGN"));
+        assertFalse(permissions.contains("ORG_MANAGE"));
+        assertFalse(permissions.contains("DEVICE_MANAGE"));
+        assertFalse(permissions.contains("MONITORING_VIEW"));
+        assertFalse(permissions.contains("MONITORING_MANAGE"));
+        assertFalse(permissions.contains("IT_MANAGEMENT_ACCESS"));
+        assertFalse(permissions.contains("SOFTWARE_VIEW"));
     }
 
     @Test
-    void itAdministratorGetsItManagementWithoutRemoteSupportOrBiometricDeviceAdministration() {
+    void managerDoesNotReceiveLiveActivityUnlessExplicitlyGranted() {
+        assertFalse(DataSeeder.managerPermissionCodes().contains("MONITORING_VIEW"));
+        assertFalse(DataSeeder.managerPermissionCodes().contains("ORG_VIEW"));
+    }
+
+    @Test
+    void itAdministratorOwnsDeviceManagementAndMonitoringWithoutHrDirectoryPermission() {
+        var permissions = DataSeeder.itAdministratorPermissionCodes();
+        assertTrue(permissions.contains("IT_MANAGEMENT_ACCESS"));
+        assertTrue(permissions.contains("MONITORING_VIEW"));
+        assertTrue(permissions.contains("MONITORING_MANAGE"));
+        assertTrue(permissions.contains("DEVICE_MANAGE"));
+        assertTrue(permissions.contains("SOFTWARE_VIEW"));
+        assertTrue(permissions.contains("SOFTWARE_MANAGE"));
+        assertFalse(permissions.contains("EMPLOYEE_VIEW"));
+        assertFalse(permissions.contains("EMPLOYEE_MANAGE"));
+        assertFalse(permissions.contains("ATTENDANCE_MANAGE"));
+    }
+
+    @Test
+    void itAdministratorGetsItManagementWithDeviceAdministration() {
         var permissions = DataSeeder.itAdministratorPermissionCodes();
 
         assertTrue(permissions.contains("IT_MANAGEMENT_ACCESS"));
         assertTrue(permissions.contains("MONITORING_VIEW"));
         assertTrue(permissions.contains("SOFTWARE_VIEW"));
         assertTrue(permissions.contains("SOFTWARE_MANAGE"));
-        assertFalse(permissions.contains("DEVICE_MANAGE"));
+        assertTrue(permissions.contains("DEVICE_MANAGE"));
         assertFalse(permissions.contains("REMOTE_SUPPORT"));
     }
 }

@@ -56,4 +56,18 @@ class RoleServiceReservedRoleTest {
 
         assertThrows(BadRequestException.class, () -> roleService.create(request));
     }
+
+    @Test
+    void customScopeCannotBeAssignedBeforeCustomTargetsAreSupported() {
+        TenantContext.setCurrentTenant(7L);
+        Permission permission = new Permission();
+        permission.setCode("EMPLOYEE_VIEW");
+        when(permissionRepository.findByCode("EMPLOYEE_VIEW")).thenReturn(java.util.Optional.of(permission));
+        CreateRoleRequest request = new CreateRoleRequest();
+        request.setName("Custom scoped role");
+        request.setPermissionCodes(Set.of("EMPLOYEE_VIEW"));
+        request.setPermissionScopes(Map.of("EMPLOYEE_VIEW", PermissionScope.CUSTOM));
+
+        assertThrows(BadRequestException.class, () -> roleService.create(request));
+    }
 }

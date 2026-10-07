@@ -20,7 +20,7 @@ public class TeamController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORG_VIEW')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_VIEW')")
     public List<TeamDTO> listAll() {
         return teamService.listAll();
     }

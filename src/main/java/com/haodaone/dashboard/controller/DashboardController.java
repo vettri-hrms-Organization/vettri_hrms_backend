@@ -91,29 +91,17 @@ public class DashboardController {
     }
 
     /**
-     * The Manager persona's team-scoped view: direct reports plus only
-     * their pending leave requests, not the whole company's.
-     *
-     * Resolves "my team" via the current login's linked Employee record
-     * (Employee.user - see User.java for why that link exists rather than
-     * assuming every login corresponds to an employee). A user with no
-     * linked Employee record (e.g. an external auditor account, or
-     * SUPER_ADMIN if it wasn't seeded with one) gets an empty team back
-     * rather than an error - "not a people manager" is a valid answer here,
-     * not a failure.
+     * The manager's team-scoped view. Employee membership is resolved from
+     * the effective permission scope, which uses actual team membership.
      */
     @GetMapping("/my-team")
     @PreAuthorize("hasAuthority('LEAVE_APPROVE')")
     @Transactional(readOnly = true)
     public TeamDashboardDTO myTeam() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        Employee me = employeeRepository.findByUser_UsernameAndDeletedFalse(username).orElse(null);
-        if (me == null) {
-            return new TeamDashboardDTO(List.of(), List.of());
-        }
-
-        List<Employee> directReports = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(me.getId());
-        List<EmployeeSummaryDTO> teamMembers = directReports.stream().map(EmployeeSummaryDTO::from).toList();
+        var scope = authorizationService.resolveEmployeeIds("LEAVE_APPROVE");
+        List<EmployeeSummaryDTO> teamMembers = scope.isEmpty() ? List.of()
+                : employeeRepository.findAllById(scope.get()).stream().map(EmployeeSummaryDTO::from).toList();
 
         return new TeamDashboardDTO(teamMembers, leaveRequestService.listForManagerTeam(username, "PENDING"));
     }

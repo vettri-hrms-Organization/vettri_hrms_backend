@@ -13,7 +13,9 @@ import com.haodaone.org.repository.TeamRepository;
 import com.haodaone.security.JwtService;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.entity.Permission;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
@@ -160,6 +162,18 @@ class OrganizationStructureApiTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void teamScopedOrganizationViewCannotReadTheWholeOrganizationStructure() throws Exception {
+        String suffix = suffix();
+        Company company = createCompany("Team-scoped organization " + suffix);
+        Role role = createRole("ORG_STRUCTURE_TEAM_" + suffix, true, PermissionScope.TEAM);
+        User user = createUser(company, role, suffix);
+
+        mockMvc.perform(get("/api/organization/structure")
+                        .header("Authorization", "Bearer " + tokenFor(user, role)))
+                .andExpect(status().isForbidden());
+    }
+
     private Company createCompany(String name) {
         Company company = new Company();
         company.setName(name);
@@ -167,6 +181,10 @@ class OrganizationStructureApiTest {
     }
 
     private Role createRole(String name, boolean withOrgView) {
+        return createRole(name, withOrgView, PermissionScope.ORGANIZATION);
+    }
+
+    private Role createRole(String name, boolean withOrgView, PermissionScope scope) {
         Permission permission = null;
         if (withOrgView) {
             permission = permissionRepository.findByCode("ORG_VIEW").orElseGet(() -> {
@@ -181,6 +199,13 @@ class OrganizationStructureApiTest {
         role.setName(name);
         role.setLabel(name);
         role.setPermissions(permission == null ? Set.of() : Set.of(permission));
+        if (permission != null) {
+            RolePermissionScope permissionScope = new RolePermissionScope();
+            permissionScope.setRole(role);
+            permissionScope.setPermission(permission);
+            permissionScope.setScope(scope);
+            role.getPermissionScopes().add(permissionScope);
+        }
         return roleRepository.saveAndFlush(role);
     }
 

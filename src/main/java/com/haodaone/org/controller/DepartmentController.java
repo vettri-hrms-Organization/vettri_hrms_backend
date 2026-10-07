@@ -20,7 +20,7 @@ public class DepartmentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ORG_VIEW')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_VIEW')")
     public List<DepartmentDTO> listAll() {
         return departmentService.listAll();
     }

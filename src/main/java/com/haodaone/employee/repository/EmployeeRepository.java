@@ -23,6 +23,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
         List<Employee> findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(Long companyId);
 
+        List<Employee> findAllByCompany_IdAndIdInAndDeletedFalseOrderByFirstNameAsc(Long companyId, Set<Long> ids);
+
     @EntityGraph(attributePaths = {"department", "team", "designation.department", "reportingManager"})
     List<Employee> findOrganizationStructureByCompany_IdAndDeletedFalseOrderByFirstNameAsc(Long companyId);
 

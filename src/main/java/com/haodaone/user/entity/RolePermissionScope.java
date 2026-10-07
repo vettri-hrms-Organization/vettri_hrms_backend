@@ -15,7 +15,7 @@ public class RolePermissionScope {
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "permission_id", nullable = false)
     private Permission permission;
 

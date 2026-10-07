@@ -11,7 +11,9 @@ import com.haodaone.leave.repository.LeaveTypeRepository;
 import com.haodaone.security.JwtService;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.entity.Permission;
+import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.Role;
+import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.RoleRepository;
@@ -209,6 +211,24 @@ class LeaveModuleVerificationTest {
                 .collect(java.util.stream.Collectors.toSet());
 
         role.setPermissions(permissions);
+        PermissionScope scope = switch (name) {
+            case "EMPLOYEE" -> PermissionScope.SELF;
+            case "MANAGER" -> PermissionScope.TEAM;
+            default -> PermissionScope.ORGANIZATION;
+        };
+        for (Permission permission : permissions) {
+            RolePermissionScope permissionScope = role.getPermissionScopes().stream()
+                    .filter(existing -> existing.getPermission().getCode().equals(permission.getCode()))
+                    .findFirst()
+                    .orElseGet(() -> {
+                        RolePermissionScope created = new RolePermissionScope();
+                        created.setRole(role);
+                        created.setPermission(permission);
+                        role.getPermissionScopes().add(created);
+                        return created;
+                    });
+            permissionScope.setScope(scope);
+        }
         return roleRepository.save(role);
     }
 }

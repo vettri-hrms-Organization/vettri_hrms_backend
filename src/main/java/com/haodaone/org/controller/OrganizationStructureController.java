@@ -18,7 +18,7 @@ public class OrganizationStructureController {
     }
 
     @GetMapping("/structure")
-    @PreAuthorize("hasAuthority('ORG_VIEW')")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ORG_VIEW')")
     public OrganizationStructureDTO getStructure() {
         return organizationStructureService.getStructure();
     }
