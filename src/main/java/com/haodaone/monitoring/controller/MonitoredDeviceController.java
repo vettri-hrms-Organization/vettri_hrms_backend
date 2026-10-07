@@ -4,28 +4,33 @@ import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.service.DeviceEnrollmentService;
 import com.haodaone.employee.dto.EmployeeOptionDTO;
 import com.haodaone.employee.service.EmployeeService;
+import com.haodaone.monitoring.dto.DeviceEnrollmentDTO;
+import com.haodaone.monitoring.dto.DeviceEnrollmentRequest;
+import com.haodaone.monitoring.service.DeviceOnboardingService;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * Admin-facing device lifecycle - list, enroll (mint a token before the
- * agent is installed on a machine), pause/resume, activate/deactivate,
- * token rotation through the OTP-gated AgentTokenController.
- */
+/** Admin-facing device lifecycle and tenant-bound Windows Agent onboarding. */
 @RestController
 @RequestMapping("/api/monitoring/devices")
 public class MonitoredDeviceController {
 
     private final DeviceEnrollmentService deviceEnrollmentService;
     private final EmployeeService employeeService;
+    private final DeviceOnboardingService onboardingService;
 
-    public MonitoredDeviceController(DeviceEnrollmentService deviceEnrollmentService, EmployeeService employeeService) {
+    public MonitoredDeviceController(DeviceEnrollmentService deviceEnrollmentService,
+                                     EmployeeService employeeService,
+                                     DeviceOnboardingService onboardingService) {
         this.deviceEnrollmentService = deviceEnrollmentService;
         this.employeeService = employeeService;
+        this.onboardingService = onboardingService;
     }
 
     @GetMapping("/employee-options")
@@ -47,9 +52,33 @@ public class MonitoredDeviceController {
     }
 
     @PostMapping
-    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@authorizationService.hasOrganizationScope('MONITORING_MANAGE') or @companySecurity.isSuperAdmin())")
-    public ResponseEntity<MonitoredDeviceDTO.EnrollResponse> enroll(@Valid @RequestBody MonitoredDeviceDTO.EnrollRequest request) {
-        return ResponseEntity.status(201).body(deviceEnrollmentService.enroll(request));
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and @authorizationService.hasOrganizationScope('MONITORING_MANAGE')")
+    public ResponseEntity<DeviceEnrollmentDTO> enroll(@Valid @RequestBody DeviceEnrollmentRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .cacheControl(CacheControl.noStore())
+                .body(onboardingService.create(request));
+    }
+
+    @GetMapping("/enrollments")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and @authorizationService.hasOrganizationScope('MONITORING_MANAGE')")
+    public ResponseEntity<List<DeviceEnrollmentDTO>> enrollments() {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(onboardingService.listForCurrentCompany());
+    }
+
+    @PostMapping("/enrollments/{id}/revoke")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and @authorizationService.hasOrganizationScope('MONITORING_MANAGE')")
+    public ResponseEntity<Void> revokeEnrollment(@PathVariable Long id) {
+        onboardingService.revoke(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/enrollments/{id}/send-email")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and @authorizationService.hasOrganizationScope('MONITORING_MANAGE')")
+    public ResponseEntity<Void> sendEnrollmentEmail(@PathVariable Long id) {
+        onboardingService.sendEnrollmentEmail(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/{id}/assignment")

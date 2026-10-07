@@ -53,7 +53,8 @@ public class AgentTokenAuthenticationFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
         // Scoped to agent endpoints only - every other request continues straight
         // through to JwtAuthenticationFilter, unaffected by this filter's existence.
-        return !request.getServletPath().startsWith(AGENT_PATH_PREFIX);
+        return !request.getServletPath().startsWith(AGENT_PATH_PREFIX)
+                || "/api/agent/enroll".equals(request.getServletPath());
     }
 
     @Override

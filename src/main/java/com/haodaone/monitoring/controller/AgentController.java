@@ -41,14 +41,31 @@ public class AgentController {
     private final RemoteDesktopService remoteDesktopService;
     private final RemoteDesktopSignalingService remoteDesktopSignalingService;
     private final RemoteSupportService remoteSupportService;
+    private final com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService;
 
-    public AgentController(AgentIngestService agentIngestService, SoftwareManagementService softwareManagementService, RemoteCommandService remoteCommandService, RemoteDesktopService remoteDesktopService, RemoteDesktopSignalingService remoteDesktopSignalingService, RemoteSupportService remoteSupportService) {
+    public AgentController(AgentIngestService agentIngestService,
+                           SoftwareManagementService softwareManagementService,
+                           RemoteCommandService remoteCommandService,
+                           RemoteDesktopService remoteDesktopService,
+                           RemoteDesktopSignalingService remoteDesktopSignalingService,
+                           RemoteSupportService remoteSupportService,
+                           com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService) {
         this.agentIngestService = agentIngestService;
         this.softwareManagementService = softwareManagementService;
         this.remoteCommandService = remoteCommandService;
         this.remoteDesktopService = remoteDesktopService;
         this.remoteDesktopSignalingService = remoteDesktopSignalingService;
         this.remoteSupportService = remoteSupportService;
+        this.deviceOnboardingService = deviceOnboardingService;
+    }
+
+    @PostMapping("/enroll")
+    public AgentEnvelope<com.haodaone.monitoring.dto.AgentEnrollmentResponse> enroll(
+            @Valid @RequestBody com.haodaone.monitoring.dto.AgentEnrollmentRequest request,
+            HttpServletRequest servletRequest) {
+        var result = deviceOnboardingService.completeAgentEnrollment(
+                request.getEnrollmentToken(), request.getDevice(), servletRequest.getRemoteAddr());
+        return AgentEnvelope.ok(result);
     }
 
     @PostMapping("/heartbeat")

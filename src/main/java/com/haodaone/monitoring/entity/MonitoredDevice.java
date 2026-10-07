@@ -11,11 +11,10 @@ import java.time.LocalDateTime;
  * HaodaOne.Agent/Services/ApiClientService.cs). Unlike attendance.entity.
  * Device (a biometric device that self-registers on first ADMS handshake),
  * a monitored device must be enrolled by an admin first - see
- * DeviceEnrollmentService#enroll - because enrollment is what mints the
- * per-device bearer token the agent's installer bakes into
- * appsettings.Production.json (DPAPI-encrypted, see Installer/
- * provision-config.ps1). The agent never sees agentTokenHash; only the raw
- * token, once, at enrollment time - same pattern as auth.entity.RefreshToken.
+ * DeviceOnboardingService - because enrollment validates a short-lived
+ * single-use token before minting the per-device bearer token. The installer
+ * exchanges that token on the device and DPAPI-protects the returned credential.
+ * The agentTokenHash stores only the credential hash.
  */
 @Entity
 @Table(name = "monitored_device", uniqueConstraints = {

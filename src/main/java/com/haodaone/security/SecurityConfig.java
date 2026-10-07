@@ -8,6 +8,7 @@
     import org.springframework.context.annotation.Bean;
     import org.springframework.context.annotation.Configuration;
     import org.springframework.http.HttpStatus;
+    import org.springframework.http.HttpMethod;
     import org.springframework.http.MediaType;
     import org.springframework.security.authentication.AuthenticationManager;
     import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -34,8 +35,9 @@
      * - Method-level security enabled so services/controllers can use
      *   @PreAuthorize("hasAuthority('EMPLOYEE_CREATE')") style checks as later
      *   modules are added
-     * - /api/auth/** is the only open surface; everything else requires a
-     *   valid JWT
+     * - Authentication endpoints and narrowly scoped Agent enrollment
+     *   capability endpoints are open; all other API surfaces require
+     *   authentication.
      */
     @Configuration
     @EnableWebSecurity
@@ -110,6 +112,11 @@
                                     "/api/roles/**", "/api/permissions/**", "/api/holidays/**", "/api/leave-types/**")
                                 .authenticated()
                             .requestMatchers("/api/careers/**").permitAll()
+                            // These capability-token endpoints are public by design; the rest of
+                            // /api/agent/** continues to require the device's permanent bearer token.
+                            .requestMatchers(HttpMethod.POST, "/api/agent/enroll").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/device-enrollments/*",
+                                    "/api/device-enrollments/*/installer").permitAll()
                             .requestMatchers("/api/agent/**").authenticated()
                             .requestMatchers("/agent/**").permitAll()
                             .requestMatchers("/iclock/**").permitAll()

@@ -230,7 +230,7 @@ public class AgentIngestService {
     /**
      * Fills in the agent-generated deviceId on first check-in (enrollment
      * only knows the admin-chosen name, not the hardware id - see
-     * DeviceEnrollmentService#enroll) and refreshes identifying fields on
+     * DeviceOnboardingService#completeAgentEnrollment) and refreshes identifying fields on
      * every call after that. Guards against a deviceId collision with a
      * different already-identified device, which would indicate a token
      * reused across two machines.

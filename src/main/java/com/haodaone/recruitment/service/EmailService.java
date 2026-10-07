@@ -210,6 +210,20 @@ public class EmailService {
         send(toEmail, toName, subject, body);
     }
 
+    public boolean sendDeviceEnrollmentEmail(String toEmail, String toName, String enrollmentUrl, String companyName) {
+        String subject = "Install Vettri Windows Agent";
+        String body = "<p>Hello " + escape(toName) + ",</p>"
+                + "<p>Your IT administrator at " + escape(companyName)
+                + " has requested that this Windows computer be connected to your organization's IT management system.</p>"
+                + "<ol><li>Open your secure enrollment link.</li>"
+                + "<li>Download the Vettri Windows Agent.</li>"
+                + "<li>Run <strong>HaodaOneAgentSetup.exe</strong> and enter the enrollment token shown on the page.</li>"
+                + "<li>Allow the HaodaOneAgent Windows service to start. The computer will then connect automatically.</li></ol>"
+                + "<p><a href=\"" + escape(enrollmentUrl) + "\">Open secure enrollment</a></p>"
+                + "<p>This link expires in 24 hours and can only enroll one computer.</p>";
+        return sendAndReport(toEmail, toName, subject, body);
+    }
+
     private void send(String toEmail, String toName, String subject, String htmlBody) {
         sendAndReport(toEmail, toName, subject, htmlBody);
     }
