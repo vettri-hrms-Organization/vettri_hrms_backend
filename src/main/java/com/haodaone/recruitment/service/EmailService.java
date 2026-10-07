@@ -217,7 +217,7 @@ public class EmailService {
                 + " has requested that this Windows computer be connected to your organization's IT management system.</p>"
                 + "<ol><li>Open your secure enrollment link.</li>"
                 + "<li>Download the Vettri Windows Agent.</li>"
-                + "<li>Run <strong>HaodaOneAgentSetup.exe</strong> and enter the enrollment token shown on the page.</li>"
+                + "<li>Run <strong>VettriAgentSetup.exe</strong> and enter the enrollment token shown on the page.</li>"
                 + "<li>Allow the HaodaOneAgent Windows service to start. The computer will then connect automatically.</li></ol>"
                 + "<p><a href=\"" + escape(enrollmentUrl) + "\">Open secure enrollment</a></p>"
                 + "<p>This link expires in 24 hours and can only enroll one computer.</p>";

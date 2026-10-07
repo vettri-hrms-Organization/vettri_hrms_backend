@@ -11,7 +11,7 @@ import java.time.Duration;
 @Service
 public class AgentInstallerStorageService {
 
-    private static final String INSTALLER_KEY = "agent/HaodaOneAgentSetup.exe";
+    private static final String INSTALLER_KEY = "agent/VettriAgentSetup.exe";
 
     private final S3Presigner presigner;
 
@@ -35,7 +35,7 @@ public class AgentInstallerStorageService {
         GetObjectRequest get = GetObjectRequest.builder()
                 .bucket(bucketName)
                 .key(INSTALLER_KEY)
-                .responseContentDisposition("attachment; filename=\"HaodaOneAgentSetup.exe\"")
+                .responseContentDisposition("attachment; filename=\"VettriAgentSetup.exe\"")
                 .build();
         return presigner.presignGetObject(GetObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofMinutes(expiryMinutes))
