@@ -6,6 +6,8 @@ import com.haodaone.assistant.dto.AssistantChatResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,7 +38,7 @@ class AssistantServiceTest {
                 Set.of("EMPLOYEE"), "Engineering", "Platform", "Engineer");
         conversationId = UUID.randomUUID();
         when(contextResolver.resolve()).thenReturn(context);
-        when(aiProvider.isConfigured()).thenReturn(true);
+        lenient().when(aiProvider.isConfigured()).thenReturn(true);
         lenient().when(conversationStore.create(42L, 7L)).thenReturn(conversationId);
         when(conversationStore.append(any(UUID.class), eq(42L), eq(7L), anyString(), anyString())).thenReturn(true);
         lenient().when(conversationStore.get(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
@@ -78,6 +80,68 @@ class AssistantServiceTest {
 
         assertThat(response.message()).isEqualTo("You have 8 days remaining.");
         verify(toolRegistry).execute("get_my_leave_balance", Map.of(), context);
+        verify(aiProvider, times(2)).chat(anyList(), anyList());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "How can I map a device?",
+            "How do I map a device?",
+            "I want to map a device",
+            "Where can I map a device?",
+            "Can I map a device?",
+            "How do I assign a device to an employee?"
+    })
+    void deviceMappingQuestionsReturnVerifiedBackendGuidanceWithoutCallingTheModel(String prompt) {
+        var navigation = new AssistantChatResponse.AssistantAction(
+                "NAVIGATE", "Open Devices", "/monitoring/devices");
+        when(toolRegistry.deviceMappingGuidance(context)).thenReturn(
+                new AssistantToolRegistry.DeviceMappingGuidance(
+                        "Verified device mapping guidance.", navigation));
+
+        AssistantChatResponse response = assistantService.chat(new AssistantChatRequest(prompt, null, List.of()));
+
+        assertThat(response.message()).isEqualTo("Verified device mapping guidance.");
+        assertThat(response.actions()).containsExactly(navigation);
+        assertThat(response.aiEnhanced()).isFalse();
+        verify(toolRegistry).deviceMappingGuidance(context);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+        verify(toolRegistry, never()).execute(anyString(), anyMap(), any());
+    }
+
+    @Test
+    void deviceMappingQuestionWithoutPermissionDoesNotGetModelGeneratedSteps() {
+        when(toolRegistry.deviceMappingGuidance(context)).thenReturn(
+                new AssistantToolRegistry.DeviceMappingGuidance(
+                        "You don't have permission to map devices. Contact your IT team for assistance.", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("How can I map a device?", null, List.of()));
+
+        assertThat(response.message()).contains("don't have permission to map devices")
+                .doesNotContain("Click", "Choose an employee", "Confirm assignment");
+        assertThat(response.actions()).isEmpty();
+        verify(aiProvider, never()).chat(anyList(), anyList());
+        verify(toolRegistry, never()).execute(anyString(), anyMap(), any());
+    }
+
+    @Test
+    void salaryRequestStillUsesTheExistingRegisteredSalaryTool() {
+        var salaryTool = new AiProvider.ModelTool("get_my_salary", "Get authenticated employee salary.", Map.of());
+        when(toolRegistry.availableTools(context)).thenReturn(List.of(salaryTool));
+        when(aiProvider.chat(anyList(), anyList()))
+                .thenReturn(new AiProvider.ModelTurn("", List.of(
+                        new AiProvider.ToolCall("get_my_salary", Map.of()))))
+                .thenReturn(new AiProvider.ModelTurn("Your current salary details are available.", List.of()));
+        when(toolRegistry.execute("get_my_salary", Map.of(), context))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"grossSalary\":100000,\"netSalary\":85000}", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("What is my salary?", null, List.of()));
+
+        assertThat(response.message()).isEqualTo("Your current salary details are available.");
+        verify(toolRegistry).execute("get_my_salary", Map.of(), context);
         verify(aiProvider, times(2)).chat(anyList(), anyList());
     }
 

@@ -318,11 +318,39 @@ public class AssistantToolRegistry {
     }
 
     private boolean canViewOfflineDevices(AssistantContext context) {
+        return canViewDeviceManagement(context);
+    }
+
+    public DeviceMappingGuidance deviceMappingGuidance(AssistantContext context) {
+        if (canManageDevices(context)) {
+            return new DeviceMappingGuidance(
+                    "Open IT Management → Devices. For an unassigned device, choose Map device; for an assigned device, choose Change employee. Select the employee, review the device and employee, then choose Confirm assignment. Vettri checks the device and employee against your authorized company and scope.",
+                    new com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction(
+                            "NAVIGATE", "Open Devices", "/monitoring/devices"));
+        }
+        if (canViewDeviceManagement(context)) {
+            return new DeviceMappingGuidance(
+                    "You don't have permission to map devices. You can open IT Management → Devices to view devices available to you, but mapping requires device-management permission.",
+                    new com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction(
+                            "NAVIGATE", "Open Devices", "/monitoring/devices"));
+        }
+        return new DeviceMappingGuidance(
+                "You don't have permission to map devices. Contact your IT team for assistance.", null);
+    }
+
+    private boolean canViewDeviceManagement(AssistantContext context) {
         return context.hasAuthority("IT_MANAGEMENT_ACCESS")
                 && context.hasAuthority("MONITORING_VIEW")
                 && authorizationService.isAllowed("IT_MANAGEMENT_ACCESS", null, null)
                 && authorizationService.isAllowed("MONITORING_VIEW", null, null)
                 && authorizationService.hasOrganizationScope("MONITORING_VIEW");
+    }
+
+    private boolean canManageDevices(AssistantContext context) {
+        return canViewDeviceManagement(context)
+                && context.hasAuthority("MONITORING_MANAGE")
+                && authorizationService.isAllowed("MONITORING_MANAGE", null, null)
+                && authorizationService.hasOrganizationScope("MONITORING_MANAGE");
     }
 
     private void requireOfflineDevices(AssistantContext context) {
@@ -422,19 +450,11 @@ public class AssistantToolRegistry {
                         "NAVIGATE", "Open My Pay", "/my-payslip"));
             }
             case "devices" -> {
-                if (!context.hasAuthority("IT_MANAGEMENT_ACCESS")
-                        || !context.hasAuthority("MONITORING_VIEW")
-                        || !authorizationService.isAllowed("IT_MANAGEMENT_ACCESS", null, null)
-                        || !authorizationService.isAllowed("MONITORING_VIEW", null, null)) {
-                    yield jsonResult(Map.of(
-                            "guidance", "Device management is handled by your IT team. You do not have permission to manage devices."
-                    ));
-                }
-                yield jsonResult(Map.of(
-                        "guidance", "Open IT Management → Devices to manage enrolled devices.",
-                        "action", "Open Devices"
-                ), new com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction(
-                        "NAVIGATE", "Open Devices", "/monitoring/devices"));
+                DeviceMappingGuidance guidance = deviceMappingGuidance(context);
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("guidance", guidance.message());
+                if (guidance.action() != null) result.put("action", guidance.action().label());
+                yield jsonResult(result, guidance.action());
             }
             default -> throw new AssistantToolException(false);
         };
@@ -454,6 +474,11 @@ public class AssistantToolRegistry {
 
     public record ToolResult(
             String sanitizedJson,
+            com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction action
+    ) {}
+
+    public record DeviceMappingGuidance(
+            String message,
             com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction action
     ) {}
 }

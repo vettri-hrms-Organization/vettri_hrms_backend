@@ -102,6 +102,69 @@ class AssistantToolRegistryTest {
                 .isInstanceOf(AssistantToolException.class);
     }
 
+    @Test
+    void deviceMappingGuidanceDeniesEmployeeWithoutManagementPermissionWithoutReadingDeviceData() {
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_PROFILE_VIEW"), Set.of("EMPLOYEE"), null, null, null);
+
+        AssistantToolRegistry.DeviceMappingGuidance guidance = registry.deviceMappingGuidance(employee);
+
+        assertThat(guidance.message()).contains("don't have permission to map devices");
+        assertThat(guidance.action()).isNull();
+        verifyNoInteractions(deviceEnrollmentService);
+    }
+
+    @Test
+    void authorizedItUserGetsVerifiedMappingStepsAndAllowListedNavigation() {
+        when(authorizationService.isAllowed("IT_MANAGEMENT_ACCESS", null, null)).thenReturn(true);
+        when(authorizationService.isAllowed("MONITORING_VIEW", null, null)).thenReturn(true);
+        when(authorizationService.hasOrganizationScope("MONITORING_VIEW")).thenReturn(true);
+        when(authorizationService.isAllowed("MONITORING_MANAGE", null, null)).thenReturn(true);
+        when(authorizationService.hasOrganizationScope("MONITORING_MANAGE")).thenReturn(true);
+        var registry = registry();
+        AssistantContext itUser = new AssistantContext(7L, 51L, 42L,
+                Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "MONITORING_MANAGE"),
+                Set.of("IT_ADMINISTRATOR"), null, null, null);
+
+        AssistantToolRegistry.DeviceMappingGuidance guidance = registry.deviceMappingGuidance(itUser);
+        AssistantToolRegistry.ToolResult navigation = registry.execute(
+                "get_navigation_guidance", Map.of("topic", "devices"), itUser);
+
+        assertThat(guidance.message()).contains(
+                "Open IT Management → Devices",
+                "choose Map device",
+                "choose Change employee",
+                "Select the employee",
+                "Confirm assignment");
+        assertThat(guidance.action()).isNotNull()
+                .extracting(com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction::route)
+                .isEqualTo("/monitoring/devices");
+        assertThat(navigation.action()).isNotNull()
+                .extracting(com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction::route)
+                .isEqualTo("/monitoring/devices");
+        assertThat(navigation.sanitizedJson()).contains("Confirm assignment");
+        verifyNoInteractions(deviceEnrollmentService);
+    }
+
+    @Test
+    void deviceViewPermissionAllowsNavigationButDoesNotGrantMapping() {
+        when(authorizationService.isAllowed("IT_MANAGEMENT_ACCESS", null, null)).thenReturn(true);
+        when(authorizationService.isAllowed("MONITORING_VIEW", null, null)).thenReturn(true);
+        when(authorizationService.hasOrganizationScope("MONITORING_VIEW")).thenReturn(true);
+        var registry = registry();
+        AssistantContext viewOnly = new AssistantContext(7L, 51L, 42L,
+                Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW"), Set.of("IT_VIEWER"), null, null, null);
+
+        AssistantToolRegistry.DeviceMappingGuidance guidance = registry.deviceMappingGuidance(viewOnly);
+
+        assertThat(guidance.message()).contains("don't have permission to map devices");
+        assertThat(guidance.action()).isNotNull()
+                .extracting(com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction::route)
+                .isEqualTo("/monitoring/devices");
+        verifyNoInteractions(deviceEnrollmentService);
+    }
+
     private AssistantToolRegistry registry() {
         return new AssistantToolRegistry(new ObjectMapper(), leaveRequestService, employeeDocumentService,
                 deviceEnrollmentService, attendanceRecordRepository, employeeSalaryService, authorizationService);

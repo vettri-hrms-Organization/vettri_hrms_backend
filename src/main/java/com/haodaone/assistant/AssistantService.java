@@ -13,8 +13,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class AssistantService {
@@ -25,6 +27,8 @@ public class AssistantService {
     private static final String TOOL_UNAVAILABLE = "I couldn't retrieve that information right now.";
     private static final String TOOL_FORBIDDEN = "You don't have access to that information.";
     private static final String LOOP_LIMIT = "I couldn't complete that request. Please try again.";
+    private static final Pattern DEVICE_MAPPING_GUIDANCE_REQUEST = Pattern.compile(
+            "\\b(?:map(?:ping)?|assign(?:ment)?)\\b(?=.*\\bdevices?\\b)|\\bdevices?\\b(?=.*\\b(?:map(?:ping)?|assign(?:ment)?)\\b)");
 
     private final AiProvider aiProvider;
     private final AssistantContextResolver contextResolver;
@@ -55,6 +59,13 @@ public class AssistantService {
                 .orElseGet(() -> conversationStore.create(context.companyId(), context.userId()));
         if (!conversationStore.append(conversationId, context.companyId(), context.userId(), "USER", request.message().trim())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+
+        if (isDeviceMappingGuidanceRequest(request.message())) {
+            AssistantToolRegistry.DeviceMappingGuidance guidance = toolRegistry.deviceMappingGuidance(context);
+            List<AssistantChatResponse.AssistantAction> actions = guidance.action() == null
+                    ? List.of() : List.of(guidance.action());
+            return saveResponse(conversationId, context, guidance.message(), "CHAT", actions, false);
         }
 
         AssistantConversationStore.ConversationSnapshot snapshot = conversationStore
@@ -110,6 +121,10 @@ public class AssistantService {
         } catch (AssistantProviderException ex) {
             return saveResponse(conversationId, context, PROVIDER_UNAVAILABLE, "ERROR", List.of(), false);
         }
+    }
+
+    private boolean isDeviceMappingGuidanceRequest(String message) {
+        return DEVICE_MAPPING_GUIDANCE_REQUEST.matcher(message.toLowerCase(Locale.ROOT)).find();
     }
 
     public List<AssistantConversationStore.ConversationSummary> conversations() {

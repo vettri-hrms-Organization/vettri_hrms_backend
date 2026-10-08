@@ -36,6 +36,9 @@ class OllamaAssistantProviderTest {
             var request = objectMapper.readTree(payload.get());
             assertThat(request.path("model").asText()).isEqualTo("test-model");
             assertThat(request.path("think").asBoolean()).isFalse();
+            assertThat(request.path("messages").get(0).path("content").asText())
+                    .contains("Never invent Vettri-specific workflows")
+                    .contains("explicitly say you cannot verify the exact workflow");
             assertThat(request.path("tools").get(0).path("function").path("name").asText())
                     .isEqualTo("get_my_leave_balance");
             assertThat(payload.get()).doesNotContain("companyId", "userId", "tenantId");
