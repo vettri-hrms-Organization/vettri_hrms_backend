@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -16,7 +17,8 @@ class OllamaAssistantIntegrationTest {
         String baseUrl = System.getenv().getOrDefault("OLLAMA_BASE_URL", "http://127.0.0.1:11434");
         String model = System.getenv().getOrDefault("OLLAMA_MODEL", "gpt-oss:20b");
         var provider = new OllamaAssistantProvider(
-                new ObjectMapper(), "ollama", baseUrl, model, 0, 128, 60_000);
+                new ObjectMapper(), "ollama", baseUrl, model, 0, 128,
+                Duration.ofSeconds(10), Duration.ofMinutes(3));
         var tool = new AiProvider.ModelTool("integration_probe",
                 "Call this when asked to retrieve an integration probe value.",
                 Map.of("type", "object", "properties", Map.of(), "required", List.of(),

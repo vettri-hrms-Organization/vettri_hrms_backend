@@ -26,6 +26,8 @@ public class OllamaAssistantProvider implements AiProvider {
     private static final Logger log = LoggerFactory.getLogger(OllamaAssistantProvider.class);
     private static final int MAX_GENERATED_CHARACTERS = 4000;
     private static final int MAX_PROVIDER_RESPONSE_BYTES = 128_000;
+    private static final Duration MAX_CONNECT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Duration MAX_READ_TIMEOUT = Duration.ofMinutes(10);
 
     private final ObjectMapper objectMapper;
     private final String provider;
@@ -33,7 +35,8 @@ public class OllamaAssistantProvider implements AiProvider {
     private final String model;
     private final double temperature;
     private final int maxTokens;
-    private final Duration requestTimeout;
+    private final Duration connectTimeout;
+    private final Duration readTimeout;
     private final HttpClient httpClient;
 
     public OllamaAssistantProvider(
@@ -43,7 +46,8 @@ public class OllamaAssistantProvider implements AiProvider {
             @Value("${app.assistant.ai.ollama.model:gpt-oss:20b}") String model,
             @Value("${app.assistant.ai.ollama.temperature:0.2}") double temperature,
             @Value("${app.assistant.ai.ollama.max-tokens:512}") int maxTokens,
-            @Value("${app.assistant.ai.ollama.timeout-ms:60000}") long timeoutMs
+            @Value("${app.assistant.ai.ollama.connect-timeout:10s}") Duration connectTimeout,
+            @Value("${app.assistant.ai.ollama.read-timeout:180s}") Duration readTimeout
     ) {
         this.objectMapper = objectMapper;
         this.provider = provider;
@@ -51,9 +55,10 @@ public class OllamaAssistantProvider implements AiProvider {
         this.model = model;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
-        this.requestTimeout = Duration.ofMillis(timeoutMs);
+        this.connectTimeout = connectTimeout;
+        this.readTimeout = readTimeout;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
+                .connectTimeout(connectTimeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
@@ -61,10 +66,12 @@ public class OllamaAssistantProvider implements AiProvider {
     @Override
     public boolean isConfigured() {
         if (!"ollama".equalsIgnoreCase(provider) || model == null || model.isBlank()
-                || requestTimeout.isNegative() || requestTimeout.isZero()
+                || connectTimeout.compareTo(Duration.ofMillis(1)) < 0
+                || connectTimeout.compareTo(MAX_CONNECT_TIMEOUT) > 0
+                || readTimeout.compareTo(Duration.ofMillis(1)) < 0
+                || readTimeout.compareTo(MAX_READ_TIMEOUT) > 0
                 || maxTokens < 1 || maxTokens > 2048
-                || !Double.isFinite(temperature) || temperature < 0 || temperature > 2
-                || requestTimeout.toMillis() > 120_000) {
+                || !Double.isFinite(temperature) || temperature < 0 || temperature > 2) {
             return false;
         }
         try {
@@ -170,6 +177,7 @@ public class OllamaAssistantProvider implements AiProvider {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("model", model);
         payload.put("stream", false);
+        payload.put("think", false);
         ObjectNode options = payload.putObject("options");
         options.put("temperature", responseTemperature);
         options.put("num_predict", responseTokens);
@@ -180,7 +188,7 @@ public class OllamaAssistantProvider implements AiProvider {
         String root = baseUrl.replaceAll("/+$", "");
         URI endpoint = URI.create(root + "/api/chat");
         HttpRequest request = HttpRequest.newBuilder(endpoint)
-                .timeout(requestTimeout)
+                .timeout(readTimeout)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
                 .build();

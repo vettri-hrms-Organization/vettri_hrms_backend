@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +35,7 @@ class OllamaAssistantProviderTest {
             assertThat(turn.toolCalls()).containsExactly(new AiProvider.ToolCall("get_my_leave_balance", Map.of()));
             var request = objectMapper.readTree(payload.get());
             assertThat(request.path("model").asText()).isEqualTo("test-model");
+            assertThat(request.path("think").asBoolean()).isFalse();
             assertThat(request.path("tools").get(0).path("function").path("name").asText())
                     .isEqualTo("get_my_leave_balance");
             assertThat(payload.get()).doesNotContain("companyId", "userId", "tenantId");
@@ -81,25 +83,53 @@ class OllamaAssistantProviderTest {
     }
 
     @Test
+    void convertsNonSuccessfulOllamaResponsesIntoControlledProviderErrors() throws Exception {
+        HttpServer server = startServer("service unavailable", new AtomicReference<>(), 503);
+        try {
+            assertThatThrownBy(() -> provider(server).chat(List.of(AiProvider.ModelMessage.user("hello")), List.of()))
+                    .isInstanceOf(AssistantProviderException.class);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void rejectsUnsupportedProviderConfiguration() {
         assertThat(new OllamaAssistantProvider(objectMapper, "openai-compatible",
-                "http://127.0.0.1:11434", "model", 0.2, 128, 5000).isConfigured()).isFalse();
+                "http://127.0.0.1:11434", "model", 0.2, 128,
+                Duration.ofSeconds(10), Duration.ofMinutes(3)).isConfigured()).isFalse();
         assertThat(new OllamaAssistantProvider(objectMapper, "ollama",
-                "https://127.0.0.1:11434", "model", 0.2, 128, 5000).isConfigured()).isFalse();
+                "https://127.0.0.1:11434", "model", 0.2, 128,
+                Duration.ofSeconds(10), Duration.ofMinutes(3)).isConfigured()).isFalse();
+    }
+
+    @Test
+    void acceptsAConfigurableRemoteInferenceTimeoutWithinTheFiniteLimit() {
+        assertThat(new OllamaAssistantProvider(objectMapper, "ollama",
+                "http://127.0.0.1:11434", "model", 0.2, 128,
+                Duration.ofSeconds(10), Duration.ofMinutes(3)).isConfigured()).isTrue();
+        assertThat(new OllamaAssistantProvider(objectMapper, "ollama",
+                "http://127.0.0.1:11434", "model", 0.2, 128,
+                Duration.ofSeconds(10), Duration.ofMinutes(11)).isConfigured()).isFalse();
     }
 
     private OllamaAssistantProvider provider(HttpServer server) {
         return new OllamaAssistantProvider(objectMapper, "ollama",
-                "http://127.0.0.1:" + server.getAddress().getPort(), "test-model", 0.2, 128, 5000);
+                "http://127.0.0.1:" + server.getAddress().getPort(), "test-model", 0.2, 128,
+                Duration.ofSeconds(5), Duration.ofSeconds(5));
     }
 
     private HttpServer startServer(String response, AtomicReference<String> payload) throws Exception {
+        return startServer(response, payload, 200);
+    }
+
+    private HttpServer startServer(String response, AtomicReference<String> payload, int status) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/chat", exchange -> {
             payload.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] body = response.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
+            exchange.sendResponseHeaders(status, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
