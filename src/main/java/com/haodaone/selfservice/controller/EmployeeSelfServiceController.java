@@ -10,8 +10,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -40,28 +38,6 @@ public class EmployeeSelfServiceController {
                 where company_id = ? and employee_id = ? and deleted = false
                 order by assigned_at desc nulls last, id desc
                 """, employee.getCompany().getId(), employee.getId());
-    }
-
-    @GetMapping("/notifications")
-    public List<Map<String, Object>> notifications() {
-        Employee employee = currentEmployee();
-        return jdbcTemplate.queryForList("""
-                select id, type, title, message, entity_type, entity_id, priority, created_at, read_at
-                from notification
-                where company_id = ? and recipient_user_id = ? and deleted = false
-                order by created_at desc
-                """, employee.getCompany().getId(), employee.getUser().getId());
-    }
-
-    @PatchMapping("/notifications/{id}/read")
-    public void markNotificationRead(@PathVariable Long id) {
-        Employee employee = currentEmployee();
-        int updated = jdbcTemplate.update("""
-                update notification set read_at = coalesce(read_at, ?), updated_at = ?
-                where id = ? and company_id = ? and recipient_user_id = ? and deleted = false
-                """, Timestamp.valueOf(LocalDateTime.now()), Timestamp.valueOf(LocalDateTime.now()), id,
-                employee.getCompany().getId(), employee.getUser().getId());
-        if (updated == 0) throw new BadRequestException("Notification not found");
     }
 
     @GetMapping("/support/requests")

@@ -19,6 +19,8 @@ import java.util.List;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
+import com.haodaone.notifications.service.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Payroll Processing state machine: DRAFT (items generated from every
@@ -37,6 +39,7 @@ public class PayrollService {
     private final AuditLogService auditLogService;
     private final CompanyRepository companyRepository;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    private NotificationService notificationService;
 
     public PayrollService(PayrollRunRepository payrollRunRepository, PayrollItemRepository payrollItemRepository,
                            SalaryStructureRepository salaryStructureRepository, AuditLogService auditLogService,
@@ -48,6 +51,11 @@ public class PayrollService {
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
         this.authorizationService = authorizationService;
+    }
+
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     public List<PayrollRunSummaryDTO> listRuns() {
@@ -199,6 +207,13 @@ public class PayrollService {
                 item.setStatus(PayrollItemStatus.PAID);
                 item.setPaymentDate(paymentDate);
                 payrollItemRepository.save(item);
+                if (notificationService != null && item.getEmployee().getUser() != null) {
+                    notificationService.notifyUser(run.getCompany().getId(), item.getEmployee().getUser().getId(),
+                            "PAYROLL_PAID", "Payroll payment recorded",
+                            "Your payroll payment for " + run.getPeriodMonth() + "/" + run.getPeriodYear()
+                                    + " was recorded as paid on " + paymentDate + ".",
+                            "PayrollRun", run.getId(), "NORMAL");
+                }
             }
         }
 

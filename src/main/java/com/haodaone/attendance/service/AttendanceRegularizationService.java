@@ -15,8 +15,10 @@ import com.haodaone.tenant.TenantContext;
 import com.haodaone.security.AuthorizationService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.haodaone.notifications.service.NotificationService;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -34,6 +36,7 @@ public class AttendanceRegularizationService {
     private final AuthorizationService authorizationService;
     private final AuditLogService auditLogService;
     private final Clock clock;
+    private NotificationService notificationService;
 
     public AttendanceRegularizationService(AttendanceRegularizationRepository regularizationRepository,
                                            AttendanceSessionRepository sessionRepository,
@@ -49,6 +52,11 @@ public class AttendanceRegularizationService {
         this.authorizationService = authorizationService;
         this.auditLogService = auditLogService;
         this.clock = clock;
+    }
+
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -81,6 +89,12 @@ public class AttendanceRegularizationService {
         entity.setStatus(approvalRequired ? "PENDING" : "APPROVED");
         entity.setReviewedAt(approvalRequired ? null : LocalDateTime.now(clock));
         AttendanceRegularization saved = regularizationRepository.save(entity);
+        if (notificationService != null && approvalRequired) {
+            notificationService.notifyPermissionRecipients(company.getId(), employee.getId(), "ATTENDANCE_MANAGE",
+                    "ATTENDANCE_REGULARIZATION_REQUEST", "Attendance correction needs review",
+                    employee.getFullName() + " requested an attendance correction for " + saved.getAttendanceDate() + ".",
+                    "AttendanceRegularization", saved.getId());
+        }
         if (!approvalRequired) {
             applyToSession(saved);
         }
@@ -140,6 +154,13 @@ public class AttendanceRegularizationService {
         request.setReviewNote(note == null || note.isBlank() ? null : note.trim());
         request.setStatus(approved ? "APPROVED" : "REJECTED");
         AttendanceRegularization saved = regularizationRepository.save(request);
+        if (notificationService != null && saved.getEmployee().getUser() != null) {
+            notificationService.notifyUser(saved.getCompany().getId(), saved.getEmployee().getUser().getId(),
+                    "ATTENDANCE_REGULARIZATION_DECISION",
+                    approved ? "Attendance correction approved" : "Attendance correction declined",
+                    approved ? "Your attendance correction was approved." : "Your attendance correction was declined.",
+                    "AttendanceRegularization", saved.getId(), "NORMAL");
+        }
         if (approved) applyToSession(saved);
         auditLogService.log("AttendanceRegularization", saved.getId(), approved ? "APPROVE" : "REJECT",
                 (approved ? "Approved" : "Rejected") + " attendance regularization for employee "

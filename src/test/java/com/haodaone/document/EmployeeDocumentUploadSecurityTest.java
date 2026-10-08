@@ -8,6 +8,7 @@ import com.haodaone.document.repository.EmployeeDocumentRepository;
 import com.haodaone.document.service.EmployeeDocumentS3StorageService;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.notifications.service.NotificationService;
 import com.haodaone.org.entity.Department;
 import com.haodaone.org.repository.DepartmentRepository;
 import com.haodaone.security.JwtService;
@@ -93,6 +94,9 @@ class EmployeeDocumentUploadSecurityTest {
 
     @MockitoBean
     private EmployeeDocumentS3StorageService documentStorageService;
+
+    @MockitoBean
+    private NotificationService notificationService;
 
     @AfterEach
     void clearTenantContext() {

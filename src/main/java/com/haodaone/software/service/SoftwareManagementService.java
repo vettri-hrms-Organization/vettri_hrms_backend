@@ -7,6 +7,8 @@ import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
+import com.haodaone.notifications.service.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.haodaone.software.dto.SoftwareDeploymentDTO;
 import com.haodaone.software.dto.SoftwareDeploymentTargetDTO;
 import com.haodaone.software.dto.AgentSoftwareJobDTO;
@@ -36,6 +38,7 @@ public class SoftwareManagementService {
     private final AuditLogService auditLogService;
     private final SoftwarePackageStorageService packageStorageService;
     private final SoftwareDeploymentStageEventRepository stageEventRepository;
+    private NotificationService notificationService;
 
     public SoftwareManagementService(SoftwarePackageRepository packageRepository,
                                     SoftwareVersionRepository versionRepository,
@@ -55,6 +58,11 @@ public class SoftwareManagementService {
         this.auditLogService = auditLogService;
         this.packageStorageService = packageStorageService;
         this.stageEventRepository = stageEventRepository;
+    }
+
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -324,6 +332,7 @@ public class SoftwareManagementService {
     }
 
     private void refreshDeploymentStatus(SoftwareDeployment deployment) {
+        SoftwareDeploymentStatus previousStatus = deployment.getStatus();
         List<SoftwareDeploymentTarget> targets = deploymentTargetRepository
             .findByDeployment_IdAndDeletedFalseOrderByIdAsc(deployment.getId());
         boolean allSuccessful = !targets.isEmpty() && targets.stream().allMatch(t -> t.getStatus() == SoftwareDeploymentStatus.COMPLETED
@@ -350,6 +359,17 @@ public class SoftwareManagementService {
             deployment.setCompletedAt(LocalDateTime.now());
         }
         deploymentRepository.save(deployment);
+        if (notificationService != null && previousStatus != deployment.getStatus()
+                && (deployment.getStatus() == SoftwareDeploymentStatus.COMPLETED
+                    || deployment.getStatus() == SoftwareDeploymentStatus.FAILED)
+                && deployment.getCreatedByUserId() != null) {
+            boolean completed = deployment.getStatus() == SoftwareDeploymentStatus.COMPLETED;
+            notificationService.notifyUser(deployment.getCompany().getId(), deployment.getCreatedByUserId(),
+                    "SOFTWARE_DEPLOYMENT", completed ? "Software deployment completed" : "Software deployment failed",
+                    completed ? "All target devices completed the software deployment."
+                            : "One or more target devices failed the software deployment.",
+                    "SoftwareDeployment", deployment.getId(), completed ? "NORMAL" : "HIGH");
+        }
     }
 
     private void recordStage(SoftwareDeploymentTarget target, SoftwareDeploymentStatus status,

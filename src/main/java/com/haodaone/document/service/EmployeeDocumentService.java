@@ -8,7 +8,9 @@ import com.haodaone.document.entity.EmployeeDocument;
 import com.haodaone.document.repository.EmployeeDocumentRepository;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.notifications.service.NotificationService;
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -43,6 +45,7 @@ public class EmployeeDocumentService {
     private final AuditLogService auditLogService;
     private final com.haodaone.security.AuthorizationService authorizationService;
     private final EmployeeDocumentS3StorageService documentStorageService;
+    private NotificationService notificationService;
 
     public EmployeeDocumentService(EmployeeDocumentRepository documentRepository, EmployeeRepository employeeRepository,
                                     AuditLogService auditLogService,
@@ -53,6 +56,11 @@ public class EmployeeDocumentService {
         this.auditLogService = auditLogService;
         this.authorizationService = authorizationService;
         this.documentStorageService = documentStorageService;
+    }
+
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     public List<EmployeeDocumentDTO> byEmployee(Long employeeId) {
@@ -155,6 +163,12 @@ public class EmployeeDocumentService {
         doc.setUploadedAt(LocalDateTime.now());
 
         EmployeeDocument saved = documentRepository.saveAndFlush(doc);
+        if (notificationService != null && employee.getUser() != null) {
+            notificationService.notifyUser(companyId, employee.getUser().getId(), "DOCUMENT_UPLOADED",
+                    "A document was added to your profile",
+                    "A " + saved.getDocumentType().toLowerCase().replace('_', ' ') + " document was uploaded to your employee profile.",
+                    "EmployeeDocument", saved.getId(), "NORMAL");
+        }
         auditLogService.log("EmployeeDocument", saved.getId(), "UPLOAD",
                 "Uploaded " + saved.getDocumentType() + " for " + employee.getFullName());
         return EmployeeDocumentDTO.from(saved, employee);
@@ -190,6 +204,7 @@ public class EmployeeDocumentService {
             doc.setReviewedAt(LocalDateTime.now());
             doc.setReviewedByEmployee(resolveCurrentEmployee());
             EmployeeDocument saved = documentRepository.save(doc);
+            notifyDocumentDecision(saved, true);
             auditLogService.log("EmployeeDocument", saved.getId(), "APPROVE",
                     "Approved " + saved.getDocumentType() + " for " + saved.getEmployee().getFullName());
             return EmployeeDocumentDTO.from(saved);
@@ -204,9 +219,22 @@ public class EmployeeDocumentService {
         doc.setReviewedAt(LocalDateTime.now());
         doc.setReviewedByEmployee(resolveCurrentEmployee());
         EmployeeDocument saved = documentRepository.save(doc);
+        notifyDocumentDecision(saved, false);
         auditLogService.log("EmployeeDocument", saved.getId(), "REJECT",
                 "Rejected " + saved.getDocumentType() + " for " + saved.getEmployee().getFullName() + ": " + normalizedReason);
         return EmployeeDocumentDTO.from(saved);
+    }
+
+    private void notifyDocumentDecision(EmployeeDocument document, boolean approved) {
+        Employee employee = document.getEmployee();
+        if (notificationService != null && employee != null && employee.getUser() != null
+                && employee.getCompany() != null) {
+            notificationService.notifyUser(employee.getCompany().getId(), employee.getUser().getId(),
+                    "DOCUMENT_REVIEW", approved ? "Document approved" : "Document needs attention",
+                    approved ? "Your " + document.getDocumentType().toLowerCase().replace('_', ' ') + " document was approved."
+                            : "Your " + document.getDocumentType().toLowerCase().replace('_', ' ') + " document was declined. Please review it.",
+                    "EmployeeDocument", document.getId(), "NORMAL");
+        }
     }
 
     public InputStreamResource download(Long id) {

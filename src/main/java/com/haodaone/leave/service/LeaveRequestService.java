@@ -16,8 +16,10 @@ import com.haodaone.leave.repository.LeaveBalanceRepository;
 import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.leave.repository.LeaveTypeRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.haodaone.notifications.service.NotificationService;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -38,6 +40,7 @@ public class LeaveRequestService {
     private final EmployeeRepository employeeRepository;
     private final AuditLogService auditLogService;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    private NotificationService notificationService;
 
     public LeaveRequestService(LeaveRequestRepository leaveRequestRepository, LeaveTypeRepository leaveTypeRepository,
                                 LeaveBalanceRepository leaveBalanceRepository, HolidayRepository holidayRepository,
@@ -50,6 +53,11 @@ public class LeaveRequestService {
         this.employeeRepository = employeeRepository;
         this.auditLogService = auditLogService;
         this.authorizationService = authorizationService;
+    }
+
+    @Autowired
+    public void setNotificationService(NotificationService notificationService) {
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -170,6 +178,21 @@ public class LeaveRequestService {
         }
 
         LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
+        if (notificationService != null) {
+            if (autoApproved) {
+                if (employee.getUser() != null) {
+                    notificationService.notifyUser(companyId, employee.getUser().getId(), "LEAVE_DECISION",
+                            "Leave request approved", "Your leave request was automatically approved by the leave policy.",
+                            "LeaveRequest", saved.getId(), "NORMAL");
+                }
+            } else {
+                notificationService.notifyPermissionRecipients(companyId, employee.getId(), "LEAVE_APPROVE",
+                        "LEAVE_SUBMITTED", "Leave request needs review",
+                        employee.getFullName() + " submitted a leave request for " + saved.getStartDate()
+                                + " to " + saved.getEndDate() + ".",
+                        "LeaveRequest", saved.getId());
+            }
+        }
         auditLogService.log("LeaveRequest", saved.getId(), "CREATE",
                 String.format("%s applied for %.1f day(s) of %s (%s to %s)", employee.getFullName(), requestedDays,
                         leaveType.getName(), request.getStartDate(), request.getEndDate()));
@@ -200,6 +223,12 @@ public class LeaveRequestService {
         currentEmployee().ifPresent(leaveRequest::setDecidedBy);
 
         LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
+        if (notificationService != null && saved.getEmployee().getUser() != null) {
+            notificationService.notifyUser(saved.getCompany().getId(), saved.getEmployee().getUser().getId(),
+                    "LEAVE_DECISION", approve ? "Leave request approved" : "Leave request declined",
+                    approve ? "Your leave request was approved." : "Your leave request was declined.",
+                    "LeaveRequest", saved.getId(), "NORMAL");
+        }
         auditLogService.log("LeaveRequest", saved.getId(), approve ? "APPROVE" : "REJECT",
                 (note != null && !note.isBlank()) ? note : "No note provided");
         return LeaveRequestDTO.from(saved);
