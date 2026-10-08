@@ -70,6 +70,18 @@ public class EmployeeDocumentService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<EmployeeDocumentDTO> pendingReviewInAuthorizedScope() {
+        Long companyId = requiredTenant();
+        var scope = authorizationService.resolveEmployeeIds("EMPLOYEE_MANAGE");
+        if (scope.isPresent() && scope.get().isEmpty()) return List.of();
+        var documents = scope.isEmpty()
+                ? documentRepository.findAllByCompany_IdAndStatusIgnoreCaseAndDeletedFalseOrderByIdDesc(companyId, "PENDING")
+                : documentRepository.findAllByCompany_IdAndEmployeeIdInAndStatusIgnoreCaseAndDeletedFalseOrderByIdDesc(
+                        companyId, scope.get(), "PENDING");
+        return documents.stream().map(EmployeeDocumentDTO::from).toList();
+    }
+
     /** Everyone's documents expiring within the next `lookaheadDays` (default 30), soonest first. */
     public List<EmployeeDocumentDTO> expiringSoon(Integer lookaheadDays) {
         int days = lookaheadDays != null ? lookaheadDays : DEFAULT_LOOKAHEAD_DAYS;

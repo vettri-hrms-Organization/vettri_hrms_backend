@@ -9,7 +9,20 @@ public record AssistantChatResponse(
         List<AssistantAction> actions,
         List<String> suggestions,
         boolean requiresConfirmation,
-        boolean aiEnhanced
+        boolean aiEnhanced,
+        String conversationId
 ) {
+    public AssistantChatResponse(
+            String message,
+            String intent,
+            String mode,
+            List<AssistantAction> actions,
+            List<String> suggestions,
+            boolean requiresConfirmation,
+            boolean aiEnhanced
+    ) {
+        this(message, intent, mode, actions, suggestions, requiresConfirmation, aiEnhanced, null);
+    }
+
     public record AssistantAction(String type, String label, String route) {}
 }

@@ -24,5 +24,10 @@ public interface EmployeeDocumentRepository extends JpaRepository<EmployeeDocume
     @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByCompany_IdAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, LocalDate start, LocalDate end);
     @EntityGraph(attributePaths = "employee")
+    List<EmployeeDocument> findAllByCompany_IdAndStatusIgnoreCaseAndDeletedFalseOrderByIdDesc(Long companyId, String status);
+    @EntityGraph(attributePaths = "employee")
+    List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdInAndStatusIgnoreCaseAndDeletedFalseOrderByIdDesc(
+            Long companyId, Set<Long> employeeIds, String status);
+    @EntityGraph(attributePaths = "employee")
     List<EmployeeDocument> findAllByCompany_IdAndEmployeeIdInAndDeletedFalseAndExpiryDateBetweenOrderByExpiryDateAsc(Long companyId, Set<Long> employeeIds, LocalDate start, LocalDate end);
 }
