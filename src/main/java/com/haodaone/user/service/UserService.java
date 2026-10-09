@@ -64,7 +64,7 @@ public class UserService {
         }
 
         Set<String> requestedRoleNames = request.getRoleNames().isEmpty() ? Set.of("EMPLOYEE") : request.getRoleNames();
-        validateRequestedRoles(requestedRoleNames);
+        validateRequestedRoles(requestedRoleNames, Set.of());
         Long currentTenant = requiredTenant();
         Set<Role> roles = new HashSet<>();
         for (String roleName : requestedRoleNames) {
@@ -123,7 +123,10 @@ public class UserService {
                         throw new AccessDeniedException("Users cannot change their own roles.");
                     });
         }
-        validateRequestedRoles(roleNames);
+        Set<String> currentRoleNames = user.getRoles().stream()
+                .map(Role::getName)
+                .collect(java.util.stream.Collectors.toSet());
+        validateRequestedRoles(roleNames, currentRoleNames);
         Set<Role> roles = new HashSet<>();
         Long companyId = requiredTenant();
         for (String roleName : roleNames) {
@@ -154,7 +157,7 @@ public class UserService {
         return tenant;
     }
 
-    private void validateRequestedRoles(Set<String> roleNames) {
+    private void validateRequestedRoles(Set<String> roleNames, Set<String> currentRoleNames) {
         if (roleNames == null || roleNames.isEmpty()) {
             return;
         }
@@ -171,11 +174,11 @@ public class UserService {
 
         Set<String> requested = roleNames.stream().map(String::trim).filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.toSet());
 
-        if (requested.contains("SUPER_ADMIN") && !isSuperAdmin) {
+        if (requested.contains("SUPER_ADMIN") && !isSuperAdmin && !currentRoleNames.contains("SUPER_ADMIN")) {
             throw new AccessDeniedException("Only a Super Admin can assign the platform Super Admin role.");
         }
 
-        if (requested.contains("COMPANY_ADMIN") && !isSuperAdmin) {
+        if (requested.contains("COMPANY_ADMIN") && !isSuperAdmin && !currentRoleNames.contains("COMPANY_ADMIN")) {
             throw new AccessDeniedException("Only a Super Admin can assign Company Admin roles.");
         }
 
@@ -184,8 +187,11 @@ public class UserService {
         }
 
         if (isCompanyAdmin && !isSuperAdmin) {
-            Set<String> forbiddenTenantAssignments = Set.of("SUPER_ADMIN", "COMPANY_ADMIN");
-            if (requested.stream().anyMatch(forbiddenTenantAssignments::contains)) {
+            Set<String> newlyAssignedForbiddenRoles = requested.stream()
+                    .filter(Set.of("SUPER_ADMIN", "COMPANY_ADMIN")::contains)
+                    .filter(roleName -> !currentRoleNames.contains(roleName))
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!newlyAssignedForbiddenRoles.isEmpty()) {
                 throw new AccessDeniedException("Company Admins cannot assign platform-level administrator roles.");
             }
         }

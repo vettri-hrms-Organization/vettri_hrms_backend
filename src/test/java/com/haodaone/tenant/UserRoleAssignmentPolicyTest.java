@@ -105,6 +105,55 @@ public class UserRoleAssignmentPolicyTest {
     }
 
     @Test
+    void companyAdmin_cannotAssignCompanyAdminToAnotherUser() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("company-admin", null, "ROLE_COMPANY_ADMIN"));
+        TenantContext.setCurrentTenant(7L);
+
+        Company company = new Company();
+        company.setId(7L);
+        User target = new User();
+        target.setId(80L);
+        target.setCompany(company);
+        target.setActive(true);
+        target.setAccountStatus("ACTIVE");
+
+        when(userRepository.findByIdAndCompanyIdAndDeletedFalse(80L, 7L)).thenReturn(Optional.of(target));
+
+        assertThrows(AccessDeniedException.class, () -> userService.assignRoles(80L, Set.of("COMPANY_ADMIN")));
+    }
+
+    @Test
+    void companyAdminCanPreserveAnExistingCompanyAdminRoleWhileEditingOtherRoles() {
+        SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("company-admin", null, "ROLE_COMPANY_ADMIN"));
+        TenantContext.setCurrentTenant(7L);
+
+        Company company = new Company();
+        company.setId(7L);
+        Role existingCompanyAdmin = new Role();
+        existingCompanyAdmin.setName("COMPANY_ADMIN");
+        existingCompanyAdmin.setCompany(company);
+        Role hrAdmin = new Role();
+        hrAdmin.setName("HR_ADMIN");
+        hrAdmin.setCompany(company);
+        User target = new User();
+        target.setId(80L);
+        target.setCompany(company);
+        target.setActive(true);
+        target.setAccountStatus("ACTIVE");
+        target.setRoles(Set.of(existingCompanyAdmin));
+
+        when(userRepository.findByIdAndCompanyIdAndDeletedFalse(80L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepository.findByNameAndCompany_Id("COMPANY_ADMIN", 7L)).thenReturn(Optional.of(existingCompanyAdmin));
+        when(roleRepository.findByNameAndCompany_Id("HR_ADMIN", 7L)).thenReturn(Optional.of(hrAdmin));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserDTO result = userService.assignRoles(80L, Set.of("COMPANY_ADMIN", "HR_ADMIN"));
+
+        assertEquals(Set.of("COMPANY_ADMIN", "HR_ADMIN"),
+                result.getRoles().stream().collect(Collectors.toSet()));
+    }
+
+    @Test
     void userCannotAssignRolesToTheirOwnAccount() {
         SecurityContextHolder.getContext().setAuthentication(new TestingAuthenticationToken("self", null, "ROLE_COMPANY_ADMIN"));
         TenantContext.setCurrentTenant(7L);

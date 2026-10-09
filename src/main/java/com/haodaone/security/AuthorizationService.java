@@ -218,6 +218,7 @@ public class AuthorizationService {
         return resolved;
     }
 
+    @Transactional(readOnly = true)
     public boolean hasOrganizationScope(String permissionCode) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated() && isAccountActive(authentication)
@@ -227,6 +228,11 @@ public class AuthorizationService {
         return authentication != null && authentication.isAuthenticated() && isAccountActive(authentication)
                 && hasAuthority(authentication, permissionCode)
                 && getScopes(permissionCode).contains(PermissionScope.ORGANIZATION);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canManageOfficeLocations() {
+        return hasOrganizationScope("ORG_MANAGE") || hasOrganizationScope("ATTENDANCE_MANAGE");
     }
 
     private boolean requestedScopeIsWithinGrantorScope(PermissionScope requestedScope,

@@ -406,7 +406,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/office-locations")
-    @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('ATTENDANCE_VIEW') or @authorizationService.canManageOfficeLocations()")
     public List<OfficeLocationDTO> officeLocations() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {
@@ -417,7 +417,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/office-locations")
-    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @PreAuthorize("@authorizationService.canManageOfficeLocations()")
     @Transactional
     public ResponseEntity<OfficeLocationDTO> createOfficeLocation(@Valid @RequestBody OfficeLocationRequest request) {
         Company company = companyRepository.findById(requiredTenant())
@@ -429,7 +429,7 @@ public class AttendanceController {
     }
 
     @PutMapping("/office-locations/{id}")
-    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @PreAuthorize("@authorizationService.canManageOfficeLocations()")
     @Transactional
     public ResponseEntity<OfficeLocationDTO> updateOfficeLocation(@PathVariable Long id, @Valid @RequestBody OfficeLocationRequest request) {
         OfficeLocation location = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
@@ -439,7 +439,7 @@ public class AttendanceController {
     }
 
     @PatchMapping("/office-locations/{id}/status")
-    @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @PreAuthorize("@authorizationService.canManageOfficeLocations()")
     @Transactional
     public ResponseEntity<OfficeLocationDTO> setOfficeLocationStatus(@PathVariable Long id, @RequestParam boolean active) {
         OfficeLocation location = officeLocationRepository.findByIdAndCompany_IdAndDeletedFalse(id, requiredTenant())
