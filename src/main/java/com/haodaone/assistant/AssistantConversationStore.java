@@ -192,14 +192,15 @@ public class AssistantConversationStore {
                 """
                 INSERT INTO assistant_pending_leave_action
                     (conversation_id, company_id, user_id, employee_id, leave_type_id, leave_type_name,
-                     start_date, end_date, reason, requested_days, remaining_days, is_ready)
-                SELECT id, company_id, user_id, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                     start_date, end_date, reason, requested_days, remaining_days, is_ready, created_at)
+                SELECT id, company_id, user_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 FROM assistant_conversation
                 WHERE id = ? AND company_id = ? AND user_id = ? AND archived = FALSE
                 """,
                 action.employeeId(), action.leaveTypeId(), action.leaveTypeName(),
                 action.startDate(), action.endDate(), action.reason(),
-                action.requestedDays(), action.remainingDays(), action.ready(), id, companyId, userId
+                action.requestedDays(), action.remainingDays(), action.ready(), action.createdAt(),
+                id, companyId, userId
         );
     }
 

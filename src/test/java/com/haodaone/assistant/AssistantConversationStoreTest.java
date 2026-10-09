@@ -97,10 +97,11 @@ class AssistantConversationStoreTest {
     @Test
     void pendingLeaveProposalIsBoundToItsConversationTenantAndUserAndClearedOnArchive() {
         UUID conversation = store.create(42L, 7L);
+        LocalDateTime createdAt = LocalDateTime.of(2026, 10, 9, 12, 34, 56, 123_456_000);
         var proposal = new AssistantConversationStore.PendingLeaveAction(
                 51L, 12L, "Casual Leave",
                 LocalDate.of(2026, 10, 9), LocalDate.of(2026, 10, 9),
-                "Personal appointment", 1.0, 3.0, true, LocalDateTime.now()
+                "Personal appointment", 1.0, 3.0, true, createdAt
         );
 
         store.savePendingLeave(conversation, 42L, 7L, proposal);
@@ -112,6 +113,10 @@ class AssistantConversationStoreTest {
         assertThat(stored.startDate()).isEqualTo(proposal.startDate());
         assertThat(stored.endDate()).isEqualTo(proposal.endDate());
         assertThat(stored.ready()).isTrue();
+        assertThat(stored.createdAt()).isEqualTo(createdAt);
+        var locked = store.lockPendingLeave(conversation, 42L, 7L).orElseThrow();
+        assertThat(locked.createdAt()).isEqualTo(createdAt);
+        assertThat(PendingLeaveExpiry.isExpired(locked.createdAt(), createdAt.plusMinutes(5))).isFalse();
         assertThat(store.pendingLeave(conversation, 43L, 7L)).isEmpty();
         assertThat(store.pendingLeave(conversation, 42L, 8L)).isEmpty();
         assertThat(store.archive(conversation, 42L, 7L)).isTrue();
