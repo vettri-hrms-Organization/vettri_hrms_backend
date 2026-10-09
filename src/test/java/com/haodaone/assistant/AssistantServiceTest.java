@@ -213,10 +213,35 @@ class AssistantServiceTest {
         verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
     }
 
+    @Test
+    void exactLeaveRequestWithoutTypeReturnsFollowUpFromTheAssistantHttpEndpoint() throws Exception {
+        String message = "please apply leave on 07 oct 2026";
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq(message), eq(context), isNull()))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"missing\":\"leaveType\"}", "Which leave type would you like to use?", null));
+
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new AssistantController(assistantService)).build();
+        mockMvc.perform(post("/api/assistant/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsBytes(
+                                new AssistantChatRequest(message, null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Which leave type would you like to use?"))
+                .andExpect(jsonPath("$.actions").isEmpty())
+                .andExpect(jsonPath("$.requiresConfirmation").value(false))
+                .andExpect(jsonPath("$.conversationId").value(conversationId.toString()));
+
+        verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "Apply casual leave tomorrow.",
             "Please apply casual leaves tomorrow.",
+            "please apply leave on 07 oct 2026",
             "Please apply casual leave on 8th Oct 2026.",
             "Can you apply casual leave on 8th oct 2026?",
             "Book casual leave on 8th oct 2026.",
@@ -237,6 +262,77 @@ class AssistantServiceTest {
 
         assertThat(response.message()).contains("Which date");
         verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void contextualFollowUpRecoversOriginalLeaveRequestAfterGuidanceResponse() {
+        String originalRequest = "please apply leave on 07 oct 2026";
+        when(conversationStore.get(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.ConversationSnapshot(
+                        new AssistantConversationStore.ConversationSummary(
+                                conversationId, "Leave request", LocalDateTime.now(), LocalDateTime.now()),
+                        List.of(
+                                new AssistantConversationStore.StoredMessage(
+                                        "USER", originalRequest, LocalDateTime.now()),
+                                new AssistantConversationStore.StoredMessage(
+                                        "ASSISTANT",
+                                        "To apply for leave on 07 Oct 2026, follow these steps: open the Leave section.",
+                                        LocalDateTime.now())
+                        )
+                )));
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq(originalRequest), eq(context), isNull()))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"missing\":\"leaveType\"}", "Which leave type would you like to use?", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("you should apply", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("Which leave type");
+        verify(conversationStore).get(conversationId, 42L, 7L);
+        verify(toolRegistry).prepareLeaveRequest(conversationId, originalRequest, context, null);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+    }
+
+    @Test
+    void contextualFollowUpWithoutImmediatelyPrecedingLeaveGuidanceDoesNotPrepareARequest() {
+        when(aiProvider.chat(anyList(), anyList()))
+                .thenReturn(new AiProvider.ModelTurn("What would you like help with?", List.of()));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("you should apply", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).isEqualTo("What would you like help with?");
+        verify(toolRegistry, never()).prepareLeaveRequest(any(), anyString(), any(), any());
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+    }
+
+    @Test
+    void contextualFollowUpWithPendingLeaveReissuesProposalAndStillRequiresConfirmation() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 7),
+                java.time.LocalDate.of(2026, 10, 7), null, 1.0, 3.0, true, LocalDateTime.now());
+        var action = new AssistantChatResponse.AssistantAction(
+                "LEAVE_CONFIRMATION", "Submit Leave", null,
+                Map.of("leaveType", "Casual Leave", "startDate", "2026-10-07",
+                        "endDate", "2026-10-07", "days", 1.0, "remainingDays", 3.0,
+                        "duration", "Full day"));
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        when(toolRegistry.prepareLeaveRequest(
+                conversationId, "you should apply", context, pending))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"prepared\":true}", "Please review the prepared request.", action));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("you should apply", conversationId.toString(), List.of()));
+
+        assertThat(response.actions()).containsExactly(action);
+        assertThat(response.requiresConfirmation()).isTrue();
+        verify(toolRegistry).prepareLeaveRequest(conversationId, "you should apply", context, pending);
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
         verify(aiProvider, never()).chat(anyList(), anyList());
     }
 

@@ -173,6 +173,32 @@ class AssistantToolRegistryTest {
     }
 
     @Test
+    void requestWithoutLeaveTypeKeepsParsedPastDateAndAsksForTheMissingType() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        com.haodaone.leave.entity.LeaveType casual = mock(com.haodaone.leave.entity.LeaveType.class);
+        when(casual.getName()).thenReturn("Casual Leave");
+        when(casual.isActive()).thenReturn(true);
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(casual));
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+        UUID conversationId = UUID.randomUUID();
+
+        var result = registry.prepareLeaveRequest(
+                conversationId, "please apply leave on 07 oct 2026", employee, null);
+
+        assertThat(result.message()).contains("Which leave type", "Casual Leave");
+        verify(conversationStore).savePendingLeave(eq(conversationId), eq(42L), eq(7L),
+                argThat(draft -> draft.leaveTypeId() == null
+                        && draft.startDate().equals(LocalDate.of(2026, 10, 7))
+                        && draft.endDate().equals(LocalDate.of(2026, 10, 7))
+                        && !draft.ready()));
+        verify(leaveRequestService, never()).preview(any());
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
     void unauthorizedLeavePreparationDoesNotReadLeaveTypesOrCreateProposal() {
         var registry = registry();
         AssistantContext employee = new AssistantContext(7L, 51L, 42L,

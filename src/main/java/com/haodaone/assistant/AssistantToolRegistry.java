@@ -38,12 +38,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
 public class AssistantToolRegistry {
     private static final int MAX_TOOL_ITEMS = 50;
     private static final List<String> TEAM_SCOPE_NAMES = List.of("TEAM", "DEPARTMENT", "ORGANIZATION");
+    private static final Pattern LEAVE_TYPE_REFERENCE = Pattern.compile(
+            "(?i)\\b(?:cl|el|sl)\\b|\\b(?!(?:apply|request|book|take|submit|put|for|on|from|to|my|the|a|an|some|any|this|that)\\b)"
+                    + "[a-z][a-z-]*\\s+leaves?\\b");
 
     private final ObjectMapper objectMapper;
     private final LeaveRequestService leaveRequestService;
@@ -502,7 +506,7 @@ public class AssistantToolRegistry {
     }
 
     private boolean mentionsLeaveType(String message) {
-        return message.matches(".*\\b(?:leave|cl|el|sl)\\b.*");
+        return LEAVE_TYPE_REFERENCE.matcher(message).find();
     }
 
     private boolean containsNormalized(String message, String candidate) {

@@ -38,6 +38,11 @@ public class AssistantService {
                     + "(?:please\\s+)?(?:apply|request|book|take|put\\s+in|submit)\\b");
     private static final Pattern LEAVE_GUIDANCE_QUESTION = Pattern.compile(
             "(?is)^\\s*(?:how|where|why|what|should|can i|could i|do i)\\b.*\\b(?:leave|time off|day off)\\b.*");
+    private static final Pattern CONTEXTUAL_LEAVE_ACTION_FOLLOW_UP = Pattern.compile(
+            "(?i)^\\s*(?:you should apply|please apply|apply it|please do(?: it)?|do it)\\s*[.!]*\\s*$");
+    private static final Pattern LEAVE_GUIDANCE_RESPONSE = Pattern.compile(
+            "(?is)(?=.*\\b(?:leave|time off|day off)\\b)"
+                    + "(?=.*\\b(?:steps?|instructions?|navigate|navigation|leave (?:page|section|area))\\b).*");
     private static final Pattern LEAVE_CONFIRMATION = Pattern.compile(
             "(?i)^\\s*(?:yes|yes please|yes,? submit(?: it)?|submit(?: it)?|go ahead|do it|confirm|please submit)\\s*[.!]*\\s*$");
     private static final Pattern LEAVE_CANCELLATION = Pattern.compile(
@@ -75,6 +80,10 @@ public class AssistantService {
         AssistantConversationStore.PendingLeaveAction priorPending = conversationStore
                 .pendingLeave(conversationId, context.companyId(), context.userId())
                 .orElse(null);
+        AssistantConversationStore.ConversationSnapshot priorConversation =
+                priorPending == null && isContextualLeaveActionFollowUp(request.message())
+                        ? conversationStore.get(conversationId, context.companyId(), context.userId()).orElse(null)
+                        : null;
         if (!conversationStore.append(conversationId, context.companyId(), context.userId(), "USER", request.message().trim())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
@@ -145,9 +154,13 @@ public class AssistantService {
         boolean leaveActionIntent = isLeaveActionRequest(request.message())
                 && (isExplicitLeaveMutationRequest(request.message())
                         || !isLeaveGuidanceQuestion(request.message()));
-        if (leaveActionIntent || leaveDetailsReply) {
+        String recoveredLeaveRequest = recoverGuidedLeaveRequest(priorConversation);
+        boolean contextualLeaveAction = isContextualLeaveActionFollowUp(request.message())
+                && (priorPending != null || recoveredLeaveRequest != null);
+        if (leaveActionIntent || leaveDetailsReply || contextualLeaveAction) {
             AssistantToolRegistry.ToolResult prepared = toolRegistry.prepareLeaveRequest(
-                    conversationId, request.message(), contextResolver.resolve(), priorPending);
+                    conversationId, recoveredLeaveRequest == null ? request.message() : recoveredLeaveRequest,
+                    contextResolver.resolve(), priorPending);
             return saveResponse(conversationId, context, prepared.message(), "CHAT",
                     prepared.action() == null ? List.of() : List.of(prepared.action()), false);
         }
@@ -226,6 +239,25 @@ public class AssistantService {
 
     private boolean isExplicitLeaveMutationRequest(String message) {
         return EXPLICIT_LEAVE_MUTATION.matcher(message).find();
+    }
+
+    private boolean isContextualLeaveActionFollowUp(String message) {
+        return CONTEXTUAL_LEAVE_ACTION_FOLLOW_UP.matcher(message).matches();
+    }
+
+    private String recoverGuidedLeaveRequest(AssistantConversationStore.ConversationSnapshot snapshot) {
+        if (snapshot == null || snapshot.messages().size() < 2) return null;
+        List<AssistantConversationStore.StoredMessage> messages = snapshot.messages();
+        AssistantConversationStore.StoredMessage previousAssistant = messages.get(messages.size() - 1);
+        AssistantConversationStore.StoredMessage previousUser = messages.get(messages.size() - 2);
+        if (!"ASSISTANT".equals(previousAssistant.role())
+                || !"USER".equals(previousUser.role())
+                || !LEAVE_GUIDANCE_RESPONSE.matcher(previousAssistant.content()).matches()
+                || !isLeaveActionRequest(previousUser.content())
+                || isLeaveGuidanceQuestion(previousUser.content())) {
+            return null;
+        }
+        return previousUser.content();
     }
 
     private boolean isLeaveGuidanceQuestion(String message) {
