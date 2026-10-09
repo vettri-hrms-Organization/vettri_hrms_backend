@@ -4,22 +4,28 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AssistantConversationStoreTest {
     private AssistantConversationStore store;
+    private JdbcTemplate jdbc;
+    private TransactionTemplate transactionTemplate;
 
     @BeforeEach
     void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:assistant-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1", "sa", "");
         dataSource.setDriverClassName("org.h2.Driver");
-        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc = new JdbcTemplate(dataSource);
+        transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         jdbc.execute("CREATE TABLE company (id BIGINT PRIMARY KEY)");
         jdbc.execute("CREATE TABLE app_user (id BIGINT PRIMARY KEY)");
         jdbc.execute("CREATE TABLE employee (id BIGINT PRIMARY KEY)");
@@ -121,5 +127,32 @@ class AssistantConversationStoreTest {
         assertThat(store.pendingLeave(conversation, 42L, 8L)).isEmpty();
         assertThat(store.archive(conversation, 42L, 7L)).isTrue();
         assertThat(store.pendingLeave(conversation, 42L, 7L)).isEmpty();
+    }
+
+    @Test
+    void pendingLeaveTimestampRoundTripsUnchangedAcrossJvmAndDatabaseSessionTimezones() {
+        UUID conversation = store.create(42L, 7L);
+        LocalDateTime createdAt = LocalDateTime.of(2026, 10, 9, 17, 30, 45, 123_456_000);
+        var proposal = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave",
+                LocalDate.of(2026, 10, 15), LocalDate.of(2026, 10, 15),
+                null, 1.0, 3.0, true, createdAt
+        );
+        TimeZone originalTimeZone = TimeZone.getDefault();
+
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+            transactionTemplate.executeWithoutResult(status -> {
+                jdbc.execute("SET TIME ZONE 'America/Los_Angeles'");
+                store.savePendingLeave(conversation, 42L, 7L, proposal);
+
+                assertThat(store.pendingLeave(conversation, 42L, 7L).orElseThrow().createdAt())
+                        .isEqualTo(createdAt);
+                assertThat(store.lockPendingLeave(conversation, 42L, 7L).orElseThrow().createdAt())
+                        .isEqualTo(createdAt);
+            });
+        } finally {
+            TimeZone.setDefault(originalTimeZone);
+        }
     }
 }

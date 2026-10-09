@@ -15,4 +15,12 @@ class PendingLeaveExpiryTest {
         assertThat(PendingLeaveExpiry.isExpired(createdAt, createdAt.plusMinutes(30))).isTrue();
         assertThat(PendingLeaveExpiry.isExpired(createdAt, createdAt.plusMinutes(30).plusNanos(1))).isTrue();
     }
+
+    @Test
+    void missingOrFutureCreationTimestampIsInvalid() {
+        LocalDateTime now = LocalDateTime.of(2026, 10, 9, 12, 0);
+
+        assertThat(PendingLeaveExpiry.isExpired(null, now)).isTrue();
+        assertThat(PendingLeaveExpiry.isExpired(now.plusNanos(1), now)).isTrue();
+    }
 }

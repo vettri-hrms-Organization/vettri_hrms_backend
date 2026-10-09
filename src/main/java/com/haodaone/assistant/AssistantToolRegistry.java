@@ -26,6 +26,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
@@ -58,6 +59,7 @@ public class AssistantToolRegistry {
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final AuthorizationService authorizationService;
     private final EmployeeSalaryService employeeSalaryService;
+    private final Clock clock;
 
     public AssistantToolRegistry(
             ObjectMapper objectMapper,
@@ -68,7 +70,8 @@ public class AssistantToolRegistry {
             EmployeeSalaryService employeeSalaryService,
             AuthorizationService authorizationService,
             LeaveTypeRepository leaveTypeRepository,
-            AssistantConversationStore conversationStore
+            AssistantConversationStore conversationStore,
+            Clock clock
     ) {
         this.objectMapper = objectMapper;
         this.leaveRequestService = leaveRequestService;
@@ -79,6 +82,7 @@ public class AssistantToolRegistry {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.employeeSalaryService = employeeSalaryService;
         this.authorizationService = authorizationService;
+        this.clock = clock;
     }
 
     public List<AiProvider.ModelTool> availableTools(AssistantContext context) {
@@ -365,7 +369,7 @@ public class AssistantToolRegistry {
                     context.employeeId(), null, null,
                     dateRange == null ? null : dateRange.startDate(),
                     dateRange == null ? null : dateRange.endDate(),
-                    reason, null, null, false, LocalDateTime.now()
+                    reason, null, null, false, LocalDateTime.now(clock)
             );
             conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
             String typePrompt = activeTypes.isEmpty()
@@ -382,7 +386,7 @@ public class AssistantToolRegistry {
         if (dateRange == null) {
             AssistantConversationStore.PendingLeaveAction draft = new AssistantConversationStore.PendingLeaveAction(
                     context.employeeId(), leaveType.getId(), leaveType.getName(),
-                    null, null, reason, null, null, false, LocalDateTime.now()
+                    null, null, reason, null, null, false, LocalDateTime.now(clock)
             );
             conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
             return new ToolResult("{\"missing\":\"date\"}", "Which date or date range would you like to take leave?", null);
@@ -421,7 +425,7 @@ public class AssistantToolRegistry {
         AssistantConversationStore.PendingLeaveAction prepared = new AssistantConversationStore.PendingLeaveAction(
                 context.employeeId(), preview.leaveTypeId(), preview.leaveTypeName(),
                 preview.startDate(), preview.endDate(), reason,
-                preview.requestedDays(), preview.remainingDays(), true, LocalDateTime.now()
+                preview.requestedDays(), preview.remainingDays(), true, LocalDateTime.now(clock)
         );
         conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), prepared);
         String period = formatPeriod(preview.startDate(), preview.endDate());
@@ -468,7 +472,7 @@ public class AssistantToolRegistry {
                 .filter(AssistantConversationStore.PendingLeaveAction::ready)
                 .filter(action -> action.employeeId() == context.employeeId())
                 .orElseThrow(() -> new AssistantToolException(false));
-        if (PendingLeaveExpiry.isExpired(pending.createdAt(), LocalDateTime.now())) {
+        if (PendingLeaveExpiry.isExpired(pending.createdAt(), LocalDateTime.now(clock))) {
             throw new PendingLeaveExpiredException();
         }
 

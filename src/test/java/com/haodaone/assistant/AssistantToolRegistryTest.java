@@ -18,8 +18,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -310,6 +313,117 @@ class AssistantToolRegistryTest {
     }
 
     @Test
+    void confirmationUsesApplicationClockRatherThanJvmDefaultTimezone() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        ZoneId applicationZone = com.haodaone.config.ApplicationTimeConfig.APPLICATION_ZONE;
+        Clock applicationClock = Clock.fixed(Instant.parse("2026-10-09T11:59:59Z"), applicationZone);
+        LocalDateTime proposalCreatedAt = LocalDateTime.of(2026, 10, 9, 17, 0);
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 12),
+                        null, 1.0, 3.0, true, proposalCreatedAt)));
+        com.haodaone.leave.dto.LeaveRequestDTO created = mock(com.haodaone.leave.dto.LeaveRequestDTO.class);
+        when(leaveRequestService.apply(any())).thenReturn(created);
+        var registry = registry(applicationClock);
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+        java.util.TimeZone originalTimeZone = java.util.TimeZone.getDefault();
+
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+
+            assertThat(registry.submitConfirmedLeave(conversationId, employee)).isSameAs(created);
+        } finally {
+            java.util.TimeZone.setDefault(originalTimeZone);
+        }
+
+        verify(leaveRequestService).apply(any());
+    }
+
+    @Test
+    void proposalExpiresAtTheThirtyMinuteBoundaryWhenConfirmed() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        ZoneId applicationZone = com.haodaone.config.ApplicationTimeConfig.APPLICATION_ZONE;
+        Clock applicationClock = Clock.fixed(Instant.parse("2026-10-09T12:00:00Z"), applicationZone);
+        LocalDateTime proposalCreatedAt = LocalDateTime.of(2026, 10, 9, 17, 0);
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 12),
+                        null, 1.0, 3.0, true, proposalCreatedAt)));
+        var registry = registry(applicationClock);
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(PendingLeaveExpiredException.class);
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
+    void futureDatedProposalCannotBeSubmitted() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        ZoneId applicationZone = com.haodaone.config.ApplicationTimeConfig.APPLICATION_ZONE;
+        LocalDateTime now = LocalDateTime.of(2026, 10, 9, 17, 30);
+        Clock applicationClock = Clock.fixed(now.atZone(applicationZone).toInstant(), applicationZone);
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 12),
+                        null, 1.0, 3.0, true, now.plusNanos(1))));
+        var registry = registry(applicationClock);
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(PendingLeaveExpiredException.class);
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
+    void missingIncompleteOrOtherEmployeesProposalCannotBeSubmitted() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.empty());
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(AssistantToolException.class);
+
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 12),
+                        null, 1.0, 3.0, false, LocalDateTime.now())));
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(AssistantToolException.class);
+
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        99L, 12L, "Casual Leave", LocalDate.of(2026, 10, 12), LocalDate.of(2026, 10, 12),
+                        null, 1.0, 3.0, true, LocalDateTime.now())));
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(AssistantToolException.class);
+
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
+    void unauthorizedConfirmationCannotReadOrSubmitProposal() {
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_PROFILE_VIEW"), Set.of("EMPLOYEE"), null, null, null);
+
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(UUID.randomUUID(), employee))
+                .isInstanceOf(AssistantToolException.class)
+                .satisfies(error -> assertThat(((AssistantToolException) error).isForbidden()).isTrue());
+
+        verifyNoInteractions(conversationStore, leaveRequestService);
+    }
+
+    @Test
     void confirmedLeaveUsesAuthenticatedEmployeeAndExistingLeaveService() {
         when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
         UUID conversationId = UUID.randomUUID();
@@ -362,7 +476,8 @@ class AssistantToolRegistryTest {
 
         verify(conversationStore).savePendingLeave(eq(conversationId), eq(42L), eq(7L),
                 argThat(proposal -> proposal.createdAt() != null
-                        && !PendingLeaveExpiry.isExpired(proposal.createdAt(), LocalDateTime.now())));
+                        && !PendingLeaveExpiry.isExpired(proposal.createdAt(),
+                        LocalDateTime.now(com.haodaone.config.ApplicationTimeConfig.APPLICATION_ZONE))));
         verify(leaveRequestService, never()).apply(any());
     }
 
@@ -473,8 +588,12 @@ class AssistantToolRegistryTest {
     }
 
     private AssistantToolRegistry registry() {
+        return registry(Clock.system(com.haodaone.config.ApplicationTimeConfig.APPLICATION_ZONE));
+    }
+
+    private AssistantToolRegistry registry(Clock clock) {
         return new AssistantToolRegistry(new ObjectMapper(), leaveRequestService, employeeDocumentService,
                 deviceEnrollmentService, attendanceRecordRepository, employeeSalaryService, authorizationService,
-                leaveTypeRepository, conversationStore);
+                leaveTypeRepository, conversationStore, clock);
     }
 }

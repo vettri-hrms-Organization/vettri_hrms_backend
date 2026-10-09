@@ -9,6 +9,6 @@ final class PendingLeaveExpiry {
     private PendingLeaveExpiry() {}
 
     static boolean isExpired(LocalDateTime createdAt, LocalDateTime now) {
-        return createdAt == null || !now.isBefore(createdAt.plus(VALIDITY));
+        return createdAt == null || createdAt.isAfter(now) || !now.isBefore(createdAt.plus(VALIDITY));
     }
 }
