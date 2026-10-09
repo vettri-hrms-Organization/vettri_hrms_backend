@@ -181,14 +181,14 @@ public class AssistantConversationStore {
     }
 
     @Transactional
-    public void savePendingLeave(
+    public boolean savePendingLeave(
             UUID id,
             long companyId,
             long userId,
             PendingLeaveAction action
     ) {
         clearPendingLeave(id, companyId, userId);
-        jdbcTemplate.update(
+        int inserted = jdbcTemplate.update(
                 """
                 INSERT INTO assistant_pending_leave_action
                     (conversation_id, company_id, user_id, employee_id, leave_type_id, leave_type_name,
@@ -202,6 +202,7 @@ public class AssistantConversationStore {
                 action.requestedDays(), action.remainingDays(), action.ready(), action.createdAt(),
                 id, companyId, userId
         );
+        return inserted == 1;
     }
 
     @Transactional

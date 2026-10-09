@@ -155,4 +155,18 @@ class AssistantConversationStoreTest {
             TimeZone.setDefault(originalTimeZone);
         }
     }
+
+    @Test
+    void pendingLeaveSaveReportsWhenConversationIsMissingOrOwnedByAnotherUser() {
+        UUID conversation = store.create(42L, 7L);
+        var proposal = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave",
+                LocalDate.of(2026, 10, 15), LocalDate.of(2026, 10, 15),
+                null, 1.0, 3.0, true, LocalDateTime.of(2026, 10, 9, 12, 0)
+        );
+
+        assertThat(store.savePendingLeave(conversation, 42L, 8L, proposal)).isFalse();
+        assertThat(store.savePendingLeave(UUID.randomUUID(), 42L, 7L, proposal)).isFalse();
+        assertThat(store.pendingLeave(conversation, 42L, 7L)).isEmpty();
+    }
 }

@@ -10,6 +10,7 @@ import com.haodaone.monitoring.service.DeviceEnrollmentService;
 import com.haodaone.security.AuthorizationService;
 import com.haodaone.salary.service.EmployeeSalaryService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -43,6 +44,11 @@ class AssistantToolRegistryTest {
     @AfterEach
     void cleanup() {
         com.haodaone.tenant.TenantContext.clear();
+    }
+
+    @BeforeEach
+    void allowPendingProposalPersistenceByDefault() {
+        lenient().when(conversationStore.savePendingLeave(any(), anyLong(), anyLong(), any())).thenReturn(true);
     }
 
     @Test
@@ -212,6 +218,31 @@ class AssistantToolRegistryTest {
 
         assertThat(result.message()).contains("don't have permission");
         verifyNoInteractions(leaveTypeRepository, leaveRequestService, conversationStore);
+    }
+
+    @Test
+    void missingOwnedConversationCannotReturnAConfirmationCardWhenPersistenceFails() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        com.haodaone.leave.entity.LeaveType casual = mock(com.haodaone.leave.entity.LeaveType.class);
+        when(casual.getId()).thenReturn(12L);
+        when(casual.getName()).thenReturn("Casual Leave");
+        when(casual.isActive()).thenReturn(true);
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(casual));
+        when(leaveRequestService.preview(any())).thenReturn(new LeaveRequestService.LeaveApplicationPreview(
+                51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 15),
+                LocalDate.of(2026, 10, 15), 1, 3));
+        when(conversationStore.savePendingLeave(any(), anyLong(), anyLong(), any())).thenReturn(false);
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        var result = registry.prepareLeaveRequest(
+                UUID.randomUUID(), "Please apply casual leave on 15 October 2026", employee, null);
+
+        assertThat(result.message()).contains("couldn't save", "Nothing was submitted");
+        assertThat(result.action()).isNull();
+        verify(leaveRequestService, never()).apply(any());
     }
 
     @Test

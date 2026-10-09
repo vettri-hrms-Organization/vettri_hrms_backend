@@ -47,7 +47,7 @@ public class AssistantToolRegistry {
     private static final int MAX_TOOL_ITEMS = 50;
     private static final List<String> TEAM_SCOPE_NAMES = List.of("TEAM", "DEPARTMENT", "ORGANIZATION");
     private static final Pattern LEAVE_TYPE_REFERENCE = Pattern.compile(
-            "(?i)\\b(?:cl|el|sl)\\b|\\b(?!(?:apply|request|book|take|submit|put|for|on|from|to|my|the|a|an|some|any|this|that)\\b)"
+            "(?i)\\b(?:cl|el|sl)\\b|\\b(?!(?:apply|request|book|take|submit|put|for|of|on|from|to|my|the|a|an|some|any|this|that)\\b)"
                     + "[a-z][a-z-]*\\s+leaves?\\b");
 
     private final ObjectMapper objectMapper;
@@ -371,7 +371,9 @@ public class AssistantToolRegistry {
                     dateRange == null ? null : dateRange.endDate(),
                     reason, null, null, false, LocalDateTime.now(clock)
             );
-            conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
+            if (!conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft)) {
+                return pendingLeavePersistenceFailure();
+            }
             String typePrompt = activeTypes.isEmpty()
                     ? "I couldn't find an active leave type available for your account. Please contact your HR team."
                     : (mentionsLeaveType(normalizedMessage)
@@ -388,7 +390,9 @@ public class AssistantToolRegistry {
                     context.employeeId(), leaveType.getId(), leaveType.getName(),
                     null, null, reason, null, null, false, LocalDateTime.now(clock)
             );
-            conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
+            if (!conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft)) {
+                return pendingLeavePersistenceFailure();
+            }
             return new ToolResult("{\"missing\":\"date\"}", "Which date or date range would you like to take leave?", null);
         }
         if (dateRange.startDate().getYear() != dateRange.endDate().getYear()) {
@@ -427,7 +431,9 @@ public class AssistantToolRegistry {
                 preview.startDate(), preview.endDate(), reason,
                 preview.requestedDays(), preview.remainingDays(), true, LocalDateTime.now(clock)
         );
-        conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), prepared);
+        if (!conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), prepared)) {
+            return pendingLeavePersistenceFailure();
+        }
         String period = formatPeriod(preview.startDate(), preview.endDate());
         String days = formatDays(preview.requestedDays());
         Map<String, Object> details = new LinkedHashMap<>();
@@ -498,6 +504,14 @@ public class AssistantToolRegistry {
         boolean delegatedPermission = context.hasAuthority("LEAVE_APPLY")
                 && authorizationService.isAllowed("LEAVE_APPLY", "EMPLOYEE", context.employeeId());
         return selfPermission || delegatedPermission;
+    }
+
+    private ToolResult pendingLeavePersistenceFailure() {
+        return new ToolResult(
+                "{\"error\":\"request_unavailable\"}",
+                "I couldn't save your prepared leave request. Nothing was submitted. Please try again.",
+                null
+        );
     }
 
     private LeaveType resolveLeaveType(String message, List<LeaveType> activeTypes) {
