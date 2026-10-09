@@ -31,6 +31,11 @@ public class AssistantService {
             "\\b(?:map(?:ping)?|assign(?:ment)?)\\b(?=.*\\bdevices?\\b)|\\bdevices?\\b(?=.*\\b(?:map(?:ping)?|assign(?:ment)?)\\b)");
     private static final Pattern LEAVE_ACTION_REQUEST = Pattern.compile(
             "(?is)(?=.*\\b(?:leave|time off|day off|cl|el|sl)\\b)(?=.*\\b(?:apply|request|book|take|put in|submit|need|want)\\b).*");
+    private static final Pattern EXPLICIT_LEAVE_MUTATION = Pattern.compile(
+            "(?is)(?:^|[.!?,;]\\s*|\\b(?:and|then)\\s+)"
+                    + "(?:(?:please|kindly)\\s+)?"
+                    + "(?:(?:can|could|would)\\s+you\\s+)?"
+                    + "(?:please\\s+)?(?:apply|request|book|take|put\\s+in|submit)\\b");
     private static final Pattern LEAVE_GUIDANCE_QUESTION = Pattern.compile(
             "(?is)^\\s*(?:how|where|why|what|should|can i|could i|do i)\\b.*\\b(?:leave|time off|day off)\\b.*");
     private static final Pattern LEAVE_CONFIRMATION = Pattern.compile(
@@ -137,9 +142,10 @@ public class AssistantService {
                 && (containsDateExpression(request.message())
                 || LEAVE_MODIFICATION.matcher(request.message()).matches()
                 || request.message().toLowerCase(Locale.ROOT).contains("leave"));
-        if (isLeaveActionRequest(request.message())
-                && !isLeaveGuidanceQuestion(request.message())
-                || leaveDetailsReply) {
+        boolean leaveActionIntent = isLeaveActionRequest(request.message())
+                && (isExplicitLeaveMutationRequest(request.message())
+                        || !isLeaveGuidanceQuestion(request.message()));
+        if (leaveActionIntent || leaveDetailsReply) {
             AssistantToolRegistry.ToolResult prepared = toolRegistry.prepareLeaveRequest(
                     conversationId, request.message(), contextResolver.resolve(), priorPending);
             return saveResponse(conversationId, context, prepared.message(), "CHAT",
@@ -216,6 +222,10 @@ public class AssistantService {
 
     private boolean isLeaveActionRequest(String message) {
         return LEAVE_ACTION_REQUEST.matcher(normalizeLeaveIntent(message)).matches();
+    }
+
+    private boolean isExplicitLeaveMutationRequest(String message) {
+        return EXPLICIT_LEAVE_MUTATION.matcher(message).find();
     }
 
     private boolean isLeaveGuidanceQuestion(String message) {

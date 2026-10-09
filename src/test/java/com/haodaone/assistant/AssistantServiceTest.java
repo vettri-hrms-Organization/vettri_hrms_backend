@@ -180,7 +180,7 @@ class AssistantServiceTest {
 
     @Test
     void exactCasualLeaveRequestReturnsProposalFromTheAssistantHttpEndpoint() throws Exception {
-        String message = "Please apply casual leave for 8 October 2026.";
+        String message = "can you apply casual leave on 8th oct 2026";
         var action = new AssistantChatResponse.AssistantAction(
                 "LEAVE_CONFIRMATION", "Submit Leave", null,
                 Map.of("leaveType", "Casual Leave", "startDate", "2026-10-08",
@@ -217,6 +217,12 @@ class AssistantServiceTest {
     @ValueSource(strings = {
             "Apply casual leave tomorrow.",
             "Please apply casual leaves tomorrow.",
+            "Please apply casual leave on 8th Oct 2026.",
+            "Can you apply casual leave on 8th oct 2026?",
+            "Book casual leave on 8th oct 2026.",
+            "Request casual leave on 8th oct 2026.",
+            "Can you check my casual leave balance and apply casual leave on 8th Oct 2026?",
+            "What is my casual leave balance, and please apply casual leave on 8th Oct 2026.",
             "Book two days of sick leave.",
             "I need leave next Monday."
     })
@@ -232,6 +238,42 @@ class AssistantServiceTest {
         assertThat(response.message()).contains("Which date");
         verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
         verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void genuineLeaveBalanceQuestionUsesTheBalanceToolWithoutPreparingLeave() {
+        var balanceTool = new AiProvider.ModelTool("get_my_leave_balance", "Current user's leave balances.", Map.of());
+        var prepareTool = new AiProvider.ModelTool("prepare_leave_request", "Prepare a leave request.", Map.of());
+        when(toolRegistry.availableTools(context)).thenReturn(List.of(balanceTool, prepareTool));
+        when(aiProvider.chat(anyList(), anyList()))
+                .thenReturn(new AiProvider.ModelTurn("", List.of(
+                        new AiProvider.ToolCall("get_my_leave_balance", Map.of()))))
+                .thenReturn(new AiProvider.ModelTurn("Your casual leave balance is 3 days.", List.of()));
+        when(toolRegistry.execute("get_my_leave_balance", Map.of(), context))
+                .thenReturn(new AssistantToolRegistry.ToolResult("{\"remainingDays\":3}", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("How much casual leave balance do I have?", null, List.of()));
+
+        assertThat(response.message()).isEqualTo("Your casual leave balance is 3 days.");
+        verify(toolRegistry, never()).prepareLeaveRequest(any(), anyString(), any(), any());
+        verify(toolRegistry).execute("get_my_leave_balance", Map.of(), context);
+        verify(aiProvider, times(2)).chat(anyList(), argThat(tools ->
+                tools.stream().noneMatch(tool -> "prepare_leave_request".equals(tool.name()))));
+    }
+
+    @Test
+    void personalQuestionAboutApplyingForLeaveDoesNotSubmitOrPrepareARequest() {
+        when(aiProvider.chat(anyList(), anyList()))
+                .thenReturn(new AiProvider.ModelTurn("You can review leave eligibility in Vettri.", List.of()));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("How can I apply for casual leave?", null, List.of()));
+
+        assertThat(response.message()).contains("review leave eligibility");
+        verify(toolRegistry, never()).prepareLeaveRequest(any(), anyString(), any(), any());
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+        verify(aiProvider).chat(anyList(), anyList());
     }
 
     @Test

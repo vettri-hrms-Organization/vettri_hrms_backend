@@ -156,7 +156,7 @@ class AssistantToolRegistryTest {
                 Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
 
         var result = registry.prepareLeaveRequest(
-                UUID.randomUUID(), "Please apply casual leave for 8 October 2026.", employee, null);
+                UUID.randomUUID(), "can you apply casual leave on 8th oct 2026", employee, null);
 
         assertThat(result.message()).contains("Casual Leave", "8 October 2026")
                 .doesNotContain("Personal reasons");
