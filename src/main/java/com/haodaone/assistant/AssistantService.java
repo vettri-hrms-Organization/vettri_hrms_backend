@@ -100,6 +100,13 @@ public class AssistantService {
                                 + formatLeavePeriod(submitted.getStartDate(), submitted.getEndDate())
                                 + " has been submitted.\n\nStatus: " + leaveStatus(submitted.getStatus()),
                         "CHAT", List.of(), false);
+            } catch (PendingLeaveExpiredException ex) {
+                toolRegistry.cancelPendingLeave(conversationId, context);
+                return saveResponse(conversationId, context,
+                        "The prepared leave request expired before it was submitted. Nothing was submitted. "
+                                + "Please prepare it again and confirm within "
+                                + PendingLeaveExpiry.VALIDITY.toMinutes() + " minutes.",
+                        "CHAT", List.of(), false);
             } catch (AssistantToolException ex) {
                 toolRegistry.cancelPendingLeave(conversationId, context);
                 String message = ex.isForbidden()

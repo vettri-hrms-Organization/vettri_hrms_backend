@@ -459,6 +459,9 @@ public class AssistantToolRegistry {
                 .filter(AssistantConversationStore.PendingLeaveAction::ready)
                 .filter(action -> action.employeeId() == context.employeeId())
                 .orElseThrow(() -> new AssistantToolException(false));
+        if (PendingLeaveExpiry.isExpired(pending.createdAt(), LocalDateTime.now())) {
+            throw new PendingLeaveExpiredException();
+        }
 
         ApplyLeaveRequest request = new ApplyLeaveRequest();
         request.setEmployeeId(context.employeeId());

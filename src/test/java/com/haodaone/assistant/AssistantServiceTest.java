@@ -195,6 +195,26 @@ class AssistantServiceTest {
     }
 
     @Test
+    void expiredConfirmationExplainsTheProposalExpiredAndRequestsRepreparation() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true,
+                LocalDateTime.now().minusMinutes(31));
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        when(toolRegistry.submitConfirmedLeave(conversationId, context))
+                .thenThrow(new PendingLeaveExpiredException());
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("expired", "Nothing was submitted", "prepare it again");
+        verify(toolRegistry).cancelPendingLeave(conversationId, context);
+        verify(toolRegistry).submitConfirmedLeave(conversationId, context);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
     void cancellationClearsPendingLeaveWithoutSubmission() {
         AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
                 51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),

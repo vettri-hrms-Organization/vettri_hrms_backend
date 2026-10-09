@@ -233,6 +233,53 @@ class AssistantToolRegistryTest {
     }
 
     @Test
+    void staleLeaveConfirmationNeverInvokesLeaveApplication() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
+                new AssistantConversationStore.PendingLeaveAction(
+                        51L, 12L, "Casual Leave", LocalDate.now().plusDays(1), LocalDate.now().plusDays(1),
+                        null, 1.0, 3.0, true, LocalDateTime.now().minusMinutes(30))));
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        assertThatThrownBy(() -> registry.submitConfirmedLeave(conversationId, employee))
+                .isInstanceOf(PendingLeaveExpiredException.class);
+
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
+    void rePreparedLeaveProposalGetsANewValidLifetime() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        com.haodaone.leave.entity.LeaveType casual = mock(com.haodaone.leave.entity.LeaveType.class);
+        when(casual.getId()).thenReturn(12L);
+        when(casual.getName()).thenReturn("Casual Leave");
+        when(casual.isActive()).thenReturn(true);
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(casual));
+        LocalDate leaveDate = LocalDate.now().plusDays(1);
+        when(leaveRequestService.preview(any())).thenReturn(new LeaveRequestService.LeaveApplicationPreview(
+                51L, 12L, "Casual Leave", leaveDate, leaveDate, 1, 3));
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+        UUID conversationId = UUID.randomUUID();
+        var staleProposal = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", leaveDate, leaveDate, null,
+                1.0, 3.0, true, LocalDateTime.now().minusHours(1));
+
+        registry.prepareLeaveRequest(
+                conversationId, "Please apply casual leave tomorrow", employee, staleProposal);
+
+        verify(conversationStore).savePendingLeave(eq(conversationId), eq(42L), eq(7L),
+                argThat(proposal -> proposal.createdAt() != null
+                        && !PendingLeaveExpiry.isExpired(proposal.createdAt(), LocalDateTime.now())));
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
     void leaveDateParserResolvesAbsoluteAndRelativeDatesFromTheApplicationDate() {
         LocalDate today = LocalDate.of(2026, 10, 8);
 
