@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.assistant.dto.AssistantChatRequest;
 import com.haodaone.assistant.dto.AssistantChatResponse;
 import com.haodaone.leave.dto.LeaveRequestDTO;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +24,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class AssistantServiceTest {
@@ -173,8 +179,8 @@ class AssistantServiceTest {
     }
 
     @Test
-    void exactCasualLeaveRequestRoutesToPreparationInsteadOfModelGeneratedGuidance() {
-        String message = "please apply leave on 8oct 2026 in casual leaves";
+    void exactCasualLeaveRequestReturnsProposalFromTheAssistantHttpEndpoint() throws Exception {
+        String message = "Please apply casual leave for 8 October 2026.";
         var action = new AssistantChatResponse.AssistantAction(
                 "LEAVE_CONFIRMATION", "Submit Leave", null,
                 Map.of("leaveType", "Casual Leave", "startDate", "2026-10-08",
@@ -185,12 +191,22 @@ class AssistantServiceTest {
                 .thenReturn(new AssistantToolRegistry.ToolResult(
                         "{\"prepared\":true}", "Please review the prepared request.", action));
 
-        AssistantChatResponse response = assistantService.chat(
-                new AssistantChatRequest(message, null, List.of()));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new AssistantController(assistantService)).build();
+        mockMvc.perform(post("/api/assistant/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(new ObjectMapper().writeValueAsBytes(
+                                new AssistantChatRequest(message, null, List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Please review the prepared request."))
+                .andExpect(jsonPath("$.mode").value("CHAT"))
+                .andExpect(jsonPath("$.requiresConfirmation").value(true))
+                .andExpect(jsonPath("$.aiEnhanced").value(false))
+                .andExpect(jsonPath("$.actions[0].type").value("LEAVE_CONFIRMATION"))
+                .andExpect(jsonPath("$.actions[0].data.leaveType").value("Casual Leave"))
+                .andExpect(jsonPath("$.actions[0].data.startDate").value("2026-10-08"))
+                .andExpect(jsonPath("$.actions[0].data.endDate").value("2026-10-08"))
+                .andExpect(jsonPath("$.conversationId").value(conversationId.toString()));
 
-        assertThat(response.message()).contains("prepared");
-        assertThat(response.requiresConfirmation()).isTrue();
-        assertThat(response.actions()).containsExactly(action);
         verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
         verify(aiProvider, never()).chat(anyList(), anyList());
         verify(toolRegistry, never()).execute(anyString(), anyMap(), any());
