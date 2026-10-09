@@ -140,6 +140,39 @@ class AssistantToolRegistryTest {
     }
 
     @Test
+    void exactRequestResolvesCompactDateAndPluralCasualLeavesWithoutInventingAReason() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        com.haodaone.leave.entity.LeaveType casual = mock(com.haodaone.leave.entity.LeaveType.class);
+        when(casual.getId()).thenReturn(12L);
+        when(casual.getName()).thenReturn("Casual Leave");
+        when(casual.isActive()).thenReturn(true);
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(casual));
+        when(leaveRequestService.preview(any())).thenReturn(new LeaveRequestService.LeaveApplicationPreview(
+                51L, 12L, "Casual Leave", LocalDate.of(2026, 10, 8),
+                LocalDate.of(2026, 10, 8), 1, 3));
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        var result = registry.prepareLeaveRequest(
+                UUID.randomUUID(), "please apply leave on 8oct 2026 in casual leaves", employee, null);
+
+        assertThat(result.message()).contains("Casual Leave", "8 October 2026")
+                .doesNotContain("Personal reasons");
+        assertThat(result.action().data()).containsEntry("startDate", "2026-10-08")
+                .containsEntry("endDate", "2026-10-08")
+                .doesNotContainKey("reason");
+        verify(leaveRequestService).preview(argThat(request ->
+                request.getEmployeeId().equals(51L)
+                        && request.getLeaveTypeId().equals(12L)
+                        && request.getStartDate().equals(LocalDate.of(2026, 10, 8))
+                        && request.getEndDate().equals(LocalDate.of(2026, 10, 8))
+                        && request.getReason() == null));
+        verify(leaveRequestService, never()).apply(any());
+    }
+
+    @Test
     void unauthorizedLeavePreparationDoesNotReadLeaveTypesOrCreateProposal() {
         var registry = registry();
         AssistantContext employee = new AssistantContext(7L, 51L, 42L,
@@ -251,6 +284,34 @@ class AssistantToolRegistryTest {
     }
 
     @Test
+    void confirmedLeaveUsesAuthenticatedEmployeeAndExistingLeaveService() {
+        when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
+        UUID conversationId = UUID.randomUUID();
+        LocalDate leaveDate = LocalDate.of(2026, 10, 12);
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", leaveDate, leaveDate, "Personal work",
+                1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.lockPendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        com.haodaone.leave.dto.LeaveRequestDTO created = mock(com.haodaone.leave.dto.LeaveRequestDTO.class);
+        when(leaveRequestService.apply(any())).thenReturn(created);
+        var registry = registry();
+        AssistantContext employee = new AssistantContext(7L, 51L, 42L,
+                Set.of("SELF_LEAVE_APPLY"), Set.of("EMPLOYEE"), null, null, null);
+
+        var result = registry.submitConfirmedLeave(conversationId, employee);
+
+        assertThat(result).isSameAs(created);
+        verify(leaveRequestService).apply(argThat(request ->
+                request.getEmployeeId().equals(51L)
+                        && request.getLeaveTypeId().equals(12L)
+                        && request.getStartDate().equals(leaveDate)
+                        && request.getEndDate().equals(leaveDate)
+                        && request.getReason().equals("Personal work")));
+        verify(conversationStore).clearPendingLeave(conversationId, 42L, 7L);
+    }
+
+    @Test
     void rePreparedLeaveProposalGetsANewValidLifetime() {
         when(authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", 51L)).thenReturn(true);
         com.haodaone.leave.entity.LeaveType casual = mock(com.haodaone.leave.entity.LeaveType.class);
@@ -284,11 +345,14 @@ class AssistantToolRegistryTest {
         LocalDate today = LocalDate.of(2026, 10, 8);
 
         var absolute = AssistantLeaveDateParser.parse("apply leave for 9th October 2026", today);
+        var compactDayMonth = AssistantLeaveDateParser.parse("leave on 8oct 2026", today);
         var tomorrow = AssistantLeaveDateParser.parse("apply leave tomorrow", today);
         var weekday = AssistantLeaveDateParser.parse("apply leave next Monday", today);
 
         assertThat(absolute).isEqualTo(new AssistantLeaveDateParser.DateRange(
                 LocalDate.of(2026, 10, 9), LocalDate.of(2026, 10, 9)));
+        assertThat(compactDayMonth).isEqualTo(new AssistantLeaveDateParser.DateRange(
+                LocalDate.of(2026, 10, 8), LocalDate.of(2026, 10, 8)));
         assertThat(tomorrow.startDate()).isEqualTo(LocalDate.of(2026, 10, 9));
         assertThat(weekday.startDate()).isEqualTo(LocalDate.of(2026, 10, 12));
         assertThatThrownBy(() -> AssistantLeaveDateParser.parse("apply leave for the 9th", today))

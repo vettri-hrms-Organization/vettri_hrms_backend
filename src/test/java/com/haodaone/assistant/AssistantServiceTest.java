@@ -173,6 +173,52 @@ class AssistantServiceTest {
     }
 
     @Test
+    void exactCasualLeaveRequestRoutesToPreparationInsteadOfModelGeneratedGuidance() {
+        String message = "please apply leave on 8oct 2026 in casual leaves";
+        var action = new AssistantChatResponse.AssistantAction(
+                "LEAVE_CONFIRMATION", "Submit Leave", null,
+                Map.of("leaveType", "Casual Leave", "startDate", "2026-10-08",
+                        "endDate", "2026-10-08", "days", 1.0, "remainingDays", 3.0,
+                        "duration", "Full day"));
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq(message), eq(context), isNull()))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"prepared\":true}", "Please review the prepared request.", action));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest(message, null, List.of()));
+
+        assertThat(response.message()).contains("prepared");
+        assertThat(response.requiresConfirmation()).isTrue();
+        assertThat(response.actions()).containsExactly(action);
+        verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+        verify(toolRegistry, never()).execute(anyString(), anyMap(), any());
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Apply casual leave tomorrow.",
+            "Please apply casual leaves tomorrow.",
+            "Book two days of sick leave.",
+            "I need leave next Monday."
+    })
+    void commonNaturalLanguageLeaveRequestsBypassGenericModelGuidance(String message) {
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq(message), eq(context), isNull()))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"missing\":\"date\"}", "Which date would you like to take leave?", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest(message, null, List.of()));
+
+        assertThat(response.message()).contains("Which date");
+        verify(toolRegistry).prepareLeaveRequest(conversationId, message, context, null);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
     void explicitConfirmationSubmitsTheServerStoredPendingRequestAndUsesReturnedStatus() {
         AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
                 51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
@@ -184,14 +230,57 @@ class AssistantServiceTest {
         when(responseDto.getStartDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
         when(responseDto.getEndDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
         when(responseDto.getStatus()).thenReturn("PENDING");
+        when(responseDto.getId()).thenReturn(876L);
         when(toolRegistry.submitConfirmedLeave(conversationId, context)).thenReturn(responseDto);
 
         AssistantChatResponse response = assistantService.chat(
                 new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
 
-        assertThat(response.message()).contains("9 October 2026", "Pending approval");
+        assertThat(response.message()).contains("9 October 2026", "Pending approval", "Request ID: 876");
         verify(toolRegistry).submitConfirmedLeave(conversationId, context);
         verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void repeatedConfirmationDoesNotSubmitAfterTheStoredProposalWasConsumed() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending), java.util.Optional.empty());
+        LeaveRequestDTO created = mock(LeaveRequestDTO.class);
+        when(created.getLeaveTypeName()).thenReturn("Casual Leave");
+        when(created.getStartDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
+        when(created.getEndDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
+        when(created.getStatus()).thenReturn("PENDING");
+        when(toolRegistry.submitConfirmedLeave(conversationId, context)).thenReturn(created);
+
+        AssistantChatResponse first = assistantService.chat(
+                new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
+        AssistantChatResponse repeated = assistantService.chat(
+                new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
+
+        assertThat(first.message()).contains("has been submitted");
+        assertThat(repeated.message()).contains("There isn't a leave request waiting");
+        verify(toolRegistry, times(1)).submitConfirmedLeave(conversationId, context);
+    }
+
+    @Test
+    void backendSubmissionFailureIsReportedWithoutClaimingSuccess() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        when(toolRegistry.submitConfirmedLeave(conversationId, context))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("couldn't submit").doesNotContain("has been submitted");
+        assertThat(response.mode()).isEqualTo("ERROR");
+        verify(toolRegistry).cancelPendingLeave(conversationId, context);
     }
 
     @Test

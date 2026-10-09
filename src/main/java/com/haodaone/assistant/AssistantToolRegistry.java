@@ -5,6 +5,7 @@ import com.haodaone.attendance.dto.AttendanceRecordDTO;
 import com.haodaone.attendance.entity.AttendanceRecord;
 import com.haodaone.attendance.repository.AttendanceRecordRepository;
 import com.haodaone.assistant.dto.AssistantChatResponse;
+import com.haodaone.config.ApplicationTimeConfig;
 import com.haodaone.document.dto.EmployeeDocumentDTO;
 import com.haodaone.document.service.EmployeeDocumentService;
 import com.haodaone.leave.dto.LeaveBalanceDTO;
@@ -331,7 +332,8 @@ public class AssistantToolRegistry {
 
         AssistantLeaveDateParser.DateRange dateRange;
         try {
-            dateRange = AssistantLeaveDateParser.parse(userMessage, LocalDate.now());
+            dateRange = AssistantLeaveDateParser.parse(
+                    userMessage, LocalDate.now(ApplicationTimeConfig.APPLICATION_ZONE));
         } catch (AssistantLeaveDateParser.AmbiguousDateException ex) {
             return new ToolResult(
                     "{\"error\":\"ambiguous_date\"}",
@@ -427,6 +429,9 @@ public class AssistantToolRegistry {
         details.put("days", preview.requestedDays());
         details.put("remainingDays", preview.remainingDays());
         details.put("duration", "Full day");
+        if (reason != null && !reason.isBlank()) {
+            details.put("reason", reason);
+        }
         AssistantChatResponse.AssistantAction action = new AssistantChatResponse.AssistantAction(
                 "LEAVE_CONFIRMATION", "Submit Leave", null, details);
         return new ToolResult(
@@ -507,7 +512,10 @@ public class AssistantToolRegistry {
     }
 
     private String normalize(String value) {
-        return " " + value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip() + " ";
+        return " " + value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .replaceAll("\\bleaves\\b", "leave")
+                .strip() + " ";
     }
 
     private String normalized(String value) {

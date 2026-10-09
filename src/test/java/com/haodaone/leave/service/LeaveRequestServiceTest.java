@@ -1,12 +1,12 @@
 package com.haodaone.leave.service;
 
 import com.haodaone.audit.service.AuditLogService;
-import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.entity.Company;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.leave.dto.ApplyLeaveRequest;
 import com.haodaone.leave.dto.LeaveRequestDTO;
+import com.haodaone.leave.entity.Holiday;
 import com.haodaone.leave.entity.LeaveRequest;
 import com.haodaone.leave.entity.LeaveType;
 import com.haodaone.leave.repository.HolidayRepository;
@@ -34,7 +34,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -112,6 +111,93 @@ class LeaveRequestServiceTest {
         assertThatThrownBy(() -> leaveRequestService.apply(request))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("LEAVE_APPLY is not authorized for this employee");
+    }
+
+    @Test
+    void previewAllowsPastCasualLeaveWhenExistingLeaveRulesPass() {
+        Company company = new Company();
+        company.setId(42L);
+        Employee employee = new Employee();
+        employee.setId(100L);
+        employee.setCompany(company);
+        LeaveType leaveType = new LeaveType();
+        leaveType.setId(7L);
+        leaveType.setName("Casual Leave");
+        leaveType.setActive(true);
+        leaveType.setDefaultDaysPerYear(12);
+        LocalDate backdated = LocalDate.of(2026, 10, 8);
+
+        ApplyLeaveRequest request = new ApplyLeaveRequest();
+        request.setEmployeeId(100L);
+        request.setLeaveTypeId(7L);
+        request.setStartDate(backdated);
+        request.setEndDate(backdated);
+
+        when(employeeRepository.findByUser_UsernameAndDeletedFalse("alice")).thenReturn(Optional.of(employee));
+        when(leaveTypeRepository.findByIdAndCompany_IdAndDeletedFalse(7L, 42L))
+                .thenReturn(Optional.of(leaveType));
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(leaveType));
+        when(leaveRequestRepository.findOverlapping(100L, backdated, backdated)).thenReturn(List.of());
+        when(leaveRequestRepository.sumApprovedDays(42L, 100L, 7L, 2026)).thenReturn(0.0);
+        when(leaveBalanceRepository.findByEmployee_Company_IdAndEmployeeIdAndLeaveTypeIdAndYear(
+                42L, 100L, 7L, 2026)).thenReturn(Optional.empty());
+        when(holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(42L, backdated, backdated))
+                .thenReturn(List.<Holiday>of());
+
+        var preview = leaveRequestService.preview(request);
+
+        assertThat(preview.startDate()).isEqualTo(backdated);
+        assertThat(preview.endDate()).isEqualTo(backdated);
+        assertThat(preview.requestedDays()).isEqualTo(1.0);
+    }
+
+    @Test
+    void applySavesBackdatedCasualLeaveAfterExistingPolicyValidation() {
+        Company company = new Company();
+        company.setId(42L);
+        Employee employee = new Employee();
+        employee.setId(100L);
+        employee.setEmployeeCode("EMP-100");
+        employee.setFirstName("Alice");
+        employee.setLastName("Example");
+        employee.setCompany(company);
+        LeaveType leaveType = new LeaveType();
+        leaveType.setId(7L);
+        leaveType.setName("Casual Leave");
+        leaveType.setActive(true);
+        leaveType.setDefaultDaysPerYear(12);
+        LocalDate backdated = LocalDate.of(2026, 10, 8);
+
+        ApplyLeaveRequest request = new ApplyLeaveRequest();
+        request.setEmployeeId(100L);
+        request.setLeaveTypeId(7L);
+        request.setStartDate(backdated);
+        request.setEndDate(backdated);
+
+        when(employeeRepository.findByUser_UsernameAndDeletedFalse("alice")).thenReturn(Optional.of(employee));
+        when(leaveTypeRepository.findByIdAndCompany_IdAndDeletedFalse(7L, 42L))
+                .thenReturn(Optional.of(leaveType));
+        when(leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(42L))
+                .thenReturn(List.of(leaveType));
+        when(leaveRequestRepository.findOverlapping(100L, backdated, backdated)).thenReturn(List.of());
+        when(leaveRequestRepository.sumApprovedDays(42L, 100L, 7L, 2026)).thenReturn(0.0);
+        when(leaveBalanceRepository.findByEmployee_Company_IdAndEmployeeIdAndLeaveTypeIdAndYear(
+                42L, 100L, 7L, 2026)).thenReturn(Optional.empty());
+        when(holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(42L, backdated, backdated))
+                .thenReturn(List.of());
+        when(leaveRequestRepository.save(any(LeaveRequest.class))).thenAnswer(invocation -> {
+            LeaveRequest saved = invocation.getArgument(0);
+            saved.setId(876L);
+            return saved;
+        });
+
+        LeaveRequestDTO created = leaveRequestService.apply(request);
+
+        assertThat(created.getId()).isEqualTo(876L);
+        assertThat(created.getStatus()).isEqualTo("PENDING");
+        assertThat(created.getStartDate()).isEqualTo(backdated);
+        assertThat(created.getEndDate()).isEqualTo(backdated);
     }
 
     @Test

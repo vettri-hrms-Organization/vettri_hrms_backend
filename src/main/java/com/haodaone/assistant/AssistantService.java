@@ -98,7 +98,8 @@ public class AssistantService {
                 return saveResponse(conversationId, context,
                         "Done. Your " + submitted.getLeaveTypeName() + " request for "
                                 + formatLeavePeriod(submitted.getStartDate(), submitted.getEndDate())
-                                + " has been submitted.\n\nStatus: " + leaveStatus(submitted.getStatus()),
+                                + " has been submitted.\n\nStatus: " + leaveStatus(submitted.getStatus())
+                                + (submitted.getId() == null ? "" : "\nRequest ID: " + submitted.getId()),
                         "CHAT", List.of(), false);
             } catch (PendingLeaveExpiredException ex) {
                 toolRegistry.cancelPendingLeave(conversationId, context);
@@ -214,18 +215,22 @@ public class AssistantService {
     }
 
     private boolean isLeaveActionRequest(String message) {
-        return LEAVE_ACTION_REQUEST.matcher(message).matches();
+        return LEAVE_ACTION_REQUEST.matcher(normalizeLeaveIntent(message)).matches();
     }
 
     private boolean isLeaveGuidanceQuestion(String message) {
-        return LEAVE_GUIDANCE_QUESTION.matcher(message).matches();
+        return LEAVE_GUIDANCE_QUESTION.matcher(normalizeLeaveIntent(message)).matches();
+    }
+
+    private String normalizeLeaveIntent(String message) {
+        return message.toLowerCase(Locale.ROOT).replaceAll("\\bleaves\\b", "leave");
     }
 
     private boolean containsDateExpression(String message) {
         return Pattern.compile(
                 "(?i)\\b(?:today|tomorrow|day after tomorrow|next\\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
                         + "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\\d{1,4}[-/]\\d{1,2}[-/]\\d{1,4}|"
-                        + "\\d{1,2}(?:st|nd|rd|th)?\\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+                        + "\\d{1,2}(?:st|nd|rd|th)?\\s*(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
                         + "jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|"
                         + "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|"
                         + "sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\s+\\d{1,2}))\\b")

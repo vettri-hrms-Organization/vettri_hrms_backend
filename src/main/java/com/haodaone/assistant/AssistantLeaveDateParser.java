@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 final class AssistantLeaveDateParser {
     private static final Pattern ISO_DATE = Pattern.compile("\\b\\d{4}-\\d{2}-\\d{2}\\b");
     private static final Pattern DAY_MONTH = Pattern.compile(
-            "(?i)\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(" + monthPattern() + ")(?:,?\\s+(\\d{4}))?\\b");
+            "(?i)\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*(" + monthPattern() + ")(?:,?\\s+(\\d{4}))?\\b");
     private static final Pattern MONTH_DAY = Pattern.compile(
             "(?i)\\b(" + monthPattern() + ")\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?\\b");
     private static final Pattern RELATIVE = Pattern.compile("(?i)\\b(day after tomorrow|tomorrow|today)\\b");
@@ -62,11 +62,11 @@ final class AssistantLeaveDateParser {
         });
         addMatches(tokens, DAY_MONTH, text, match -> monthDay(
                 match.start(), match.end(), Integer.parseInt(match.group(1)),
-                Month.valueOf(match.group(2).toUpperCase(Locale.ROOT)),
+                parseMonth(match.group(2)),
                 match.group(3) == null ? null : Integer.valueOf(match.group(3))));
         addMatches(tokens, MONTH_DAY, text, match -> monthDay(
                 match.start(), match.end(), Integer.parseInt(match.group(2)),
-                Month.valueOf(match.group(1).toUpperCase(Locale.ROOT)),
+                parseMonth(match.group(1)),
                 match.group(3) == null ? null : Integer.valueOf(match.group(3))));
         addMatches(tokens, RELATIVE, text, match -> {
             String relative = match.group(1).toLowerCase(Locale.ROOT);
@@ -100,8 +100,26 @@ final class AssistantLeaveDateParser {
         return DateToken.monthDay(start, end, month, day, year);
     }
 
+    private static Month parseMonth(String value) {
+        return switch (value.toLowerCase(Locale.ROOT)) {
+            case "jan" -> Month.JANUARY;
+            case "feb" -> Month.FEBRUARY;
+            case "mar" -> Month.MARCH;
+            case "apr" -> Month.APRIL;
+            case "jun" -> Month.JUNE;
+            case "jul" -> Month.JULY;
+            case "aug" -> Month.AUGUST;
+            case "sep" -> Month.SEPTEMBER;
+            case "oct" -> Month.OCTOBER;
+            case "nov" -> Month.NOVEMBER;
+            case "dec" -> Month.DECEMBER;
+            default -> Month.valueOf(value.toUpperCase(Locale.ROOT));
+        };
+    }
+
     private static String monthPattern() {
-        return "january|february|march|april|may|june|july|august|september|october|november|december";
+        return "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+                + "aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
     }
 
     record DateRange(LocalDate startDate, LocalDate endDate) {}
