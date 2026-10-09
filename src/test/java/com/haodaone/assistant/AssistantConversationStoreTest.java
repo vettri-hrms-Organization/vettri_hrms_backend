@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,10 +22,14 @@ class AssistantConversationStoreTest {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("CREATE TABLE company (id BIGINT PRIMARY KEY)");
         jdbc.execute("CREATE TABLE app_user (id BIGINT PRIMARY KEY)");
+        jdbc.execute("CREATE TABLE employee (id BIGINT PRIMARY KEY)");
+        jdbc.execute("CREATE TABLE leave_type (id BIGINT PRIMARY KEY)");
         jdbc.execute("INSERT INTO company (id) VALUES (42)");
         jdbc.execute("INSERT INTO company (id) VALUES (43)");
         jdbc.execute("INSERT INTO app_user (id) VALUES (7)");
         jdbc.execute("INSERT INTO app_user (id) VALUES (8)");
+        jdbc.execute("INSERT INTO employee (id) VALUES (51)");
+        jdbc.execute("INSERT INTO leave_type (id) VALUES (12)");
         jdbc.execute("""
                 CREATE TABLE assistant_conversation (
                     id UUID PRIMARY KEY,
@@ -44,6 +50,23 @@ class AssistantConversationStoreTest {
                     content VARCHAR(8000) NOT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     CONSTRAINT ux_assistant_message_sequence UNIQUE (conversation_id, sequence_number)
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE assistant_pending_leave_action (
+                    conversation_id UUID PRIMARY KEY REFERENCES assistant_conversation(id) ON DELETE CASCADE,
+                    company_id BIGINT NOT NULL REFERENCES company(id),
+                    user_id BIGINT NOT NULL REFERENCES app_user(id),
+                    employee_id BIGINT NOT NULL REFERENCES employee(id),
+                    leave_type_id BIGINT REFERENCES leave_type(id),
+                    leave_type_name VARCHAR(100),
+                    start_date DATE,
+                    end_date DATE,
+                    reason VARCHAR(500),
+                    requested_days DOUBLE PRECISION,
+                    remaining_days DOUBLE PRECISION,
+                    is_ready BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
         store = new AssistantConversationStore(jdbc);
@@ -69,5 +92,29 @@ class AssistantConversationStoreTest {
         assertThat(store.archive(conversation, 42L, 7L)).isTrue();
         assertThat(store.get(conversation, 42L, 7L)).isEmpty();
         assertThat(store.list(42L, 7L)).isEmpty();
+    }
+
+    @Test
+    void pendingLeaveProposalIsBoundToItsConversationTenantAndUserAndClearedOnArchive() {
+        UUID conversation = store.create(42L, 7L);
+        var proposal = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave",
+                LocalDate.of(2026, 10, 9), LocalDate.of(2026, 10, 9),
+                "Personal appointment", 1.0, 3.0, true, LocalDateTime.now()
+        );
+
+        store.savePendingLeave(conversation, 42L, 7L, proposal);
+
+        AssistantConversationStore.PendingLeaveAction stored =
+                store.pendingLeave(conversation, 42L, 7L).orElseThrow();
+        assertThat(stored.employeeId()).isEqualTo(proposal.employeeId());
+        assertThat(stored.leaveTypeId()).isEqualTo(proposal.leaveTypeId());
+        assertThat(stored.startDate()).isEqualTo(proposal.startDate());
+        assertThat(stored.endDate()).isEqualTo(proposal.endDate());
+        assertThat(stored.ready()).isTrue();
+        assertThat(store.pendingLeave(conversation, 43L, 7L)).isEmpty();
+        assertThat(store.pendingLeave(conversation, 42L, 8L)).isEmpty();
+        assertThat(store.archive(conversation, 42L, 7L)).isTrue();
+        assertThat(store.pendingLeave(conversation, 42L, 7L)).isEmpty();
     }
 }

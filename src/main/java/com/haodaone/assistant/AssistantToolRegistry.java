@@ -4,11 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.attendance.dto.AttendanceRecordDTO;
 import com.haodaone.attendance.entity.AttendanceRecord;
 import com.haodaone.attendance.repository.AttendanceRecordRepository;
+import com.haodaone.assistant.dto.AssistantChatResponse;
 import com.haodaone.document.dto.EmployeeDocumentDTO;
 import com.haodaone.document.service.EmployeeDocumentService;
 import com.haodaone.leave.dto.LeaveBalanceDTO;
+import com.haodaone.leave.dto.ApplyLeaveRequest;
 import com.haodaone.leave.dto.LeaveRequestDTO;
+import com.haodaone.leave.entity.LeaveType;
+import com.haodaone.leave.repository.LeaveTypeRepository;
 import com.haodaone.leave.service.LeaveRequestService;
+import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.service.DeviceEnrollmentService;
 import com.haodaone.security.AuthorizationService;
@@ -18,12 +23,18 @@ import com.haodaone.salary.dto.SalaryStructureDTO;
 import com.haodaone.salary.service.EmployeeSalaryService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -35,6 +46,8 @@ public class AssistantToolRegistry {
 
     private final ObjectMapper objectMapper;
     private final LeaveRequestService leaveRequestService;
+    private final LeaveTypeRepository leaveTypeRepository;
+    private final AssistantConversationStore conversationStore;
     private final EmployeeDocumentService employeeDocumentService;
     private final DeviceEnrollmentService deviceEnrollmentService;
     private final AttendanceRecordRepository attendanceRecordRepository;
@@ -48,10 +61,14 @@ public class AssistantToolRegistry {
             DeviceEnrollmentService deviceEnrollmentService,
             AttendanceRecordRepository attendanceRecordRepository,
             EmployeeSalaryService employeeSalaryService,
-            AuthorizationService authorizationService
+            AuthorizationService authorizationService,
+            LeaveTypeRepository leaveTypeRepository,
+            AssistantConversationStore conversationStore
     ) {
         this.objectMapper = objectMapper;
         this.leaveRequestService = leaveRequestService;
+        this.leaveTypeRepository = leaveTypeRepository;
+        this.conversationStore = conversationStore;
         this.employeeDocumentService = employeeDocumentService;
         this.deviceEnrollmentService = deviceEnrollmentService;
         this.attendanceRecordRepository = attendanceRecordRepository;
@@ -60,6 +77,10 @@ public class AssistantToolRegistry {
     }
 
     public List<AiProvider.ModelTool> availableTools(AssistantContext context) {
+        return availableTools(context, true);
+    }
+
+    public List<AiProvider.ModelTool> availableTools(AssistantContext context, boolean includeLeavePreparation) {
         List<AiProvider.ModelTool> tools = new ArrayList<>();
         tools.add(tool("get_navigation_guidance",
                 "Get accurate navigation guidance for a supported Vettri workplace feature.",
@@ -73,6 +94,11 @@ public class AssistantToolRegistry {
                     Map.of()));
             tools.add(tool("get_my_leave_requests",
                     "Get recent leave requests for the authenticated employee. No employee ID is accepted.",
+                    Map.of()));
+        }
+        if (includeLeavePreparation && canApplyOwnLeave(context)) {
+            tools.add(tool("prepare_leave_request",
+                    "Prepare and validate a leave request for the authenticated employee. This is read-only and never submits. Call only when the user explicitly asks to apply or change their own leave. It accepts no arguments; the backend extracts dates and resolves the leave type from the user's message and current company configuration.",
                     Map.of()));
         }
         if (canUseSelf(context, "SELF_DOCUMENT_VIEW")) {
@@ -117,11 +143,26 @@ public class AssistantToolRegistry {
     }
 
     public ToolResult execute(String name, Map<String, Object> arguments, AssistantContext context) {
+        return execute(name, arguments, context, null, null, null);
+    }
+
+    public ToolResult execute(
+            String name,
+            Map<String, Object> arguments,
+            AssistantContext context,
+            java.util.UUID conversationId,
+            String userMessage,
+            AssistantConversationStore.PendingLeaveAction priorPending
+    ) {
         if (arguments == null || arguments.isEmpty() && hasArguments(name)) {
             throw new AssistantToolException(false);
         }
         return switch (name) {
             case "get_navigation_guidance" -> navigation(arguments, context);
+            case "prepare_leave_request" -> {
+                rejectExtraArguments(arguments);
+                yield prepareLeaveRequest(conversationId, userMessage, context, priorPending);
+            }
             case "get_my_leave_balance" -> {
                 requireSelf(context, "SELF_LEAVE_VIEW");
                 rejectExtraArguments(arguments);
@@ -243,6 +284,265 @@ public class AssistantToolRegistry {
             }
             default -> throw new AssistantToolException(false);
         };
+    }
+
+    public ToolResult prepareLeaveRequest(
+            java.util.UUID conversationId,
+            String userMessage,
+            AssistantContext context,
+            AssistantConversationStore.PendingLeaveAction priorPending
+    ) {
+        if (!canApplyOwnLeave(context)) {
+            return new ToolResult(
+                    "{\"error\":\"forbidden\"}",
+                    "You don't have permission to apply for leave for yourself.",
+                    null
+            );
+        }
+        if (conversationId == null || userMessage == null || context.employeeId() == null) {
+            return new ToolResult(
+                    "{\"error\":\"request_unavailable\"}",
+                    "I couldn't prepare that leave request. Please try again.",
+                    null
+            );
+        }
+
+        String normalizedMessage = normalize(userMessage);
+        if (normalizedMessage.matches(".*\\b(half day|half-day|morning|afternoon)\\b.*")) {
+            return new ToolResult(
+                    "{\"error\":\"duration_unsupported\"}",
+                    "The current Vettri leave application supports full-day leave only. I haven't prepared or submitted a request.",
+                    null
+            );
+        }
+
+        List<LeaveType> activeTypes = leaveTypeRepository
+                .findAllByCompany_IdAndDeletedFalseOrderByNameAsc(context.companyId()).stream()
+                .filter(LeaveType::isActive)
+                .toList();
+        LeaveType leaveType = resolveLeaveType(normalizedMessage, activeTypes);
+        if (leaveType == null && priorPending != null && priorPending.leaveTypeId() != null
+                && !mentionsLeaveType(normalizedMessage)) {
+            leaveType = activeTypes.stream()
+                    .filter(type -> type.getId().equals(priorPending.leaveTypeId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        AssistantLeaveDateParser.DateRange dateRange;
+        try {
+            dateRange = AssistantLeaveDateParser.parse(userMessage, LocalDate.now());
+        } catch (AssistantLeaveDateParser.AmbiguousDateException ex) {
+            return new ToolResult(
+                    "{\"error\":\"ambiguous_date\"}",
+                    "I couldn't resolve that date unambiguously. Please provide the day, month, and year. I haven't submitted anything.",
+                    null
+            );
+        }
+        if (dateRange == null && priorPending != null
+                && priorPending.startDate() != null && priorPending.endDate() != null) {
+            dateRange = new AssistantLeaveDateParser.DateRange(priorPending.startDate(), priorPending.endDate());
+        }
+
+        String reason = extractReason(userMessage).orElse(
+                priorPending == null ? null : priorPending.reason());
+        if (reason != null && reason.length() > 500) {
+            return new ToolResult(
+                    "{\"error\":\"reason_too_long\"}",
+                    "Please shorten the reason to 500 characters or fewer. I haven't submitted anything.",
+                    null
+            );
+        }
+
+        if (leaveType == null) {
+            AssistantConversationStore.PendingLeaveAction draft = new AssistantConversationStore.PendingLeaveAction(
+                    context.employeeId(), null, null,
+                    dateRange == null ? null : dateRange.startDate(),
+                    dateRange == null ? null : dateRange.endDate(),
+                    reason, null, null, false, LocalDateTime.now()
+            );
+            conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
+            String typePrompt = activeTypes.isEmpty()
+                    ? "I couldn't find an active leave type available for your account. Please contact your HR team."
+                    : (mentionsLeaveType(normalizedMessage)
+                            ? "I couldn't find that leave type available for your account."
+                            : "Which leave type would you like to use?")
+                            + " Available leave types: "
+                            + activeTypes.stream().map(LeaveType::getName).sorted().collect(Collectors.joining(", "))
+                            + ".";
+            return new ToolResult("{\"missing\":\"leaveType\"}", typePrompt, null);
+        }
+
+        if (dateRange == null) {
+            AssistantConversationStore.PendingLeaveAction draft = new AssistantConversationStore.PendingLeaveAction(
+                    context.employeeId(), leaveType.getId(), leaveType.getName(),
+                    null, null, reason, null, null, false, LocalDateTime.now()
+            );
+            conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), draft);
+            return new ToolResult("{\"missing\":\"date\"}", "Which date or date range would you like to take leave?", null);
+        }
+        if (dateRange.startDate().getYear() != dateRange.endDate().getYear()) {
+            return new ToolResult(
+                    "{\"error\":\"cross_year_range\"}",
+                    "I couldn't verify a leave request spanning different calendar years. Please submit separate requests for each year.",
+                    null
+            );
+        }
+
+        ApplyLeaveRequest request = new ApplyLeaveRequest();
+        request.setEmployeeId(context.employeeId());
+        request.setLeaveTypeId(leaveType.getId());
+        request.setStartDate(dateRange.startDate());
+        request.setEndDate(dateRange.endDate());
+        request.setReason(reason);
+        LeaveRequestService.LeaveApplicationPreview preview;
+        try {
+            preview = leaveRequestService.preview(request);
+        } catch (BadRequestException ex) {
+            return new ToolResult(
+                    "{\"error\":\"leave_validation_failed\"}",
+                    safeValidationMessage(ex.getMessage()),
+                    null
+            );
+        } catch (AccessDeniedException ex) {
+            return new ToolResult(
+                    "{\"error\":\"forbidden\"}",
+                    "You don't have permission to apply for leave for yourself.",
+                    null
+            );
+        }
+
+        AssistantConversationStore.PendingLeaveAction prepared = new AssistantConversationStore.PendingLeaveAction(
+                context.employeeId(), preview.leaveTypeId(), preview.leaveTypeName(),
+                preview.startDate(), preview.endDate(), reason,
+                preview.requestedDays(), preview.remainingDays(), true, LocalDateTime.now()
+        );
+        conversationStore.savePendingLeave(conversationId, context.companyId(), context.userId(), prepared);
+        String period = formatPeriod(preview.startDate(), preview.endDate());
+        String days = formatDays(preview.requestedDays());
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("leaveType", preview.leaveTypeName());
+        details.put("startDate", preview.startDate().toString());
+        details.put("endDate", preview.endDate().toString());
+        details.put("days", preview.requestedDays());
+        details.put("remainingDays", preview.remainingDays());
+        details.put("duration", "Full day");
+        AssistantChatResponse.AssistantAction action = new AssistantChatResponse.AssistantAction(
+                "LEAVE_CONFIRMATION", "Submit Leave", null, details);
+        return new ToolResult(
+                "{\"prepared\":true,\"leaveType\":\"" + safeJson(preview.leaveTypeName())
+                        + "\",\"startDate\":\"" + preview.startDate()
+                        + "\",\"endDate\":\"" + preview.endDate()
+                        + "\",\"days\":" + preview.requestedDays()
+                        + ",\"remainingDays\":" + preview.remainingDays() + "}",
+                "I've prepared your leave request:\n\n"
+                        + preview.leaveTypeName() + "\n"
+                        + period + "\n"
+                        + days + (preview.requestedDays() == 1 ? " day" : " days")
+                        + "\nAvailable balance: " + formatDays(preview.remainingDays())
+                        + (preview.remainingDays() == 1 ? " day." : " days.")
+                        + "\n\nWould you like me to submit it?",
+                action
+        );
+    }
+
+    @Transactional
+    public LeaveRequestDTO submitConfirmedLeave(
+            java.util.UUID conversationId,
+            AssistantContext context
+    ) {
+        if (!canApplyOwnLeave(context) || context.employeeId() == null) {
+            throw new AssistantToolException(true);
+        }
+        AssistantConversationStore.PendingLeaveAction pending = conversationStore
+                .lockPendingLeave(conversationId, context.companyId(), context.userId())
+                .filter(AssistantConversationStore.PendingLeaveAction::ready)
+                .filter(action -> action.employeeId() == context.employeeId())
+                .orElseThrow(() -> new AssistantToolException(false));
+
+        ApplyLeaveRequest request = new ApplyLeaveRequest();
+        request.setEmployeeId(context.employeeId());
+        request.setLeaveTypeId(pending.leaveTypeId());
+        request.setStartDate(pending.startDate());
+        request.setEndDate(pending.endDate());
+        request.setReason(pending.reason());
+        LeaveRequestDTO created = leaveRequestService.apply(request);
+        conversationStore.clearPendingLeave(conversationId, context.companyId(), context.userId());
+        return created;
+    }
+
+    public void cancelPendingLeave(java.util.UUID conversationId, AssistantContext context) {
+        conversationStore.clearPendingLeave(conversationId, context.companyId(), context.userId());
+    }
+
+    private boolean canApplyOwnLeave(AssistantContext context) {
+        if (context.employeeId() == null) return false;
+        boolean selfPermission = context.hasAuthority("SELF_LEAVE_APPLY")
+                && authorizationService.isAllowed("SELF_LEAVE_APPLY", "EMPLOYEE", context.employeeId());
+        boolean delegatedPermission = context.hasAuthority("LEAVE_APPLY")
+                && authorizationService.isAllowed("LEAVE_APPLY", "EMPLOYEE", context.employeeId());
+        return selfPermission || delegatedPermission;
+    }
+
+    private LeaveType resolveLeaveType(String message, List<LeaveType> activeTypes) {
+        return activeTypes.stream()
+                .filter(type -> containsNormalized(message, type.getName())
+                        || containsNormalized(message, type.getCode()))
+                .sorted(Comparator.comparingInt((LeaveType type) -> normalized(type.getName()).length()).reversed())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private boolean mentionsLeaveType(String message) {
+        return message.matches(".*\\b(?:leave|cl|el|sl)\\b.*");
+    }
+
+    private boolean containsNormalized(String message, String candidate) {
+        String normalizedCandidate = normalized(candidate);
+        return !normalizedCandidate.isBlank()
+                && (" " + message + " ").contains(" " + normalizedCandidate + " ");
+    }
+
+    private String normalize(String value) {
+        return " " + value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip() + " ";
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").strip();
+    }
+
+    private Optional<String> extractReason(String message) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?i)\\b(?:because|due to|reason(?: is)?)\\s+(.+)$").matcher(message);
+        if (!matcher.find()) return Optional.empty();
+        String reason = matcher.group(1).strip().replaceAll("[.!?]+$", "");
+        return reason.isBlank() ? Optional.empty() : Optional.of(reason);
+    }
+
+    private String safeValidationMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "I couldn't validate that request against Vettri's current leave rules. I haven't submitted anything.";
+        }
+        return "I couldn't prepare that leave request: " + message + ". I haven't submitted anything.";
+    }
+
+    private String formatPeriod(LocalDate startDate, LocalDate endDate) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d MMMM uuuu", Locale.ENGLISH);
+        String start = startDate.format(formatter);
+        return startDate.equals(endDate) ? start : start + " to " + endDate.format(formatter);
+    }
+
+    private String formatDays(double days) {
+        return days == Math.rint(days) ? String.format(Locale.ROOT, "%.0f", days)
+                : String.format(Locale.ROOT, "%.1f", days);
+    }
+
+    private String safeJson(String value) {
+        try {
+            return objectMapper.writeValueAsString(value).replaceAll("^\"|\"$", "");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssistantToolException(false);
+        }
     }
 
     private Map<String, Object> attendanceRows(List<AttendanceRecord> rows) {
@@ -474,8 +774,16 @@ public class AssistantToolRegistry {
 
     public record ToolResult(
             String sanitizedJson,
+            String message,
             com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction action
-    ) {}
+    ) {
+        public ToolResult(
+                String sanitizedJson,
+                com.haodaone.assistant.dto.AssistantChatResponse.AssistantAction action
+        ) {
+            this(sanitizedJson, null, action);
+        }
+    }
 
     public record DeviceMappingGuidance(
             String message,

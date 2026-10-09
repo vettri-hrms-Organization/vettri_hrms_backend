@@ -3,6 +3,7 @@ package com.haodaone.assistant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.assistant.dto.AssistantChatRequest;
 import com.haodaone.assistant.dto.AssistantChatResponse;
+import com.haodaone.leave.dto.LeaveRequestDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +42,8 @@ class AssistantServiceTest {
         lenient().when(aiProvider.isConfigured()).thenReturn(true);
         lenient().when(conversationStore.create(42L, 7L)).thenReturn(conversationId);
         when(conversationStore.append(any(UUID.class), eq(42L), eq(7L), anyString(), anyString())).thenReturn(true);
+        lenient().when(conversationStore.pendingLeave(any(UUID.class), eq(42L), eq(7L)))
+                .thenReturn(java.util.Optional.empty());
         lenient().when(conversationStore.get(conversationId, 42L, 7L)).thenReturn(java.util.Optional.of(
                 new AssistantConversationStore.ConversationSnapshot(
                         new AssistantConversationStore.ConversationSummary(
@@ -143,6 +146,95 @@ class AssistantServiceTest {
         assertThat(response.message()).isEqualTo("Your current salary details are available.");
         verify(toolRegistry).execute("get_my_salary", Map.of(), context);
         verify(aiProvider, times(2)).chat(anyList(), anyList());
+    }
+
+    @Test
+    void leaveRequestPreparesAValidatedConfirmationWithoutSubmitting() {
+        var action = new AssistantChatResponse.AssistantAction(
+                "LEAVE_CONFIRMATION", "Submit Leave", null,
+                Map.of("leaveType", "Casual Leave", "startDate", "2026-10-09",
+                        "endDate", "2026-10-09", "days", 1.0, "remainingDays", 3.0,
+                        "duration", "Full day"));
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq("Please apply casual leave for 9th October 2026"), eq(context), isNull()))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"prepared\":true}", "I've prepared your leave request.", action));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Please apply casual leave for 9th October 2026", null, List.of()));
+
+        assertThat(response.message()).contains("prepared");
+        assertThat(response.requiresConfirmation()).isTrue();
+        assertThat(response.actions()).containsExactly(action);
+        verify(toolRegistry).prepareLeaveRequest(
+                conversationId, "Please apply casual leave for 9th October 2026", context, null);
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void explicitConfirmationSubmitsTheServerStoredPendingRequestAndUsesReturnedStatus() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        LeaveRequestDTO responseDto = mock(LeaveRequestDTO.class);
+        when(responseDto.getLeaveTypeName()).thenReturn("Casual Leave");
+        when(responseDto.getStartDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
+        when(responseDto.getEndDate()).thenReturn(java.time.LocalDate.of(2026, 10, 9));
+        when(responseDto.getStatus()).thenReturn("PENDING");
+        when(toolRegistry.submitConfirmedLeave(conversationId, context)).thenReturn(responseDto);
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Yes, submit it.", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("9 October 2026", "Pending approval");
+        verify(toolRegistry).submitConfirmedLeave(conversationId, context);
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void cancellationClearsPendingLeaveWithoutSubmission() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Cancel", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("haven't submitted");
+        verify(toolRegistry).cancelPendingLeave(conversationId, context);
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void dateChangePreparesAnUpdatedRequestWithoutSubmittingTheOldProposal() {
+        AssistantConversationStore.PendingLeaveAction pending = new AssistantConversationStore.PendingLeaveAction(
+                51L, 12L, "Casual Leave", java.time.LocalDate.of(2026, 10, 9),
+                java.time.LocalDate.of(2026, 10, 9), null, 1.0, 3.0, true, LocalDateTime.now());
+        when(conversationStore.pendingLeave(conversationId, 42L, 7L))
+                .thenReturn(java.util.Optional.of(pending));
+        var updatedAction = new AssistantChatResponse.AssistantAction(
+                "LEAVE_CONFIRMATION", "Submit Leave", null,
+                Map.of("leaveType", "Casual Leave", "startDate", "2026-10-10",
+                        "endDate", "2026-10-10", "days", 1.0, "remainingDays", 3.0,
+                        "duration", "Full day"));
+        when(toolRegistry.prepareLeaveRequest(
+                eq(conversationId), eq("Actually make it October 10"), eq(context), eq(pending)))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"prepared\":true}", "I've updated the request.", updatedAction));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("Actually make it October 10", conversationId.toString(), List.of()));
+
+        assertThat(response.message()).contains("updated");
+        assertThat(response.requiresConfirmation()).isTrue();
+        verify(conversationStore).clearPendingLeave(conversationId, 42L, 7L);
+        verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
     }
 
     @Test

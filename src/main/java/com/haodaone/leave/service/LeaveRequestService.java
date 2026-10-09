@@ -135,6 +135,70 @@ public class LeaveRequestService {
 
     @Transactional
     public LeaveRequestDTO apply(ApplyLeaveRequest request) {
+        ValidatedLeaveApplication validated = validateApplication(request);
+        Employee employee = validated.employee();
+        LeaveType leaveType = validated.leaveType();
+        double requestedDays = validated.requestedDays();
+
+        LeaveRequest leaveRequest = new LeaveRequest();
+        leaveRequest.setEmployee(employee);
+        leaveRequest.setCompany(employee.getCompany());
+        leaveRequest.setLeaveType(leaveType);
+        leaveRequest.setStartDate(request.getStartDate());
+        leaveRequest.setEndDate(request.getEndDate());
+        leaveRequest.setDays(requestedDays);
+        leaveRequest.setReason(request.getReason());
+        boolean autoApproved = leaveType.isAutoApprove();
+        leaveRequest.setStatus(autoApproved ? "APPROVED" : "PENDING");
+        if (autoApproved) {
+            leaveRequest.setDecidedAt(LocalDateTime.now());
+            leaveRequest.setDecisionNote("Automatically approved by leave policy");
+        }
+
+        LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
+        if (notificationService != null) {
+            if (autoApproved) {
+                if (employee.getUser() != null) {
+                    notificationService.notifyUser(validated.companyId(), employee.getUser().getId(), "LEAVE_DECISION",
+                            "Leave request approved", "Your leave request was automatically approved by the leave policy.",
+                            "LeaveRequest", saved.getId(), "NORMAL");
+                }
+            } else {
+                notificationService.notifyPermissionRecipients(validated.companyId(), employee.getId(), "LEAVE_APPROVE",
+                        "LEAVE_SUBMITTED", "Leave request needs review",
+                        employee.getFullName() + " submitted a leave request for " + saved.getStartDate()
+                                + " to " + saved.getEndDate() + ".",
+                        "LeaveRequest", saved.getId());
+            }
+        }
+        auditLogService.log("LeaveRequest", saved.getId(), "CREATE",
+                String.format("%s applied for %.1f day(s) of %s (%s to %s)", employee.getFullName(), requestedDays,
+                        leaveType.getName(), request.getStartDate(), request.getEndDate()));
+        if (autoApproved) {
+            auditLogService.log("LeaveRequest", saved.getId(), "AUTO_APPROVE",
+                "Automatically approved by leave type policy '" + leaveType.getName() + "'");
+        }
+        return LeaveRequestDTO.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public LeaveApplicationPreview preview(ApplyLeaveRequest request) {
+        ValidatedLeaveApplication validated = validateApplication(request);
+        return new LeaveApplicationPreview(
+                validated.employee().getId(),
+                validated.leaveType().getId(),
+                validated.leaveType().getName(),
+                request.getStartDate(),
+                request.getEndDate(),
+                validated.requestedDays(),
+                validated.remainingDays()
+        );
+    }
+
+    private ValidatedLeaveApplication validateApplication(ApplyLeaveRequest request) {
+        if (request == null || request.getStartDate() == null || request.getEndDate() == null) {
+            throw new BadRequestException("Leave dates are required");
+        }
         if (request.getEndDate().isBefore(request.getStartDate())) {
             throw new BadRequestException("End date cannot be before start date");
         }
@@ -162,46 +226,29 @@ public class LeaveRequestService {
                     requestedDays, balance.getRemainingDays(), leaveType.getName()));
         }
 
-        LeaveRequest leaveRequest = new LeaveRequest();
-        leaveRequest.setEmployee(employee);
-        leaveRequest.setCompany(employee.getCompany());
-        leaveRequest.setLeaveType(leaveType);
-        leaveRequest.setStartDate(request.getStartDate());
-        leaveRequest.setEndDate(request.getEndDate());
-        leaveRequest.setDays(requestedDays);
-        leaveRequest.setReason(request.getReason());
-        boolean autoApproved = leaveType.isAutoApprove();
-        leaveRequest.setStatus(autoApproved ? "APPROVED" : "PENDING");
-        if (autoApproved) {
-            leaveRequest.setDecidedAt(LocalDateTime.now());
-            leaveRequest.setDecisionNote("Automatically approved by leave policy");
-        }
-
-        LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
-        if (notificationService != null) {
-            if (autoApproved) {
-                if (employee.getUser() != null) {
-                    notificationService.notifyUser(companyId, employee.getUser().getId(), "LEAVE_DECISION",
-                            "Leave request approved", "Your leave request was automatically approved by the leave policy.",
-                            "LeaveRequest", saved.getId(), "NORMAL");
-                }
-            } else {
-                notificationService.notifyPermissionRecipients(companyId, employee.getId(), "LEAVE_APPROVE",
-                        "LEAVE_SUBMITTED", "Leave request needs review",
-                        employee.getFullName() + " submitted a leave request for " + saved.getStartDate()
-                                + " to " + saved.getEndDate() + ".",
-                        "LeaveRequest", saved.getId());
-            }
-        }
-        auditLogService.log("LeaveRequest", saved.getId(), "CREATE",
-                String.format("%s applied for %.1f day(s) of %s (%s to %s)", employee.getFullName(), requestedDays,
-                        leaveType.getName(), request.getStartDate(), request.getEndDate()));
-        if (autoApproved) {
-            auditLogService.log("LeaveRequest", saved.getId(), "AUTO_APPROVE",
-                "Automatically approved by leave type policy '" + leaveType.getName() + "'");
-        }
-        return LeaveRequestDTO.from(saved);
+        return new ValidatedLeaveApplication(
+                employee, leaveType, companyId, requestedDays,
+                balance == null ? 0 : balance.getRemainingDays()
+        );
     }
+
+    private record ValidatedLeaveApplication(
+            Employee employee,
+            LeaveType leaveType,
+            Long companyId,
+            double requestedDays,
+            double remainingDays
+    ) {}
+
+    public record LeaveApplicationPreview(
+            Long employeeId,
+            Long leaveTypeId,
+            String leaveTypeName,
+            LocalDate startDate,
+            LocalDate endDate,
+            double requestedDays,
+            double remainingDays
+    ) {}
 
     @Transactional
     public LeaveRequestDTO decide(Long id, boolean approve, String note) {

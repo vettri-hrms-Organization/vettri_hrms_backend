@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -111,14 +112,103 @@ public class AssistantConversationStore {
 
     @Transactional
     public boolean archive(UUID id, long companyId, long userId) {
-        return jdbcTemplate.update(
+        int archived = jdbcTemplate.update(
                 """
                 UPDATE assistant_conversation
                 SET archived = TRUE, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND company_id = ? AND user_id = ? AND archived = FALSE
                 """,
                 id, companyId, userId
-        ) == 1;
+        );
+        if (archived == 1) {
+            clearPendingLeave(id, companyId, userId);
+            return true;
+        }
+        return false;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<PendingLeaveAction> pendingLeave(UUID id, long companyId, long userId) {
+        List<PendingLeaveAction> actions = jdbcTemplate.query(
+                """
+                SELECT employee_id, leave_type_id, leave_type_name, start_date, end_date, reason,
+                       requested_days, remaining_days, is_ready, created_at
+                FROM assistant_pending_leave_action
+                WHERE conversation_id = ? AND company_id = ? AND user_id = ?
+                """,
+                (rs, rowNum) -> new PendingLeaveAction(
+                        rs.getLong("employee_id"),
+                        (Long) rs.getObject("leave_type_id"),
+                        rs.getString("leave_type_name"),
+                        rs.getObject("start_date", LocalDate.class),
+                        rs.getObject("end_date", LocalDate.class),
+                        rs.getString("reason"),
+                        (Double) rs.getObject("requested_days"),
+                        (Double) rs.getObject("remaining_days"),
+                        rs.getBoolean("is_ready"),
+                        rs.getObject("created_at", LocalDateTime.class)
+                ),
+                id, companyId, userId
+        );
+        return actions.stream().findFirst();
+    }
+
+    @Transactional
+    public Optional<PendingLeaveAction> lockPendingLeave(UUID id, long companyId, long userId) {
+        List<PendingLeaveAction> actions = jdbcTemplate.query(
+                """
+                SELECT employee_id, leave_type_id, leave_type_name, start_date, end_date, reason,
+                       requested_days, remaining_days, is_ready, created_at
+                FROM assistant_pending_leave_action
+                WHERE conversation_id = ? AND company_id = ? AND user_id = ?
+                FOR UPDATE
+                """,
+                (rs, rowNum) -> new PendingLeaveAction(
+                        rs.getLong("employee_id"),
+                        (Long) rs.getObject("leave_type_id"),
+                        rs.getString("leave_type_name"),
+                        rs.getObject("start_date", LocalDate.class),
+                        rs.getObject("end_date", LocalDate.class),
+                        rs.getString("reason"),
+                        (Double) rs.getObject("requested_days"),
+                        (Double) rs.getObject("remaining_days"),
+                        rs.getBoolean("is_ready"),
+                        rs.getObject("created_at", LocalDateTime.class)
+                ),
+                id, companyId, userId
+        );
+        return actions.stream().findFirst();
+    }
+
+    @Transactional
+    public void savePendingLeave(
+            UUID id,
+            long companyId,
+            long userId,
+            PendingLeaveAction action
+    ) {
+        clearPendingLeave(id, companyId, userId);
+        jdbcTemplate.update(
+                """
+                INSERT INTO assistant_pending_leave_action
+                    (conversation_id, company_id, user_id, employee_id, leave_type_id, leave_type_name,
+                     start_date, end_date, reason, requested_days, remaining_days, is_ready)
+                SELECT id, company_id, user_id, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                FROM assistant_conversation
+                WHERE id = ? AND company_id = ? AND user_id = ? AND archived = FALSE
+                """,
+                action.employeeId(), action.leaveTypeId(), action.leaveTypeName(),
+                action.startDate(), action.endDate(), action.reason(),
+                action.requestedDays(), action.remainingDays(), action.ready(), id, companyId, userId
+        );
+    }
+
+    @Transactional
+    public void clearPendingLeave(UUID id, long companyId, long userId) {
+        jdbcTemplate.update(
+                "DELETE FROM assistant_pending_leave_action WHERE conversation_id = ? AND company_id = ? AND user_id = ?",
+                id, companyId, userId
+        );
     }
 
     private String safeTitle(String content) {
@@ -138,4 +228,16 @@ public class AssistantConversationStore {
     public record ConversationSummary(UUID id, String title, LocalDateTime createdAt, LocalDateTime updatedAt) {}
     public record StoredMessage(String role, String content, LocalDateTime createdAt) {}
     public record ConversationSnapshot(ConversationSummary conversation, List<StoredMessage> messages) {}
+    public record PendingLeaveAction(
+            long employeeId,
+            Long leaveTypeId,
+            String leaveTypeName,
+            LocalDate startDate,
+            LocalDate endDate,
+            String reason,
+            Double requestedDays,
+            Double remainingDays,
+            boolean ready,
+            LocalDateTime createdAt
+    ) {}
 }
