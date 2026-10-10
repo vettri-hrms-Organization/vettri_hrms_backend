@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -64,6 +65,12 @@ public class UserPermissionGrantService {
 
     @Transactional
     public UserPermissionGrantDTO grant(Long userId, CreateUserPermissionGrantRequest request) {
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        LocalDateTime expiresAt = request.getExpiresAt() == null ? null
+                : request.getExpiresAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        if (expiresAt != null && !expiresAt.isAfter(now)) {
+            throw new BadRequestException("Permission grant expiration must be in the future.");
+        }
         Long companyId = requiredTenant();
         User grantor = currentActor(companyId);
         if (grantor.getId().equals(userId)) {
@@ -93,6 +100,19 @@ public class UserPermissionGrantService {
             throw new AccessDeniedException("You are not authorized to grant this permission at the requested scope.");
         }
 
+        List<UserPermissionGrant> activeGrants =
+                grantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(companyId, userId);
+        for (UserPermissionGrant existing : activeGrants) {
+            if (permissionCode.equals(existing.getPermission().getCode())
+                    && existing.getExpiresAt() != null
+                    && !existing.getExpiresAt().isAfter(now)) {
+                existing.setRevokedAt(now);
+                existing.setRevokedBy(grantor);
+                UserPermissionGrant expired = grantRepository.save(existing);
+                auditLogService.log("UserPermissionGrant", expired.getId(), "EXPIRE",
+                        "Expired " + permissionCode + " grant for user " + userId);
+            }
+        }
         if (grantRepository.existsByCompany_IdAndUser_IdAndPermission_CodeAndRevokedAtIsNullAndDeletedFalse(
                 companyId, userId, permissionCode)) {
             throw new BadRequestException("An active grant already exists for this permission.");
@@ -106,7 +126,8 @@ public class UserPermissionGrantService {
         grant.setPermission(permission);
         grant.setScope(scope);
         grant.setGrantedBy(grantor);
-        grant.setGrantedAt(LocalDateTime.now());
+        grant.setGrantedAt(now);
+        grant.setExpiresAt(expiresAt);
         try {
             UserPermissionGrant saved = grantRepository.saveAndFlush(grant);
             auditLogService.log("UserPermissionGrant", saved.getId(), "GRANT",

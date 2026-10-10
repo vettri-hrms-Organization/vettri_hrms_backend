@@ -334,6 +334,19 @@ class AuthorizationServiceTest {
         assertFalse(service.hasOrganizationScope("SALARY_MANAGE"));
     }
 
+    @Test
+    void expiredDirectGrantDoesNotProvideEffectivePermission() {
+        Company company = company(1L);
+        User user = user(10L, company);
+        UserPermissionGrant expired = userGrant(company, user, "SALARY_MANAGE", PermissionScope.ORGANIZATION);
+        expired.setExpiresAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(1));
+        authenticateWithGrants(user, "SALARY_MANAGE", expired);
+        TenantContext.setCurrentTenant(1L);
+
+        assertEquals(Set.of(), service.getScopes("SALARY_MANAGE"));
+        assertFalse(service.hasOrganizationScope("SALARY_MANAGE"));
+    }
+
     private void authenticate(User user, String permission) {
         when(userRepository.findByUsernameAndDeletedFalse(user.getUsername())).thenReturn(Optional.of(user));
         when(permissionGrantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(

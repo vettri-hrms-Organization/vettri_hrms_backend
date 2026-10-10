@@ -32,6 +32,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -79,6 +81,8 @@ class UserPermissionGrantServiceTest {
         when(employeeRepository.findByUser_IdAndDeletedFalse(11L)).thenReturn(Optional.of(recipientEmployee));
         when(grantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(1L, 10L))
                 .thenReturn(List.of());
+        when(grantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(1L, 11L))
+                .thenReturn(List.of());
         when(grantRepository.existsByCompany_IdAndUser_IdAndPermission_CodeAndRevokedAtIsNullAndDeletedFalse(
                 1L, 11L, "MONITORING_VIEW")).thenReturn(false);
         when(permissionRepository.findByCode("MONITORING_VIEW"))
@@ -102,12 +106,56 @@ class UserPermissionGrantServiceTest {
         addRolePermission(grantor, "MONITORING_VIEW", PermissionScope.TEAM);
         authenticateWithGrantAuthorityAndMonitoring();
 
-        var created = service.grant(11L, request("MONITORING_VIEW", PermissionScope.TEAM));
+        OffsetDateTime expiry = OffsetDateTime.now(ZoneOffset.UTC).plusDays(2).withNano(0);
+        CreateUserPermissionGrantRequest request = request("MONITORING_VIEW", PermissionScope.TEAM);
+        request.setExpiresAt(expiry);
+        var created = service.grant(11L, request);
 
         assertEquals("MONITORING_VIEW", created.getPermissionCode());
         assertEquals(PermissionScope.TEAM, created.getScope());
+        assertEquals(expiry.toInstant(), created.getExpiresAt().toInstant());
+        verify(grantRepository).saveAndFlush(org.mockito.ArgumentMatchers.argThat(saved ->
+                saved.getExpiresAt().equals(expiry.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime())));
         verify(auditLogService).log("UserPermissionGrant", null, "GRANT",
                 "Granted MONITORING_VIEW with TEAM scope to user 11");
+    }
+
+    @Test
+    void expiredGrantIsRevokedBeforePermissionCanBeGrantedAgain() {
+        addRolePermission(grantor, "USER_PERMISSION_GRANT", PermissionScope.ORGANIZATION);
+        addRolePermission(grantor, "MONITORING_VIEW", PermissionScope.TEAM);
+        authenticateWithGrantAuthorityAndMonitoring();
+        UserPermissionGrant expired = new UserPermissionGrant();
+        expired.setId(99L);
+        expired.setCompany(company);
+        expired.setUser(recipient);
+        expired.setPermission(permission("MONITORING_VIEW"));
+        expired.setScope(PermissionScope.TEAM);
+        expired.setGrantedBy(grantor);
+        expired.setGrantedAt(LocalDateTime.now(ZoneOffset.UTC).minusDays(2));
+        expired.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        when(grantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(1L, 11L))
+                .thenReturn(List.of(expired));
+        when(grantRepository.save(expired)).thenReturn(expired);
+        CreateUserPermissionGrantRequest replacement = request("MONITORING_VIEW", PermissionScope.TEAM);
+        replacement.setExpiresAt(OffsetDateTime.now(ZoneOffset.UTC).plusDays(1));
+
+        service.grant(11L, replacement);
+
+        assertNotNull(expired.getRevokedAt());
+        assertEquals(10L, expired.getRevokedBy().getId());
+        verify(auditLogService).log("UserPermissionGrant", 99L, "EXPIRE",
+                "Expired MONITORING_VIEW grant for user 11");
+        verify(grantRepository).saveAndFlush(any(UserPermissionGrant.class));
+    }
+
+    @Test
+    void grantWithExpirationInThePastIsRejected() {
+        CreateUserPermissionGrantRequest request = request("MONITORING_VIEW", PermissionScope.TEAM);
+        request.setExpiresAt(OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+
+        assertThrows(BadRequestException.class, () -> service.grant(11L, request));
+        verify(grantRepository, never()).saveAndFlush(any(UserPermissionGrant.class));
     }
 
     @Test

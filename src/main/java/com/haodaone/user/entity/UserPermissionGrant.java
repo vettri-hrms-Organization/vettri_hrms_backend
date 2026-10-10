@@ -12,6 +12,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "user_permission_grant")
@@ -39,6 +40,9 @@ public class UserPermissionGrant extends BaseEntity {
 
     @Column(name = "granted_at", nullable = false)
     private LocalDateTime grantedAt;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "revoked_by_user_id")
@@ -95,6 +99,14 @@ public class UserPermissionGrant extends BaseEntity {
         this.grantedAt = grantedAt;
     }
 
+    public LocalDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(LocalDateTime expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
     public User getRevokedBy() {
         return revokedBy;
     }
@@ -112,6 +124,7 @@ public class UserPermissionGrant extends BaseEntity {
     }
 
     public boolean isActive() {
-        return revokedAt == null && !isDeleted();
+        return revokedAt == null && !isDeleted()
+                && (expiresAt == null || expiresAt.isAfter(LocalDateTime.now(ZoneOffset.UTC)));
     }
 }

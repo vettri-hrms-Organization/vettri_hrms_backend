@@ -4,6 +4,8 @@ import com.haodaone.user.entity.PermissionScope;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.time.OffsetDateTime;
+
 public class CreateUserPermissionGrantRequest {
 
     @NotBlank
@@ -11,6 +13,8 @@ public class CreateUserPermissionGrantRequest {
 
     @NotNull
     private PermissionScope scope;
+
+    private OffsetDateTime expiresAt;
 
     public String getPermissionCode() {
         return permissionCode;
@@ -26,5 +30,13 @@ public class CreateUserPermissionGrantRequest {
 
     public void setScope(PermissionScope scope) {
         this.scope = scope;
+    }
+
+    public OffsetDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(OffsetDateTime expiresAt) {
+        this.expiresAt = expiresAt;
     }
 }

@@ -16,6 +16,10 @@ class DataSeederPermissionPolicyTest {
         assertTrue(permissions.contains("USER_PERMISSION_GRANT"));
         assertTrue(permissions.contains("ROLE_MANAGE"));
         assertTrue(permissions.contains("ORG_MANAGE"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_VIEW"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_CREATE"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_UPDATE"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_DEACTIVATE"));
         assertFalse(permissions.contains("MONITORING_VIEW"));
         assertFalse(permissions.contains("MONITORING_MANAGE"));
         assertFalse(permissions.contains("IT_MANAGEMENT_ACCESS"));
@@ -34,8 +38,13 @@ class DataSeederPermissionPolicyTest {
         var permissions = DataSeeder.hrManagerPermissionCodes();
         assertTrue(permissions.contains("EMPLOYEE_VIEW"));
         assertTrue(permissions.contains("ATTENDANCE_MANAGE"));
-        assertFalse(permissions.contains("USER_VIEW"));
-        assertFalse(permissions.contains("ROLE_ASSIGN"));
+        assertTrue(permissions.contains("USER_VIEW"));
+        assertTrue(permissions.contains("ROLE_VIEW"));
+        assertTrue(permissions.contains("ROLE_ASSIGN"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_VIEW"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_CREATE"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_UPDATE"));
+        assertTrue(permissions.contains("OFFICE_LOCATION_DEACTIVATE"));
         assertFalse(permissions.contains("ORG_MANAGE"));
         assertFalse(permissions.contains("DEVICE_MANAGE"));
         assertFalse(permissions.contains("MONITORING_VIEW"));

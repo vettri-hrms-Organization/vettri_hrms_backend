@@ -142,9 +142,17 @@ public class UserService {
         validateRequestedRoles(roleNames, currentRoleNames);
         Set<Role> roles = new HashSet<>();
         Long companyId = requiredTenant();
-        for (String roleName : roleNames) {
-            roles.add(findRoleForTenant(roleName, companyId)
-                    .orElseThrow(() -> new BadRequestException("Unknown role: " + roleName)));
+        Set<String> requestedRoleNames = roleNames.stream().map(String::trim).filter(name -> !name.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+        for (String roleName : requestedRoleNames) {
+            Role role = findRoleForTenant(roleName, companyId)
+                    .orElseThrow(() -> new BadRequestException("Unknown role: " + roleName));
+            if (!currentRoleNames.contains(roleName)
+                    && !authorizationService.canAssignRoleToUser(role, id)) {
+                throw new AccessDeniedException("You are not authorized to delegate all permissions in role '"
+                        + roleName + "' to this user.");
+            }
+            roles.add(role);
         }
         user.setRoles(roles);
         User saved = userRepository.save(user);

@@ -54,6 +54,8 @@ public class UserRoleAssignmentPolicyTest {
         employeeRepository = mock(EmployeeRepository.class);
         authorizationService = mock(AuthorizationService.class);
         Mockito.when(authorizationService.hasOrganizationScope(Mockito.anyString())).thenReturn(true);
+        Mockito.when(authorizationService.canAssignRoleToUser(Mockito.any(Role.class), Mockito.anyLong()))
+                .thenReturn(true);
         permissionGrantRepository = mock(com.haodaone.user.repository.UserPermissionGrantRepository.class);
         Mockito.when(permissionGrantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(
                 Mockito.anyLong(), Mockito.anyLong())).thenReturn(java.util.List.of());
@@ -93,6 +95,56 @@ public class UserRoleAssignmentPolicyTest {
         UserDTO result = userService.assignRoles(80L, Set.of("HR_ADMIN"));
 
         assertEquals(Set.of("HR_ADMIN"), result.getRoles().stream().collect(Collectors.toSet()));
+    }
+
+    @Test
+    void hrManagerWithOrganizationRoleAssignmentAndDelegationCanAssignApprovedRole() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("hr-manager", null, "ROLE_HR_ADMIN"));
+        TenantContext.setCurrentTenant(7L);
+        Company company = new Company();
+        company.setId(7L);
+        User target = new User();
+        target.setId(80L);
+        target.setCompany(company);
+        target.setActive(true);
+        target.setAccountStatus("ACTIVE");
+        Role employee = new Role();
+        employee.setName("EMPLOYEE");
+        employee.setCompany(company);
+
+        when(userRepository.findByIdAndCompanyIdAndDeletedFalse(80L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepository.findByNameAndCompany_Id("EMPLOYEE", 7L)).thenReturn(Optional.of(employee));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserDTO result = userService.assignRoles(80L, Set.of("EMPLOYEE"));
+
+        assertEquals(Set.of("EMPLOYEE"), Set.copyOf(result.getRoles()));
+    }
+
+    @Test
+    void hrManagerCannotAssignRoleWhosePermissionsTheyCannotDelegate() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("hr-manager", null, "ROLE_HR_ADMIN"));
+        TenantContext.setCurrentTenant(7L);
+        Company company = new Company();
+        company.setId(7L);
+        User target = new User();
+        target.setId(80L);
+        target.setCompany(company);
+        target.setActive(true);
+        target.setAccountStatus("ACTIVE");
+        Role privilegedRole = new Role();
+        privilegedRole.setName("IT_ADMINISTRATOR");
+        privilegedRole.setCompany(company);
+
+        when(userRepository.findByIdAndCompanyIdAndDeletedFalse(80L, 7L)).thenReturn(Optional.of(target));
+        when(roleRepository.findByNameAndCompany_Id("IT_ADMINISTRATOR", 7L)).thenReturn(Optional.of(privilegedRole));
+        Mockito.when(authorizationService.canAssignRoleToUser(privilegedRole, 80L)).thenReturn(false);
+
+        assertThrows(AccessDeniedException.class,
+                () -> userService.assignRoles(80L, Set.of("IT_ADMINISTRATOR")));
+        Mockito.verify(userRepository, Mockito.never()).save(any(User.class));
     }
 
     @Test

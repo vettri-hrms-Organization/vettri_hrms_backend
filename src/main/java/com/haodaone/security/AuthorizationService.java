@@ -6,6 +6,7 @@ import com.haodaone.leave.repository.LeaveRequestRepository;
 import com.haodaone.attendance.repository.WfhRequestRepository;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.entity.PermissionScope;
+import com.haodaone.user.entity.Role;
 import com.haodaone.user.entity.RolePermissionScope;
 import com.haodaone.user.entity.User;
 import com.haodaone.user.entity.UserPermissionGrant;
@@ -200,6 +201,70 @@ public class AuthorizationService {
         return actorScopes.contains(PermissionScope.ORGANIZATION);
     }
 
+    @Transactional(readOnly = true)
+    public boolean canAssignRoleToUser(Role role, Long recipientUserId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (role == null || recipientUserId == null || tenantId == null
+                || authentication == null || !authentication.isAuthenticated()
+                || !isAccountActive(authentication)) {
+            return false;
+        }
+        if (isSuperAdmin(authentication)) return true;
+        if ("SUPER_ADMIN".equals(role.getName())
+                || (role.getCompany() != null && !tenantId.equals(role.getCompany().getId()))
+                || (!hasOrganizationScope("ROLE_ASSIGN") && !hasOrganizationScope("USER_MANAGE"))) {
+            return false;
+        }
+
+        User grantor = currentUser(authentication);
+        User recipient = userRepository.findByIdAndCompanyIdAndDeletedFalse(recipientUserId, tenantId).orElse(null);
+        if (grantor == null || grantor.getCompany() == null
+                || !tenantId.equals(grantor.getCompany().getId())
+                || recipient == null || recipient.getId().equals(grantor.getId())) {
+            return false;
+        }
+
+        boolean companyAdmin = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority -> "ROLE_COMPANY_ADMIN".equals(authority)
+                        || "COMPANY_ADMIN".equals(authority));
+        if (companyAdmin) return true;
+
+        for (var permission : role.getPermissions()) {
+            String code = permission.getCode();
+            if (permission.isDeleted() || !PermissionMetadataRegistry.isDelegable(code)
+                    || PermissionMetadataRegistry.isPlatformOnly(code)) {
+                return false;
+            }
+            RolePermissionScope roleScope = role.getPermissionScopes().stream()
+                    .filter(scope -> scope.getPermission() != null
+                            && code.equals(scope.getPermission().getCode())
+                            && currentlyValid(scope))
+                    .findFirst().orElse(null);
+            if (roleScope == null || roleScope.getScope() == null
+                    || roleScope.getScope() == PermissionScope.CUSTOM
+                    || (PermissionMetadataRegistry.requiresOrganizationScope(code)
+                            && roleScope.getScope() != PermissionScope.ORGANIZATION)) {
+                return false;
+            }
+
+            Set<PermissionScope> grantorScopes = getScopesForUser(grantor, code, tenantId);
+            if (grantorScopes.isEmpty()) return false;
+            if (grantorScopes.contains(PermissionScope.ORGANIZATION)) continue;
+
+            Employee grantorEmployee = employeeRepository.findByUser_IdAndDeletedFalse(grantor.getId()).orElse(null);
+            Employee recipientEmployee = employeeRepository.findByUser_IdAndDeletedFalse(recipient.getId()).orElse(null);
+            if (!isEmployeeInTenant(grantorEmployee, tenantId)
+                    || !isEmployeeInTenant(recipientEmployee, tenantId)
+                    || !requestedScopeIsWithinGrantorScope(
+                            roleScope.getScope(), grantorScopes, grantorEmployee, recipientEmployee, tenantId)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * Returns permitted employee IDs for list queries. An empty Optional means
      * organization scope; a present empty set means the user has no visible
@@ -259,7 +324,35 @@ public class AuthorizationService {
 
     @Transactional(readOnly = true)
     public boolean canManageOfficeLocations() {
-        return hasOrganizationScope("ORG_MANAGE") || hasOrganizationScope("ATTENDANCE_MANAGE");
+        return canViewOfficeLocations()
+                && (canCreateOfficeLocation() || canUpdateOfficeLocation() || canDeactivateOfficeLocation());
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canViewOfficeLocations() {
+        return hasOrganizationScope("OFFICE_LOCATION_VIEW")
+                || hasOrganizationScope("OFFICE_LOCATION_CREATE")
+                || hasOrganizationScope("OFFICE_LOCATION_UPDATE")
+                || hasOrganizationScope("OFFICE_LOCATION_DEACTIVATE")
+                || hasOrganizationScope("ORG_MANAGE");
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canCreateOfficeLocation() {
+        return hasOrganizationScope("OFFICE_LOCATION_CREATE")
+                || hasOrganizationScope("ORG_MANAGE");
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canUpdateOfficeLocation() {
+        return hasOrganizationScope("OFFICE_LOCATION_UPDATE")
+                || hasOrganizationScope("ORG_MANAGE");
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canDeactivateOfficeLocation() {
+        return hasOrganizationScope("OFFICE_LOCATION_DEACTIVATE")
+                || hasOrganizationScope("ORG_MANAGE");
     }
 
     private boolean requestedScopeIsWithinGrantorScope(PermissionScope requestedScope,

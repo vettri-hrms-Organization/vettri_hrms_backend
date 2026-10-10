@@ -47,17 +47,49 @@ class AuthorizationServiceOfficeLocationTest {
     }
 
     @Test
-    void attendanceManageOrganizationScopePreservesExistingOfficeManagementAccess() {
+    void attendanceManagementDoesNotGrantOfficeLocationManagement() {
         authenticateWithPermission("ATTENDANCE_MANAGE", PermissionScope.ORGANIZATION);
 
-        assertTrue(authorizationService.canManageOfficeLocations());
+        assertFalse(authorizationService.canViewOfficeLocations());
+        assertFalse(authorizationService.canManageOfficeLocations());
     }
 
     @Test
-    void nonOrganizationAttendanceScopeCannotManageCompanyOfficeLocations() {
-        authenticateWithPermission("ATTENDANCE_MANAGE", PermissionScope.TEAM);
+    void attendanceManagementDoesNotGrantOfficeLocationWriteAccess() {
+        authenticateWithPermission("ATTENDANCE_MANAGE", PermissionScope.ORGANIZATION);
 
-        assertFalse(authorizationService.canManageOfficeLocations());
+        assertFalse(authorizationService.canCreateOfficeLocation());
+        assertFalse(authorizationService.canUpdateOfficeLocation());
+        assertFalse(authorizationService.canDeactivateOfficeLocation());
+    }
+
+    @Test
+    void officeLocationViewDoesNotGrantWriteOperations() {
+        authenticateWithPermission("OFFICE_LOCATION_VIEW", PermissionScope.ORGANIZATION);
+
+        assertTrue(authorizationService.canViewOfficeLocations());
+        assertFalse(authorizationService.canCreateOfficeLocation());
+        assertFalse(authorizationService.canUpdateOfficeLocation());
+        assertFalse(authorizationService.canDeactivateOfficeLocation());
+    }
+
+    @Test
+    void officeLocationCreatePermissionIsIndependentFromUpdateAndDeactivate() {
+        authenticateWithPermission("OFFICE_LOCATION_CREATE", PermissionScope.ORGANIZATION);
+
+        assertTrue(authorizationService.canViewOfficeLocations());
+        assertTrue(authorizationService.canCreateOfficeLocation());
+        assertFalse(authorizationService.canUpdateOfficeLocation());
+        assertFalse(authorizationService.canDeactivateOfficeLocation());
+    }
+
+    @Test
+    void officeLocationUpdateAndDeactivateRequireTheirOwnOrganizationPermissions() {
+        authenticateWithPermission("OFFICE_LOCATION_UPDATE", PermissionScope.ORGANIZATION);
+
+        assertTrue(authorizationService.canUpdateOfficeLocation());
+        assertFalse(authorizationService.canDeactivateOfficeLocation());
+        assertFalse(authorizationService.canCreateOfficeLocation());
     }
 
     private void authenticateWithPermission(String code, PermissionScope scope) {

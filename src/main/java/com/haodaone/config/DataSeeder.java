@@ -146,6 +146,10 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"EMPLOYEE_MANAGE", "Edit employee profiles and change employment status", "Employee Management"},
                 new String[]{"ORG_VIEW", "View departments, designations, and teams", "Organization"},
                 new String[]{"ORG_MANAGE", "Create and edit departments, designations, and teams", "Organization"},
+                new String[]{"OFFICE_LOCATION_VIEW", "View office locations for the organization", "Organization"},
+                new String[]{"OFFICE_LOCATION_CREATE", "Create office locations for the organization", "Organization"},
+                new String[]{"OFFICE_LOCATION_UPDATE", "Edit office locations for the organization", "Organization"},
+                new String[]{"OFFICE_LOCATION_DEACTIVATE", "Activate or deactivate office locations", "Organization"},
                 new String[]{"REQUIREMENT_VIEW", "View business requirements", "Requirements"},
                 new String[]{"REQUIREMENT_MANAGE", "Create and manage business requirements", "Requirements"},
                 new String[]{"ATTENDANCE_VIEW", "View live and historical attendance", "Attendance"},
@@ -317,6 +321,8 @@ public class DataSeeder implements CommandLineRunner {
     static Set<String> companyAdminPermissionCodes() {
         return Set.of("USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
                 "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
+                "OFFICE_LOCATION_DEACTIVATE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                 "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
     }
@@ -338,7 +344,10 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> hrManagerPermissionCodes() {
-        return Set.of("EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
+        return Set.of("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN",
+                "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
+                "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
+                "OFFICE_LOCATION_DEACTIVATE",
                 "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE",
                 "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                 "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
