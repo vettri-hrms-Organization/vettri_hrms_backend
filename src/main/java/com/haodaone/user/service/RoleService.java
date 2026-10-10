@@ -22,6 +22,9 @@ import com.haodaone.tenant.TenantContext;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.user.entity.PermissionScope;
 import com.haodaone.user.entity.RolePermissionScope;
+import com.haodaone.user.security.PermissionMetadataRegistry;
+import com.haodaone.security.AuthorizationService;
+import com.haodaone.user.repository.UserRepository;
 
 @Service
 public class RoleService {
@@ -30,13 +33,18 @@ public class RoleService {
     private final PermissionRepository permissionRepository;
     private final AuditLogService auditLogService;
     private final CompanyRepository companyRepository;
+    private final AuthorizationService authorizationService;
+    private final UserRepository userRepository;
 
     public RoleService(RoleRepository roleRepository, PermissionRepository permissionRepository, AuditLogService auditLogService,
-                       CompanyRepository companyRepository) {
+                       CompanyRepository companyRepository, AuthorizationService authorizationService,
+                       UserRepository userRepository) {
         this.roleRepository = roleRepository;
         this.permissionRepository = permissionRepository;
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
+        this.authorizationService = authorizationService;
+        this.userRepository = userRepository;
     }
 
     @Transactional(readOnly = true)
@@ -44,7 +52,13 @@ public class RoleService {
         Long companyId = TenantContext.getCurrentTenant();
         return (companyId == null ? roleRepository.findAllByDeletedFalse()
             : roleRepository.findAvailableForCompany(companyId))
-                .stream().map(RoleDTO::from).toList();
+                .stream().map(role -> {
+                    RoleDTO dto = RoleDTO.from(role);
+                    dto.setAssignedUserCount(companyId == null
+                            ? userRepository.countByRoles_IdAndDeletedFalse(role.getId())
+                            : userRepository.countByRoles_IdAndCompany_IdAndDeletedFalse(role.getId(), companyId));
+                    return dto;
+                }).toList();
     }
 
     @Transactional
@@ -115,6 +129,7 @@ public class RoleService {
         Set<Permission> permissions = new HashSet<>();
         for (String code : codes) {
             permissions.add(permissionRepository.findByCode(code)
+                    .filter(permission -> !permission.isDeleted())
                     .orElseThrow(() -> new BadRequestException("Unknown permission code: " + code)));
         }
         return permissions;
@@ -127,9 +142,13 @@ public class RoleService {
             if (requestedScope == PermissionScope.CUSTOM) {
                 throw new BadRequestException("CUSTOM scope cannot be assigned until custom targets are supported.");
             }
-            if (Set.of("IT_MANAGEMENT_ACCESS", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE")
-                    .contains(permission.getCode()) && requestedScope != PermissionScope.ORGANIZATION) {
+            if (PermissionMetadataRegistry.requiresOrganizationScope(permission.getCode())
+                    && requestedScope != PermissionScope.ORGANIZATION) {
                 throw new BadRequestException(permission.getCode() + " requires Company scope");
+            }
+            if (!authorizationService.canAssignPermissionToRole(permission.getCode(), requestedScope)) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "You are not authorized to add " + permission.getCode() + " to a role.");
             }
             RolePermissionScope scope = new RolePermissionScope();
             scope.setRole(role);

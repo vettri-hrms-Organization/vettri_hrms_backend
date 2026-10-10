@@ -2,6 +2,7 @@ package com.haodaone.security;
 
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
+import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.repository.UserRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -118,6 +119,31 @@ public class CompanySecurity {
                 .isPresent();
     }
 
+    public boolean canManageDeviceMapping(Long deviceId) {
+        if (deviceId == null) return false;
+        if (isSuperAdmin()) return true;
+        Optional<Long> myCompany = currentCompanyId();
+        if (myCompany.isEmpty()) return false;
+        return monitoredDeviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, myCompany.get())
+                .filter(device -> device.getEmployee() == null
+                        ? authorizationService != null && authorizationService.hasOrganizationScope("IT_DEVICE_MAPPING_MANAGE")
+                        : authorizationService != null && authorizationService.isAllowed(
+                                "IT_DEVICE_MAPPING_MANAGE", "EMPLOYEE", device.getEmployee().getId()))
+                .isPresent();
+    }
+
+    public boolean canManageRemoteSupportDevice(Long deviceId) {
+        if (deviceId == null) return false;
+        if (isSuperAdmin()) return true;
+        Optional<Long> myCompany = currentCompanyId();
+        return myCompany.isPresent()
+                && TenantContext.getCurrentTenant() != null
+                && TenantContext.getCurrentTenant().equals(myCompany.get())
+                && authorizationService != null
+                && authorizationService.hasOrganizationScope("REMOTE_SUPPORT_MANAGE")
+                && monitoredDeviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, myCompany.get()).isPresent();
+    }
+
     /** True if caller can view the given device (same-company or super admin). */
     public boolean canViewDevice(Long deviceId) {
         if (deviceId == null) return false;
@@ -126,8 +152,8 @@ public class CompanySecurity {
         if (myCompany.isEmpty()) return false;
         return monitoredDeviceRepository.findByIdAndCompany_IdAndDeletedFalse(deviceId, myCompany.get())
                 .filter(device -> device.getEmployee() == null
-                        ? authorizationService != null && authorizationService.hasOrganizationScope("MONITORING_VIEW")
-                        : authorizationService != null && authorizationService.isAllowed("MONITORING_VIEW", "EMPLOYEE", device.getEmployee().getId()))
+                        ? authorizationService != null && authorizationService.hasOrganizationScope("IT_DEVICE_VIEW")
+                        : authorizationService != null && authorizationService.isAllowed("IT_DEVICE_VIEW", "EMPLOYEE", device.getEmployee().getId()))
                 .isPresent();
     }
 
@@ -135,12 +161,11 @@ public class CompanySecurity {
     public boolean canManageUser(Long userId) {
         if (userId == null) return false;
         if (isSuperAdmin()) return true;
-        // company admins may manage users belonging to their company
-        if (!isCompanyAdmin()) return false;
         Optional<Long> myCompany = currentCompanyId();
-        if (myCompany.isEmpty()) return false;
-        return userRepository.findById(userId)
-                .map(u -> u.getCompany() != null && myCompany.get().equals(u.getCompany().getId()))
+        Long tenantId = com.haodaone.tenant.TenantContext.getCurrentTenant();
+        if (myCompany.isEmpty() || tenantId == null || !tenantId.equals(myCompany.get())) return false;
+        return userRepository.findByIdAndCompanyIdAndDeletedFalse(userId, tenantId)
+                .map(u -> u.getCompany() != null && tenantId.equals(u.getCompany().getId()))
                 .orElse(false);
     }
 }

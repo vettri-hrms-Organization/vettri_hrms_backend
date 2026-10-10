@@ -164,8 +164,12 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"SALARY_MANAGE", "Define salary structures and create, process, or cancel payroll runs", "Payroll"},
                 new String[]{"REPORTS_VIEW", "View executive, attendance, leave, and recruitment reports", "Reports"},
                 new String[]{"MONITORING_VIEW", "View monitored devices and employee activity sessions", "Monitoring"},
-                new String[]{"MONITORING_MANAGE", "Enroll/decommission monitored devices, rotate agent tokens, and push directives", "Monitoring"},
+                new String[]{"MONITORING_MANAGE", "Manage monitored-device records and agent operations", "Monitoring"},
+                new String[]{"REMOTE_SUPPORT_MANAGE", "Start remote support and remote desktop operations", "IT Management"},
                 new String[]{"IT_MANAGEMENT_ACCESS", "Access IT Management tools for devices and software", "IT Management"},
+                new String[]{"IT_DEVICE_VIEW", "View IT device inventory and details", "IT Management"},
+                new String[]{"IT_DEVICE_ENROLL", "Enroll and revoke IT device enrollments", "IT Management"},
+                new String[]{"IT_DEVICE_MAPPING_MANAGE", "Assign IT devices to employees", "IT Management"},
                 new String[]{"SOFTWARE_VIEW", "View software catalog, versions, and deployment history", "Software"},
                 new String[]{"SOFTWARE_DEPLOY", "Create and queue software deployments to managed devices", "Software"},
                 new String[]{"SOFTWARE_MANAGE", "Create, edit, and control software packages and installer versions", "Software"}
@@ -344,7 +348,8 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> itAdministratorPermissionCodes() {
-        return Set.of("IT_MANAGEMENT_ACCESS", "MONITORING_VIEW", "MONITORING_MANAGE", "DEVICE_MANAGE",
-                "SOFTWARE_VIEW", "SOFTWARE_MANAGE");
+        return Set.of("IT_MANAGEMENT_ACCESS", "IT_DEVICE_VIEW", "IT_DEVICE_ENROLL",
+                "IT_DEVICE_MAPPING_MANAGE", "MONITORING_VIEW", "MONITORING_MANAGE", "REMOTE_SUPPORT_MANAGE",
+                "DEVICE_MANAGE", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE");
     }
 }

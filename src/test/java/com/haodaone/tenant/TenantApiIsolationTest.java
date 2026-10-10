@@ -95,12 +95,20 @@ public class TenantApiIsolationTest {
                 permission.setModule("IT Management");
                 return permissionRepository.save(permission);
             });
+        Permission itDeviceView = permissionRepository.findByCode("IT_DEVICE_VIEW")
+            .orElseGet(() -> {
+                Permission permission = new Permission();
+                permission.setCode("IT_DEVICE_VIEW");
+                permission.setDescription("View IT device inventory");
+                permission.setModule("IT Management");
+                return permissionRepository.save(permission);
+            });
 
         Role r = new Role();
         r.setName("MONITORING_VIEWER");
         r.setLabel("Monitoring Viewer");
-        r.setPermissions(Set.of(p, itManagementAccess));
-        r.setPermissionScopes(Set.of(scope(r, p), scope(r, itManagementAccess)));
+        r.setPermissions(Set.of(p, itManagementAccess, itDeviceView));
+        r.setPermissionScopes(Set.of(scope(r, p), scope(r, itManagementAccess), scope(r, itDeviceView)));
         r = roleRepository.save(r);
 
         // Users

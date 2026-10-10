@@ -11,6 +11,7 @@ import com.haodaone.user.entity.User;
 import com.haodaone.user.entity.UserPermissionGrant;
 import com.haodaone.user.repository.UserPermissionGrantRepository;
 import com.haodaone.user.repository.UserRepository;
+import com.haodaone.user.security.PermissionMetadataRegistry;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -149,6 +150,8 @@ public class AuthorizationService {
     public boolean canDelegatePermission(String permissionCode, PermissionScope requestedScope, Long recipientUserId) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (requestedScope == null || requestedScope == PermissionScope.CUSTOM
+                || !PermissionMetadataRegistry.isDelegable(permissionCode)
+                || PermissionMetadataRegistry.isPlatformOnly(permissionCode)
                 || authentication == null || !authentication.isAuthenticated() || !isAccountActive(authentication)
                 || !hasAuthority(authentication, "USER_PERMISSION_GRANT")
                 || !canManageUserPermissionGrants()) return false;
@@ -171,6 +174,30 @@ public class AuthorizationService {
                 || !isEmployeeInTenant(recipientEmployee, tenantId)) return false;
         return requestedScopeIsWithinGrantorScope(
                 requestedScope, grantorScopes, grantorEmployee, recipientEmployee, tenantId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean canAssignPermissionToRole(String permissionCode, PermissionScope requestedScope) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Long tenantId = TenantContext.getCurrentTenant();
+        if (requestedScope == null || requestedScope == PermissionScope.CUSTOM
+                || authentication == null || !authentication.isAuthenticated() || !isAccountActive(authentication)
+                || tenantId == null) {
+            return false;
+        }
+        if (isSuperAdmin(authentication)) return true;
+        if (!PermissionMetadataRegistry.isDelegable(permissionCode)
+                || PermissionMetadataRegistry.isPlatformOnly(permissionCode)
+                || !hasOrganizationScope("ROLE_MANAGE")) {
+            return false;
+        }
+        if (PermissionMetadataRegistry.requiresOrganizationScope(permissionCode)
+                && requestedScope != PermissionScope.ORGANIZATION) {
+            return false;
+        }
+        Set<PermissionScope> actorScopes = getScopes(permissionCode);
+        if (requestedScope == PermissionScope.SELF) return !actorScopes.isEmpty();
+        return actorScopes.contains(PermissionScope.ORGANIZATION);
     }
 
     /**

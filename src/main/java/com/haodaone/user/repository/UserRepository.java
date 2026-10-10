@@ -31,4 +31,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByIdAndCompanyIdAndDeletedFalse(Long id, Long companyId);
 
     Optional<User> findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(String email, Long companyId);
+
+    long countByRoles_IdAndDeletedFalse(Long roleId);
+
+    long countByRoles_IdAndCompany_IdAndDeletedFalse(Long roleId, Long companyId);
 }

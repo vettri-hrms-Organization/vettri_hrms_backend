@@ -16,6 +16,7 @@ import com.haodaone.user.entity.UserPermissionGrant;
 import com.haodaone.user.repository.PermissionRepository;
 import com.haodaone.user.repository.UserPermissionGrantRepository;
 import com.haodaone.user.repository.UserRepository;
+import com.haodaone.user.security.PermissionMetadataRegistry;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -30,13 +31,6 @@ import java.util.Set;
 
 @Service
 public class UserPermissionGrantService {
-
-    private static final Set<String> ORGANIZATION_ONLY_PERMISSIONS = Set.of(
-            "USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
-            "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
-            "EMPLOYEE_IMPORT", "DEVICE_MANAGE", "ATTENDANCE_MANAGE", "LEAVE_MANAGE",
-            "REQUIREMENT_VIEW", "REQUIREMENT_MANAGE", "AUDIT_VIEW", "REPORTS_VIEW",
-            "IT_MANAGEMENT_ACCESS", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE");
 
     private final UserPermissionGrantRepository grantRepository;
     private final UserRepository userRepository;
@@ -88,7 +82,8 @@ public class UserPermissionGrantService {
         if (scope == PermissionScope.CUSTOM) {
             throw new BadRequestException("CUSTOM scope cannot be granted until custom targets are supported.");
         }
-        if (ORGANIZATION_ONLY_PERMISSIONS.contains(permissionCode) && scope != PermissionScope.ORGANIZATION) {
+        if (PermissionMetadataRegistry.requiresOrganizationScope(permissionCode)
+                && scope != PermissionScope.ORGANIZATION) {
             throw new BadRequestException(permissionCode + " requires Company scope.");
         }
         Permission permission = permissionRepository.findByCode(permissionCode)

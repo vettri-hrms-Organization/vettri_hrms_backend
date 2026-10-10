@@ -3,6 +3,8 @@ package com.haodaone.user.service;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.company.repository.CompanyRepository;
+import com.haodaone.security.AuthorizationService;
+import com.haodaone.user.repository.UserRepository;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.user.dto.CreateRoleRequest;
 import com.haodaone.user.entity.Permission;
@@ -27,7 +29,9 @@ class RoleServiceReservedRoleTest {
             roleRepository,
             permissionRepository,
             mock(AuditLogService.class),
-            mock(CompanyRepository.class));
+            mock(CompanyRepository.class),
+            mock(AuthorizationService.class),
+            mock(UserRepository.class));
 
     @AfterEach
     void cleanup() {

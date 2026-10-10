@@ -11,6 +11,8 @@ import com.haodaone.user.repository.RoleRepository;
 import com.haodaone.user.repository.UserRepository;
 import com.haodaone.employee.entity.Employee;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.security.AuthorizationService;
+import com.haodaone.user.repository.UserPermissionGrantRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -31,27 +33,38 @@ public class UserService {
     private final AuditLogService auditLogService;
     private final com.haodaone.company.repository.CompanyRepository companyRepository;
     private final EmployeeRepository employeeRepository;
+    private final AuthorizationService authorizationService;
+    private final UserPermissionGrantRepository permissionGrantRepository;
 
     public UserService(UserRepository userRepository, RoleRepository roleRepository,
                         PasswordEncoder passwordEncoder, AuditLogService auditLogService, com.haodaone.company.repository.CompanyRepository companyRepository,
-                        EmployeeRepository employeeRepository) {
+                        EmployeeRepository employeeRepository, AuthorizationService authorizationService,
+                        UserPermissionGrantRepository permissionGrantRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
         this.companyRepository = companyRepository;
         this.employeeRepository = employeeRepository;
+        this.authorizationService = authorizationService;
+        this.permissionGrantRepository = permissionGrantRepository;
     }
 
     public List<UserDTO> listAll() {
         Long currentTenant = requiredTenant();
-        return userRepository.findAllByCompanyIdAndDeletedFalse(currentTenant).stream().map(UserDTO::from).toList();
+        var grantsByUser = permissionGrantRepository
+                .findAllByCompany_IdAndRevokedAtIsNullAndDeletedFalse(currentTenant).stream()
+                .collect(java.util.stream.Collectors.groupingBy(grant -> grant.getUser().getId()));
+        return userRepository.findAllByCompanyIdAndDeletedFalse(currentTenant).stream()
+                .map(user -> UserDTO.from(user, grantsByUser.getOrDefault(user.getId(), List.of())))
+                .toList();
     }
 
     public UserDTO getById(Long id) {
         Long companyId = requiredTenant();
-        return UserDTO.from(userRepository.findByIdAndCompanyIdAndDeletedFalse(id, companyId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id)));
+        User user = userRepository.findByIdAndCompanyIdAndDeletedFalse(id, companyId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
+        return toDTO(user);
     }
 
     @Transactional
@@ -95,7 +108,7 @@ public class UserService {
                     });
         }
         auditLogService.log("User", saved.getId(), "CREATE", "Created user '" + saved.getUsername() + "' with roles " + requestedRoleNames);
-        return UserDTO.from(saved);
+        return toDTO(saved);
     }
 
     @Transactional
@@ -108,7 +121,7 @@ public class UserService {
             auditLogService.log("User", saved.getId(), active ? "ACTIVATE" : "DEACTIVATE",
                     "active: " + wasActive + " -> " + active);
         }
-        return UserDTO.from(saved);
+        return toDTO(saved);
     }
 
     @Transactional
@@ -136,7 +149,7 @@ public class UserService {
         user.setRoles(roles);
         User saved = userRepository.save(user);
         auditLogService.log("User", saved.getId(), "UPDATE", "Roles set to " + roleNames);
-        return UserDTO.from(saved);
+        return toDTO(saved);
     }
 
     private User findActiveOrThrow(Long id) {
@@ -157,11 +170,15 @@ public class UserService {
         return tenant;
     }
 
-    private void validateRequestedRoles(Set<String> roleNames, Set<String> currentRoleNames) {
-        if (roleNames == null || roleNames.isEmpty()) {
-            return;
-        }
+    private UserDTO toDTO(User user) {
+        Long companyId = user.getCompany() == null ? null : user.getCompany().getId();
+        var grants = companyId == null ? List.<com.haodaone.user.entity.UserPermissionGrant>of()
+                : permissionGrantRepository.findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(
+                        companyId, user.getId());
+        return UserDTO.from(user, grants);
+    }
 
+    private void validateRequestedRoles(Set<String> roleNames, Set<String> currentRoleNames) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null) {
             throw new AccessDeniedException("You are not authenticated.");
@@ -169,8 +186,14 @@ public class UserService {
 
         boolean isSuperAdmin = authentication.getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_SUPER_ADMIN".equals(authority.getAuthority()) || "SUPER_ADMIN".equals(authority.getAuthority()));
-        boolean isCompanyAdmin = authentication.getAuthorities().stream()
-                .anyMatch(authority -> "ROLE_COMPANY_ADMIN".equals(authority.getAuthority()) || "COMPANY_ADMIN".equals(authority.getAuthority()));
+        boolean canAssignRoles = authorizationService.hasOrganizationScope("ROLE_ASSIGN")
+                || authorizationService.hasOrganizationScope("USER_MANAGE");
+        if (!canAssignRoles) {
+            throw new AccessDeniedException("You don't have organization-scoped permission to assign roles.");
+        }
+        if (roleNames == null) {
+            throw new BadRequestException("Role names are required.");
+        }
 
         Set<String> requested = roleNames.stream().map(String::trim).filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.toSet());
 
@@ -178,23 +201,6 @@ public class UserService {
             throw new AccessDeniedException("Only a Super Admin can assign the platform Super Admin role.");
         }
 
-        if (requested.contains("COMPANY_ADMIN") && !isSuperAdmin && !currentRoleNames.contains("COMPANY_ADMIN")) {
-            throw new AccessDeniedException("Only a Super Admin can assign Company Admin roles.");
-        }
-
-        if (!isSuperAdmin && !isCompanyAdmin) {
-            throw new AccessDeniedException("You don't have permission to manage this user's access.");
-        }
-
-        if (isCompanyAdmin && !isSuperAdmin) {
-            Set<String> newlyAssignedForbiddenRoles = requested.stream()
-                    .filter(Set.of("SUPER_ADMIN", "COMPANY_ADMIN")::contains)
-                    .filter(roleName -> !currentRoleNames.contains(roleName))
-                    .collect(java.util.stream.Collectors.toSet());
-            if (!newlyAssignedForbiddenRoles.isEmpty()) {
-                throw new AccessDeniedException("Company Admins cannot assign platform-level administrator roles.");
-            }
-        }
     }
 
     private java.util.Optional<Role> findRoleForTenant(String roleName, Long companyId) {

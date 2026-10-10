@@ -14,6 +14,8 @@ public interface UserPermissionGrantRepository extends JpaRepository<UserPermiss
     List<UserPermissionGrant> findAllByCompany_IdAndUser_IdAndRevokedAtIsNullAndDeletedFalse(
             Long companyId, Long userId);
 
+    List<UserPermissionGrant> findAllByCompany_IdAndRevokedAtIsNullAndDeletedFalse(Long companyId);
+
     Optional<UserPermissionGrant> findByIdAndCompany_IdAndUser_IdAndDeletedFalse(
             Long id, Long companyId, Long userId);
 

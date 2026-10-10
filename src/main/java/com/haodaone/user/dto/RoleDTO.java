@@ -16,6 +16,7 @@ public class RoleDTO {
     private List<PermissionDTO> permissions;
     private Long companyId;
     private Map<String, PermissionScope> scopes;
+    private long assignedUserCount;
 
     public static RoleDTO from(Role role) {
         RoleDTO dto = new RoleDTO();
@@ -59,4 +60,6 @@ public class RoleDTO {
 
     public Long getCompanyId() { return companyId; }
     public Map<String, PermissionScope> getScopes() { return scopes; }
+    public long getAssignedUserCount() { return assignedUserCount; }
+    public void setAssignedUserCount(long assignedUserCount) { this.assignedUserCount = assignedUserCount; }
 }

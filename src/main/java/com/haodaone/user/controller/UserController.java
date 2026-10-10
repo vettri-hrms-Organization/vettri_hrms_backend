@@ -57,7 +57,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}/roles")
-    @PreAuthorize("(hasAuthority('ROLE_ASSIGN') or hasAuthority('USER_MANAGE')) and (@companySecurity.canManageUser(#id) or @companySecurity.isSuperAdmin())")
+    @PreAuthorize("(@authorizationService.hasOrganizationScope('ROLE_ASSIGN') or @authorizationService.hasOrganizationScope('USER_MANAGE')) and (@companySecurity.canManageUser(#id) or @companySecurity.isSuperAdmin())")
     public UserDTO assignRoles(@PathVariable Long id, @RequestBody Set<String> roleNames) {
         return userService.assignRoles(id, roleNames);
     }

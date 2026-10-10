@@ -179,12 +179,12 @@ class UserPermissionGrantServiceTest {
     @Test
     void organizationAuthorityAllowsOrganizationGrant() {
         addRolePermission(grantor, "USER_PERMISSION_GRANT", PermissionScope.ORGANIZATION);
-        addRolePermission(grantor, "SOFTWARE_MANAGE", PermissionScope.ORGANIZATION);
-        authenticateWithPermissions("USER_PERMISSION_GRANT", "SOFTWARE_MANAGE");
-        when(permissionRepository.findByCode("SOFTWARE_MANAGE"))
-                .thenReturn(Optional.of(permission("SOFTWARE_MANAGE")));
+        addRolePermission(grantor, "IT_DEVICE_VIEW", PermissionScope.ORGANIZATION);
+        authenticateWithPermissions("USER_PERMISSION_GRANT", "IT_DEVICE_VIEW");
+        when(permissionRepository.findByCode("IT_DEVICE_VIEW"))
+                .thenReturn(Optional.of(permission("IT_DEVICE_VIEW")));
 
-        var created = service.grant(11L, request("SOFTWARE_MANAGE", PermissionScope.ORGANIZATION));
+        var created = service.grant(11L, request("IT_DEVICE_VIEW", PermissionScope.ORGANIZATION));
 
         assertEquals(PermissionScope.ORGANIZATION, created.getScope());
     }

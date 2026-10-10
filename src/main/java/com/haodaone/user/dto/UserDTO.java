@@ -22,6 +22,8 @@ public class UserDTO {
     private LocalDateTime lastLoginAt;
     private List<String> roles;
     private Set<String> permissions;
+    private Set<String> rolePermissions;
+    private Set<String> directPermissions;
     private Long employeeId;
     private java.util.Map<String, Set<PermissionScope>> scopes;
 
@@ -44,6 +46,8 @@ public class UserDTO {
                 .collect(Collectors.toList());
 
         dto.permissions = new HashSet<>();
+        dto.rolePermissions = new HashSet<>();
+        dto.directPermissions = new HashSet<>();
         dto.scopes = new HashMap<>();
         LocalDateTime now = LocalDateTime.now();
         user.getRoles().stream()
@@ -60,6 +64,7 @@ public class UserDTO {
                 .forEach(scope -> {
                     String code = scope.getPermission().getCode();
                     dto.permissions.add(code);
+                    dto.rolePermissions.add(code);
                     dto.scopes.computeIfAbsent(code, ignored -> new HashSet<>()).add(scope.getScope());
                 });
         Long companyId = user.getCompany() == null ? null : user.getCompany().getId();
@@ -73,6 +78,7 @@ public class UserDTO {
                 .forEach(grant -> {
                     String code = grant.getPermission().getCode();
                     dto.permissions.add(code);
+                    dto.directPermissions.add(code);
                     dto.scopes.computeIfAbsent(code, ignored -> new HashSet<>()).add(grant.getScope());
                 });
         return dto;
@@ -113,6 +119,10 @@ public class UserDTO {
     public Set<String> getPermissions() {
         return permissions;
     }
+
+    public Set<String> getRolePermissions() { return rolePermissions; }
+
+    public Set<String> getDirectPermissions() { return directPermissions; }
 
     /** Null for logins with no linked Employee record (see Employee.user javadoc) - not every account is an employee. */
     public Long getEmployeeId() {

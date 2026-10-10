@@ -11,12 +11,12 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/devices/{deviceId}/remote-commands")
-@PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE')")
+@PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.hasOrganizationScope('REMOTE_SUPPORT_MANAGE')")
 public class RemoteCommandController {
     private final RemoteCommandService service;
     public RemoteCommandController(RemoteCommandService service) { this.service = service; }
-    @PostMapping @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#deviceId) or @companySecurity.isSuperAdmin())") public ResponseEntity<RemoteCommandDTO.Response> create(@PathVariable Long deviceId, @Valid @RequestBody RemoteCommandDTO.CreateRequest request, @AuthenticationPrincipal CustomUserPrincipal principal) { return ResponseEntity.status(201).body(service.create(deviceId, request, principal.getId())); }
-    @GetMapping @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#deviceId) or @companySecurity.isSuperAdmin())") public java.util.List<RemoteCommandDTO.Response> list(@PathVariable Long deviceId) { return service.list(deviceId); }
-    @GetMapping("/{id}") @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#deviceId) or @companySecurity.isSuperAdmin())") public RemoteCommandDTO.Response get(@PathVariable Long deviceId, @PathVariable Long id) { return service.get(deviceId, id); }
-    @PostMapping("/{id}/cancel") @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and hasAuthority('MONITORING_MANAGE') and (@companySecurity.canManageDevice(#deviceId) or @companySecurity.isSuperAdmin())") public RemoteCommandDTO.Response cancel(@PathVariable Long deviceId, @PathVariable Long id) { return service.cancel(deviceId, id); }
+    @PostMapping @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @companySecurity.canManageRemoteSupportDevice(#deviceId)") public ResponseEntity<RemoteCommandDTO.Response> create(@PathVariable Long deviceId, @Valid @RequestBody RemoteCommandDTO.CreateRequest request, @AuthenticationPrincipal CustomUserPrincipal principal) { return ResponseEntity.status(201).body(service.create(deviceId, request, principal.getId())); }
+    @GetMapping @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @companySecurity.canManageRemoteSupportDevice(#deviceId)") public java.util.List<RemoteCommandDTO.Response> list(@PathVariable Long deviceId) { return service.list(deviceId); }
+    @GetMapping("/{id}") @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @companySecurity.canManageRemoteSupportDevice(#deviceId)") public RemoteCommandDTO.Response get(@PathVariable Long deviceId, @PathVariable Long id) { return service.get(deviceId, id); }
+    @PostMapping("/{id}/cancel") @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @companySecurity.canManageRemoteSupportDevice(#deviceId)") public RemoteCommandDTO.Response cancel(@PathVariable Long deviceId, @PathVariable Long id) { return service.cancel(deviceId, id); }
 }
