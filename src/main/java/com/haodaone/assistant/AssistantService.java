@@ -136,9 +136,6 @@ public class AssistantService {
                         "ERROR", List.of(), false);
             }
         }
-        if (priorPending != null) {
-            conversationStore.clearPendingLeave(conversationId, context.companyId(), context.userId());
-        }
 
         if (isDeviceMappingGuidanceRequest(request.message())) {
             AssistantToolRegistry.DeviceMappingGuidance guidance = toolRegistry.deviceMappingGuidance(context);

@@ -496,7 +496,7 @@ class AssistantServiceTest {
 
         assertThat(response.message()).contains("updated");
         assertThat(response.requiresConfirmation()).isTrue();
-        verify(conversationStore).clearPendingLeave(conversationId, 42L, 7L);
+        verify(conversationStore, never()).clearPendingLeave(conversationId, 42L, 7L);
         verify(toolRegistry, never()).submitConfirmedLeave(any(), any());
     }
 
