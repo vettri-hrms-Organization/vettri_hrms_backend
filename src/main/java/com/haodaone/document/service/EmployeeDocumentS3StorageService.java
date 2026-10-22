@@ -136,7 +136,8 @@ public class EmployeeDocumentS3StorageService {
         try {
             s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucketName).key(key).build());
         } catch (SdkException e) {
-            log.warn("Could not delete S3 object '{}': {}", key, e.getMessage(), e);
+            log.error("S3 delete failed for key '{}': {}", key, e.getMessage(), e);
+            throw new DocumentStorageException("Document storage is temporarily unavailable. Please try again.");
         }
     }
 

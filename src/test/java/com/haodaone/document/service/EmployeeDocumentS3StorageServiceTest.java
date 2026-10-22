@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import org.mockito.ArgumentCaptor;
 
@@ -63,6 +64,17 @@ class EmployeeDocumentS3StorageServiceTest {
 
         assertEquals("Document storage is temporarily unavailable. Please try again.", exception.getMessage());
         assertNull(exception.getCause());
+    }
+
+    @Test
+    void mapsS3DeleteFailureToSafeStorageException() {
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class)))
+                .thenThrow(S3Exception.builder().message("AccessDenied: internal details").statusCode(403).build());
+
+        DocumentStorageException exception = assertThrows(DocumentStorageException.class,
+                () -> storageService.delete("employee-documents/1/4268/AADHAAR/document.pdf"));
+
+        assertEquals("Document storage is temporarily unavailable. Please try again.", exception.getMessage());
     }
 
     @Test

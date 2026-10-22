@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 @Configuration
@@ -40,6 +41,9 @@ public class ProductionSecurityGuard {
 
         if (jwtSecret == null || jwtSecret.isBlank() || "local-dev-only-secret-change-before-deploying-anywhere-real-1234567890".equals(jwtSecret)) {
             throw new IllegalStateException("Production startup requires a unique APP/JWT secret; the default development JWT secret is not allowed.");
+        }
+        if (jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("Production startup requires an APP/JWT secret of at least 32 UTF-8 bytes.");
         }
         if (seedAdminPassword == null || seedAdminPassword.isBlank() || "ChangeMe123!".equals(seedAdminPassword)) {
             throw new IllegalStateException("Production startup requires a unique APP_SEED_ADMIN_PASSWORD; the development seed password is not allowed.");

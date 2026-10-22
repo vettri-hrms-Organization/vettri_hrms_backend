@@ -275,7 +275,6 @@ public class DataSeeder implements CommandLineRunner {
         log.warn("==================================================================");
         log.warn("Seeded default super admin account - CHANGE THIS PASSWORD IMMEDIATELY");
         log.warn("  username: {}", adminUsername);
-        log.warn("  password: {}", adminPassword);
         log.warn("Override via APP_SEED_ADMIN_USERNAME / APP_SEED_ADMIN_PASSWORD env vars before deploying anywhere real.");
         log.warn("==================================================================");
     }
