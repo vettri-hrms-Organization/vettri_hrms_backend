@@ -1,6 +1,7 @@
 package com.haodaone.monitoring.dto;
 
 import com.haodaone.monitoring.entity.MonitoredDevice;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
 
 import java.time.LocalDate;
@@ -34,6 +35,9 @@ public class MonitoredDeviceDTO {
     private boolean online;
     private boolean active;
     private boolean monitoringPaused;
+    private JsonNode hardwareInventory;
+    private String inventoryStatus;
+    private LocalDateTime lastInventoryScanAt;
 
     public static MonitoredDeviceDTO from(MonitoredDevice d) {
         MonitoredDeviceDTO dto = new MonitoredDeviceDTO();
@@ -58,6 +62,9 @@ public class MonitoredDeviceDTO {
         dto.online = d.isOnline();
         dto.active = d.isActive();
         dto.monitoringPaused = d.isMonitoringPaused();
+        dto.hardwareInventory = d.getHardwareInventory();
+        dto.inventoryStatus = d.getInventoryStatus();
+        dto.lastInventoryScanAt = d.getLastInventoryScanAt();
         if (d.getEmployee() != null) {
             dto.employeeId = d.getEmployee().getId();
             dto.employeeCode = d.getEmployee().getEmployeeCode();
@@ -170,6 +177,18 @@ public class MonitoredDeviceDTO {
 
     public boolean isMonitoringPaused() {
         return monitoringPaused;
+    }
+
+    public JsonNode getHardwareInventory() {
+        return hardwareInventory;
+    }
+
+    public String getInventoryStatus() {
+        return inventoryStatus;
+    }
+
+    public LocalDateTime getLastInventoryScanAt() {
+        return lastInventoryScanAt;
     }
 
     /** Admin request to enroll a new device ahead of installing the agent on it. */

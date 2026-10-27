@@ -2,6 +2,9 @@ package com.haodaone.monitoring.entity;
 
 import com.haodaone.common.entity.BaseEntity;
 import com.haodaone.employee.entity.Employee;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -108,6 +111,16 @@ public class MonitoredDevice extends BaseEntity {
     /** Mirrors RemoteAgentDirective.PauseMonitoring - lets an admin pause activity tracking on a device without uninstalling the agent (e.g. a shared kiosk machine). */
     @Column(name = "monitoring_paused", nullable = false)
     private boolean monitoringPaused = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "hardware_inventory", columnDefinition = "jsonb")
+    private JsonNode hardwareInventory;
+
+    @Column(name = "inventory_status", nullable = false, length = 20)
+    private String inventoryStatus = "NOT_SCANNED";
+
+    @Column(name = "last_inventory_scan_at")
+    private LocalDateTime lastInventoryScanAt;
 
     public String getDeviceId() {
         return deviceId;
@@ -299,6 +312,30 @@ public class MonitoredDevice extends BaseEntity {
 
     public void setMonitoringPaused(boolean monitoringPaused) {
         this.monitoringPaused = monitoringPaused;
+    }
+
+    public JsonNode getHardwareInventory() {
+        return hardwareInventory;
+    }
+
+    public void setHardwareInventory(JsonNode hardwareInventory) {
+        this.hardwareInventory = hardwareInventory;
+    }
+
+    public String getInventoryStatus() {
+        return inventoryStatus;
+    }
+
+    public void setInventoryStatus(String inventoryStatus) {
+        this.inventoryStatus = inventoryStatus;
+    }
+
+    public LocalDateTime getLastInventoryScanAt() {
+        return lastInventoryScanAt;
+    }
+
+    public void setLastInventoryScanAt(LocalDateTime lastInventoryScanAt) {
+        this.lastInventoryScanAt = lastInventoryScanAt;
     }
 
     /** A device that hasn't heartbeat in 3+ missed intervals (default 60s each => 3 min) is shown offline in the dashboard, same threshold style as attendance.entity.Device#isOnline. */

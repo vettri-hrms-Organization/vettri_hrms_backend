@@ -16,6 +16,12 @@ public interface MonitoredDeviceRepository extends JpaRepository<MonitoredDevice
 
     List<MonitoredDevice> findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(Long companyId);
 
+    List<MonitoredDevice> findAllByCompany_IdAndEmployee_IdAndActiveTrueAndDeletedFalseOrderByDeviceNameAsc(
+            Long companyId, Long employeeId);
+
+    Optional<MonitoredDevice> findByIdAndCompany_IdAndEmployee_IdAndActiveTrueAndDeletedFalse(
+            Long id, Long companyId, Long employeeId);
+
     @Query("select d from MonitoredDevice d where d.company.id = :companyId and d.deleted = false and d.employee.id in :employeeIds order by d.deviceName asc")
     List<MonitoredDevice> findAllScoped(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds);
 

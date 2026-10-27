@@ -3,6 +3,7 @@ package com.haodaone.monitoring.controller;
 import com.haodaone.monitoring.dto.*;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.service.AgentIngestService;
+import com.haodaone.monitoring.service.DeviceInventoryService;
 import com.haodaone.software.dto.AgentSoftwareJobDTO;
 import com.haodaone.software.dto.AgentSoftwareStatusRequest;
 import com.haodaone.software.service.SoftwareManagementService;
@@ -15,7 +16,9 @@ import com.haodaone.remotesupport.dto.RemoteSupportDTO;
 import com.haodaone.remotesupport.service.RemoteSupportService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -42,6 +45,7 @@ public class AgentController {
     private final RemoteDesktopSignalingService remoteDesktopSignalingService;
     private final RemoteSupportService remoteSupportService;
     private final com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService;
+    private final DeviceInventoryService deviceInventoryService;
 
     public AgentController(AgentIngestService agentIngestService,
                            SoftwareManagementService softwareManagementService,
@@ -49,7 +53,8 @@ public class AgentController {
                            RemoteDesktopService remoteDesktopService,
                            RemoteDesktopSignalingService remoteDesktopSignalingService,
                            RemoteSupportService remoteSupportService,
-                           com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService) {
+                           com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService,
+                           DeviceInventoryService deviceInventoryService) {
         this.agentIngestService = agentIngestService;
         this.softwareManagementService = softwareManagementService;
         this.remoteCommandService = remoteCommandService;
@@ -57,6 +62,7 @@ public class AgentController {
         this.remoteDesktopSignalingService = remoteDesktopSignalingService;
         this.remoteSupportService = remoteSupportService;
         this.deviceOnboardingService = deviceOnboardingService;
+        this.deviceInventoryService = deviceInventoryService;
     }
 
     @PostMapping("/enroll")
@@ -66,6 +72,23 @@ public class AgentController {
         var result = deviceOnboardingService.completeAgentEnrollment(
                 request.getEnrollmentToken(), request.getDevice(), servletRequest.getRemoteAddr());
         return AgentEnvelope.ok(result);
+    }
+
+    @GetMapping("/inventory/jobs")
+    @PreAuthorize("hasAuthority('AGENT_DEVICE')")
+    public AgentEnvelope<java.util.List<InventoryScanJobDTO>> inventoryJobs(
+            @AuthenticationPrincipal MonitoredDevice device) {
+        return AgentEnvelope.ok(deviceInventoryService.pollAgent(device));
+    }
+
+    @PostMapping("/inventory/{requestId}")
+    @PreAuthorize("hasAuthority('AGENT_DEVICE')")
+    public AgentEnvelope<com.haodaone.software.dto.AgentAck> submitInventory(
+            @AuthenticationPrincipal MonitoredDevice device,
+            @PathVariable UUID requestId,
+            @Valid @RequestBody InventorySubmissionRequest submission) {
+        deviceInventoryService.submitAgentInventory(device, requestId, submission);
+        return AgentEnvelope.ok(new com.haodaone.software.dto.AgentAck(true, "Inventory scan recorded"));
     }
 
     @PostMapping("/heartbeat")
