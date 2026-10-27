@@ -1,8 +1,10 @@
 package com.haodaone.monitoring.repository;
 
 import com.haodaone.monitoring.entity.MonitoredDevice;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,6 +30,15 @@ public interface MonitoredDeviceRepository extends JpaRepository<MonitoredDevice
     Optional<MonitoredDevice> findByIdAndDeletedFalse(Long id);
 
     Optional<MonitoredDevice> findByIdAndCompany_IdAndDeletedFalse(Long id, Long companyId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from MonitoredDevice d where d.id = :id and d.company.id = :companyId and d.deleted = false")
+    Optional<MonitoredDevice> findByIdAndCompany_IdAndDeletedFalseForUpdate(
+            @Param("id") Long id, @Param("companyId") Long companyId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from MonitoredDevice d where d.id = :id and d.deleted = false")
+    Optional<MonitoredDevice> findByIdAndDeletedFalseForUpdate(@Param("id") Long id);
 
     boolean existsByIdAndDeletedFalse(Long id);
 

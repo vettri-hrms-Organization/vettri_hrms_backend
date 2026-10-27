@@ -6,6 +6,7 @@ import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.employee.repository.EmployeeRepository;
 import com.haodaone.monitoring.dto.HardwareInventoryPayload;
 import com.haodaone.monitoring.dto.InventorySubmissionRequest;
+import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.entity.DeviceInventoryScan;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.DeviceEnrollmentRepository;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,6 +40,7 @@ class DeviceInventoryServiceTest {
 
     @BeforeEach
     void setUp() {
+        com.haodaone.tenant.TenantContext.clear();
         service = new DeviceInventoryService(
                 enrollmentRepository, scanRepository, deviceRepository,
                 employeeRepository, objectMapper, auditLogService);
@@ -118,5 +121,63 @@ class DeviceInventoryServiceTest {
                 () -> service.submitAgentInventory(device, requestId, submission));
 
         verify(deviceRepository, never()).save(any());
+    }
+
+    @Test
+    void queuesAdminScanForOfflineDeviceAndReturnsQueuedStatus() {
+        when(deviceRepository.findByIdAndDeletedFalseForUpdate(21L)).thenReturn(Optional.of(device));
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(21L))
+                .thenReturn(Optional.empty());
+        when(scanRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MonitoredDeviceDTO result = service.requestAdminScan(21L);
+
+        assertEquals("PENDING", result.getInventoryStatus());
+        assertEquals("PENDING", device.getInventoryStatus());
+        var savedScan = org.mockito.ArgumentCaptor.forClass(DeviceInventoryScan.class);
+        verify(scanRepository).save(savedScan.capture());
+        assertTrue(savedScan.getValue().getExpiresAt()
+                .isAfter(LocalDateTime.now(ZoneOffset.UTC).plusHours(23)));
+        verify(auditLogService).log("MonitoredDevice", 21L, "INVENTORY_SCAN_REQUESTED",
+                "Administrator queued a hardware inventory scan");
+    }
+
+    @Test
+    void doesNotQueueDuplicateAdminScanWhileRequestIsPending() {
+        scan.setStatus("PENDING");
+        device.setInventoryStatus("PENDING");
+        when(deviceRepository.findByIdAndDeletedFalseForUpdate(21L)).thenReturn(Optional.of(device));
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(21L))
+                .thenReturn(Optional.of(scan));
+
+        MonitoredDeviceDTO result = service.requestAdminScan(21L);
+
+        assertEquals("PENDING", result.getInventoryStatus());
+        verify(scanRepository, never()).save(any());
+        verify(deviceRepository, never()).save(any());
+    }
+
+    @Test
+    void adminScanLookupIsScopedToCurrentTenant() {
+        com.haodaone.tenant.TenantContext.setCurrentTenant(43L);
+        when(deviceRepository.findByIdAndCompany_IdAndDeletedFalseForUpdate(21L, 43L))
+                .thenReturn(Optional.of(device));
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(21L))
+                .thenReturn(Optional.empty());
+
+        service.requestAdminScan(21L);
+
+        verify(deviceRepository).findByIdAndCompany_IdAndDeletedFalseForUpdate(21L, 43L);
+        verify(deviceRepository, never()).findByIdAndDeletedFalseForUpdate(anyLong());
+    }
+
+    @Test
+    void rejectsAdminScanForInactiveDevice() {
+        device.setActive(false);
+        when(deviceRepository.findByIdAndDeletedFalseForUpdate(21L)).thenReturn(Optional.of(device));
+
+        assertThrows(BadRequestException.class, () -> service.requestAdminScan(21L));
+
+        verify(scanRepository, never()).save(any());
     }
 }

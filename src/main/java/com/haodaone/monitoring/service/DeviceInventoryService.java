@@ -11,6 +11,7 @@ import com.haodaone.monitoring.dto.EmployeeTrustedDeviceDTO;
 import com.haodaone.monitoring.dto.HardwareInventoryPayload;
 import com.haodaone.monitoring.dto.InventoryScanJobDTO;
 import com.haodaone.monitoring.dto.InventorySubmissionRequest;
+import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.entity.DeviceEnrollment;
 import com.haodaone.monitoring.entity.DeviceInventoryScan;
 import com.haodaone.monitoring.entity.MonitoredDevice;
@@ -35,6 +36,7 @@ import java.util.UUID;
 public class DeviceInventoryService {
 
     private static final int SCAN_TIMEOUT_MINUTES = 5;
+    private static final int OFFLINE_QUEUE_TIMEOUT_HOURS = 24;
     private static final int MINIMUM_SCAN_INTERVAL_SECONDS = 30;
 
     private final DeviceEnrollmentRepository enrollmentRepository;
@@ -133,6 +135,41 @@ public class DeviceInventoryService {
     }
 
     @Transactional
+    public MonitoredDeviceDTO requestAdminScan(Long deviceId) {
+        Long companyId = com.haodaone.tenant.TenantContext.getCurrentTenant();
+        MonitoredDevice device = (companyId == null
+                ? deviceRepository.findByIdAndDeletedFalseForUpdate(deviceId)
+                : deviceRepository.findByIdAndCompany_IdAndDeletedFalseForUpdate(deviceId, companyId))
+                .orElseThrow(() -> new com.haodaone.common.exception.ResourceNotFoundException(
+                        "Monitored device not found: " + deviceId));
+        if (!device.isActive()) {
+            throw new BadRequestException("Hardware inventory cannot be requested for an inactive device.");
+        }
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        DeviceInventoryScan latest = latestScan(device);
+        expireIfNeeded(device, latest, now);
+        if (latest != null && ("PENDING".equals(latest.getStatus()) || "SCANNING".equals(latest.getStatus()))) {
+            return MonitoredDeviceDTO.from(device);
+        }
+
+        DeviceInventoryScan scan = new DeviceInventoryScan();
+        scan.setDevice(device);
+        scan.setRequestId(UUID.randomUUID());
+        scan.setStatus("PENDING");
+        scan.setRequestedAt(now);
+        scan.setExpiresAt(now.plusMinutes(device.isOnline()
+                ? SCAN_TIMEOUT_MINUTES
+                : OFFLINE_QUEUE_TIMEOUT_HOURS * 60L));
+        scanRepository.save(scan);
+        device.setInventoryStatus("PENDING");
+        deviceRepository.save(device);
+        auditLogService.log("MonitoredDevice", device.getId(), "INVENTORY_SCAN_REQUESTED",
+                "Administrator queued a hardware inventory scan");
+        return MonitoredDeviceDTO.from(device);
+    }
+
+    @Transactional
     public List<InventoryScanJobDTO> pollAgent(MonitoredDevice authenticatedDevice) {
         MonitoredDevice device = deviceRepository.findByIdAndDeletedFalse(authenticatedDevice.getId())
                 .orElseThrow(() -> new AccessDeniedException("Authenticated agent device is unavailable."));
@@ -145,6 +182,7 @@ public class DeviceInventoryService {
                         return false;
                     }
                     scan.setStatus("SCANNING");
+                    scan.setExpiresAt(now.plusMinutes(SCAN_TIMEOUT_MINUTES));
                     device.setInventoryStatus("SCANNING");
                     return true;
                 })

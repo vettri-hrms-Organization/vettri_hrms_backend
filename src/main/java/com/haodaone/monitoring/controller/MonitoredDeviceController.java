@@ -7,6 +7,7 @@ import com.haodaone.employee.service.EmployeeService;
 import com.haodaone.monitoring.dto.DeviceEnrollmentDTO;
 import com.haodaone.monitoring.dto.DeviceEnrollmentRequest;
 import com.haodaone.monitoring.service.DeviceOnboardingService;
+import com.haodaone.monitoring.service.DeviceInventoryService;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -24,13 +25,16 @@ public class MonitoredDeviceController {
     private final DeviceEnrollmentService deviceEnrollmentService;
     private final EmployeeService employeeService;
     private final DeviceOnboardingService onboardingService;
+    private final DeviceInventoryService deviceInventoryService;
 
     public MonitoredDeviceController(DeviceEnrollmentService deviceEnrollmentService,
                                      EmployeeService employeeService,
-                                     DeviceOnboardingService onboardingService) {
+                                     DeviceOnboardingService onboardingService,
+                                     DeviceInventoryService deviceInventoryService) {
         this.deviceEnrollmentService = deviceEnrollmentService;
         this.employeeService = employeeService;
         this.onboardingService = onboardingService;
+        this.deviceInventoryService = deviceInventoryService;
     }
 
     @GetMapping("/employee-options")
@@ -49,6 +53,12 @@ public class MonitoredDeviceController {
     @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('IT_DEVICE_VIEW', null, null) and (@companySecurity.canViewDevice(#id) or @companySecurity.isSuperAdmin())")
     public MonitoredDeviceDTO get(@PathVariable Long id) {
         return deviceEnrollmentService.get(id);
+    }
+
+    @PostMapping("/{id}/inventory-scan")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('MONITORING_MANAGE', null, null) and (@companySecurity.canManageDevice(#id) or @companySecurity.isSuperAdmin())")
+    public MonitoredDeviceDTO requestInventoryScan(@PathVariable Long id) {
+        return deviceInventoryService.requestAdminScan(id);
     }
 
     @PostMapping
