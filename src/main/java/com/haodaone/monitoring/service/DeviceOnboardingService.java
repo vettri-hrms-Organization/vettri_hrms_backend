@@ -189,39 +189,58 @@ public class DeviceOnboardingService {
         validateDeviceInfo(info);
         Long companyId = enrollment.getCompany().getId();
         String deviceId = info.getDeviceId().trim();
-        if (deviceRepository.findByDeviceIdAndDeletedFalse(deviceId).isPresent()) {
-            throw new ConflictException("This computer is already registered. Contact your IT administrator.");
-        }
-
-        long currentCount = deviceRepository.countByCompany_IdAndDeletedFalse(companyId);
-        subscriptionService.ensureDeviceLimitNotExceeded(companyId, currentCount);
-
         String permanentToken = newEnrollmentToken();
-        MonitoredDevice device = new MonitoredDevice();
-        device.setDeviceId(deviceId);
-        device.setDeviceName(safeDeviceName(info.getDeviceName(), enrollment.getEmployee().getFullName()));
-        device.setHostname(safeOptional(info.getHostname(), 150));
-        device.setMacAddress(safeOptional(info.getMacAddress(), 50));
-        device.setMachineGuid(safeOptional(info.getMachineGuid(), 100));
-        device.setOperatingSystem("Windows");
-        device.setOsVersion(safeOptional(info.getOsVersion(), 50));
-        device.setAgentVersion(safeOptional(info.getAgentVersion(), 50));
-        device.setIpAddress(safeOptional(remoteIp, 50));
-        device.setLastIpAddress(safeOptional(remoteIp, 50));
-        device.setCompany(enrollment.getCompany());
-        device.setEmployee(enrollment.getEmployee());
-        device.setAssignedDate(now.toLocalDate());
-        device.setAgentTokenHash(hashAgentToken(permanentToken));
-        device.setStatus("OFFLINE");
-        device.setActive(true);
-        MonitoredDevice savedDevice = deviceRepository.save(device);
+        var existingDevice = deviceRepository.findByDeviceIdAndDeletedFalse(deviceId);
+        boolean credentialRotated = existingDevice.isPresent();
+        MonitoredDevice savedDevice;
+        if (existingDevice.isPresent()) {
+            MonitoredDevice device = existingDevice.get();
+            if (!device.isActive()
+                    || device.getCompany() == null
+                    || !companyId.equals(device.getCompany().getId())
+                    || device.getEmployee() == null
+                    || !enrollment.getEmployee().getId().equals(device.getEmployee().getId())) {
+                throw new ConflictException("This computer is already registered to another employee or company.");
+            }
+
+            // A fresh, admin-issued enrollment link can restore an existing device
+            // after its local credential was lost during an agent reinstall.
+            // Keep the existing record and its inventory/assignment; only rotate
+            // the device credential so the next authenticated heartbeat can resume.
+            device.setAgentTokenHash(hashAgentToken(permanentToken));
+            savedDevice = deviceRepository.save(device);
+        } else {
+            long currentCount = deviceRepository.countByCompany_IdAndDeletedFalse(companyId);
+            subscriptionService.ensureDeviceLimitNotExceeded(companyId, currentCount);
+
+            MonitoredDevice device = new MonitoredDevice();
+            device.setDeviceId(deviceId);
+            device.setDeviceName(safeDeviceName(info.getDeviceName(), enrollment.getEmployee().getFullName()));
+            device.setHostname(safeOptional(info.getHostname(), 150));
+            device.setMacAddress(safeOptional(info.getMacAddress(), 50));
+            device.setMachineGuid(safeOptional(info.getMachineGuid(), 100));
+            device.setOperatingSystem("Windows");
+            device.setOsVersion(safeOptional(info.getOsVersion(), 50));
+            device.setAgentVersion(safeOptional(info.getAgentVersion(), 50));
+            device.setIpAddress(safeOptional(remoteIp, 50));
+            device.setLastIpAddress(safeOptional(remoteIp, 50));
+            device.setCompany(enrollment.getCompany());
+            device.setEmployee(enrollment.getEmployee());
+            device.setAssignedDate(now.toLocalDate());
+            device.setAgentTokenHash(hashAgentToken(permanentToken));
+            device.setStatus("OFFLINE");
+            device.setActive(true);
+            savedDevice = deviceRepository.save(device);
+        }
 
         enrollment.setDevice(savedDevice);
         enrollment.setStatus(DeviceEnrollmentStatus.USED);
         enrollment.setUsedAt(now);
         enrollment.setEncryptedToken(null);
-        auditLogService.log("DeviceEnrollment", enrollment.getId(), "USED",
-                "Agent enrolled device " + savedDevice.getId() + " for employee " + enrollment.getEmployee().getId());
+        auditLogService.log("DeviceEnrollment", enrollment.getId(),
+                credentialRotated ? "CREDENTIAL_ROTATED" : "USED",
+                (credentialRotated ? "Rotated agent credential for existing device " : "Agent enrolled device ")
+                        + savedDevice.getId() + " for employee " + enrollment.getEmployee().getId());
         return new AgentEnrollmentResponse(permanentToken);
     }
 

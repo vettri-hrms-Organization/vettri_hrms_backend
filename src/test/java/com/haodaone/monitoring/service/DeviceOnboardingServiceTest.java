@@ -134,6 +134,79 @@ class DeviceOnboardingServiceTest {
         verifyNoInteractions(companyRepository);
     }
 
+    @Test
+    void rotatesCredentialForExistingDeviceOnlyWhenTenantAndEmployeeMatch() {
+        DeviceEnrollmentDTO created = service.create(requestFor(42L));
+        DeviceEnrollment enrollment = captureEnrollment();
+        String rawToken = created.enrollmentUrl().substring(created.enrollmentUrl().lastIndexOf('/') + 1);
+        MonitoredDevice existing = new MonitoredDevice();
+        existing.setDeviceId("machine-1");
+        existing.setCompany(company);
+        existing.setEmployee(employee);
+        existing.setAgentTokenHash("previous-hash");
+        when(enrollmentRepository.findByTokenHashForUpdate(anyString())).thenReturn(Optional.of(enrollment));
+        when(deviceRepository.findByDeviceIdAndDeletedFalse("machine-1")).thenReturn(Optional.of(existing));
+        when(deviceRepository.save(existing)).thenReturn(existing);
+
+        AgentEnrollmentResponse response = service.completeAgentEnrollment(rawToken, windowsDevice(), "192.0.2.10");
+
+        assertNotNull(response.agentToken());
+        assertNotEquals("previous-hash", existing.getAgentTokenHash());
+        assertEquals(DeviceEnrollmentStatus.USED, enrollment.getStatus());
+        assertNull(enrollment.getEncryptedToken());
+        assertSame(existing, enrollment.getDevice());
+        verify(deviceRepository, never()).countByCompany_IdAndDeletedFalse(anyLong());
+        verify(deviceRepository).save(existing);
+        verify(auditLogService).log(eq("DeviceEnrollment"), eq(enrollment.getId()),
+                eq("CREDENTIAL_ROTATED"), contains("existing device"));
+    }
+
+    @Test
+    void refusesToRotateCredentialForDeviceAssignedOutsideEnrollmentScope() {
+        DeviceEnrollmentDTO created = service.create(requestFor(42L));
+        DeviceEnrollment enrollment = captureEnrollment();
+        String rawToken = created.enrollmentUrl().substring(created.enrollmentUrl().lastIndexOf('/') + 1);
+        Employee otherEmployee = new Employee();
+        otherEmployee.setId(99L);
+        MonitoredDevice existing = new MonitoredDevice();
+        existing.setDeviceId("machine-1");
+        existing.setCompany(company);
+        existing.setEmployee(otherEmployee);
+        existing.setAgentTokenHash("previous-hash");
+        when(enrollmentRepository.findByTokenHashForUpdate(anyString())).thenReturn(Optional.of(enrollment));
+        when(deviceRepository.findByDeviceIdAndDeletedFalse("machine-1")).thenReturn(Optional.of(existing));
+
+        assertThrows(ConflictException.class,
+                () -> service.completeAgentEnrollment(rawToken, windowsDevice(), "192.0.2.10"));
+
+        assertEquals("previous-hash", existing.getAgentTokenHash());
+        assertEquals(DeviceEnrollmentStatus.PENDING, enrollment.getStatus());
+        verify(deviceRepository, never()).save(any(MonitoredDevice.class));
+    }
+
+    @Test
+    void refusesToRotateCredentialForDeviceOwnedByAnotherTenant() {
+        DeviceEnrollmentDTO created = service.create(requestFor(42L));
+        DeviceEnrollment enrollment = captureEnrollment();
+        String rawToken = created.enrollmentUrl().substring(created.enrollmentUrl().lastIndexOf('/') + 1);
+        Company otherCompany = new Company();
+        otherCompany.setId(16L);
+        MonitoredDevice existing = new MonitoredDevice();
+        existing.setDeviceId("machine-1");
+        existing.setCompany(otherCompany);
+        existing.setEmployee(employee);
+        existing.setAgentTokenHash("previous-hash");
+        when(enrollmentRepository.findByTokenHashForUpdate(anyString())).thenReturn(Optional.of(enrollment));
+        when(deviceRepository.findByDeviceIdAndDeletedFalse("machine-1")).thenReturn(Optional.of(existing));
+
+        assertThrows(ConflictException.class,
+                () -> service.completeAgentEnrollment(rawToken, windowsDevice(), "192.0.2.10"));
+
+        assertEquals("previous-hash", existing.getAgentTokenHash());
+        assertEquals(DeviceEnrollmentStatus.PENDING, enrollment.getStatus());
+        verify(deviceRepository, never()).save(any(MonitoredDevice.class));
+    }
+
     private DeviceEnrollment captureEnrollment() {
         var captor = org.mockito.ArgumentCaptor.forClass(DeviceEnrollment.class);
         verify(enrollmentRepository).save(captor.capture());
