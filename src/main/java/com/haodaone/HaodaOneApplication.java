@@ -1,7 +1,10 @@
 package com.haodaone;
 
+import com.haodaone.config.ApplicationTimeConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+import java.util.TimeZone;
 
 /**
  * HaodaOne - Enterprise HRMS.
@@ -20,6 +23,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class HaodaOneApplication {
 
     public static void main(String[] args) {
+        // Set the process timezone before Spring and Hibernate initialize.
+        TimeZone.setDefault(TimeZone.getTimeZone(ApplicationTimeConfig.APPLICATION_ZONE));
         SpringApplication.run(HaodaOneApplication.class, args);
     }
 }
