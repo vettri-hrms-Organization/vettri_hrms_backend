@@ -1,5 +1,6 @@
 package com.haodaone.monitoring.controller;
 
+import com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO;
 import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
 import com.haodaone.monitoring.service.DeviceEnrollmentService;
 import com.haodaone.employee.dto.EmployeeOptionDTO;
@@ -10,8 +11,11 @@ import com.haodaone.monitoring.service.DeviceOnboardingService;
 import com.haodaone.monitoring.service.DeviceInventoryService;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -59,6 +63,36 @@ public class MonitoredDeviceController {
     @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('MONITORING_MANAGE', null, null) and (@companySecurity.canManageDevice(#id) or @companySecurity.isSuperAdmin())")
     public MonitoredDeviceDTO requestInventoryScan(@PathVariable Long id) {
         return deviceInventoryService.requestAdminScan(id);
+    }
+
+    @PostMapping("/inventory-scan/bulk")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('MONITORING_MANAGE', null, null)")
+    public BulkInventoryScanSummaryDTO requestBulkInventoryScan() {
+        return deviceInventoryService.requestBulkInventoryScanForCurrentCompany();
+    }
+
+    @GetMapping("/inventory-summary")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('MONITORING_VIEW', null, null)")
+    public BulkInventoryScanSummaryDTO inventorySummary() {
+        return deviceInventoryService.getBulkInventoryScanSummary();
+    }
+
+    @GetMapping("/inventory/export/{format}")
+    @PreAuthorize("@authorizationService.isAllowed('IT_MANAGEMENT_ACCESS', null, null) and @authorizationService.isAllowed('MONITORING_VIEW', null, null)")
+    public ResponseEntity<byte[]> exportInventory(@PathVariable String format) {
+        String normalized = format == null ? "csv" : format.trim().toLowerCase();
+        String extension = "csv".equals(normalized) ? "csv" : "xlsx";
+        byte[] payload = deviceInventoryService.exportInventoryReport(normalized);
+        return ResponseEntity.ok()
+                .contentType("csv".equals(normalized)
+                        ? MediaType.TEXT_PLAIN
+                        : MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename("device-inventory-report." + extension)
+                                .build()
+                                .toString())
+                .body(payload);
     }
 
     @PostMapping

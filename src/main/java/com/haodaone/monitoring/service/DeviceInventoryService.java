@@ -1,5 +1,6 @@
 package com.haodaone.monitoring.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.BadRequestException;
@@ -19,6 +20,10 @@ import com.haodaone.monitoring.repository.DeviceEnrollmentRepository;
 import com.haodaone.monitoring.repository.DeviceInventoryScanRepository;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import com.haodaone.security.CustomUserPrincipal;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,10 +31,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -167,6 +178,135 @@ public class DeviceInventoryService {
         auditLogService.log("MonitoredDevice", device.getId(), "INVENTORY_SCAN_REQUESTED",
                 "Administrator queued a hardware inventory scan");
         return MonitoredDeviceDTO.from(device);
+    }
+
+    @Transactional
+    public com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO requestBulkInventoryScanForCurrentCompany() {
+        Long companyId = com.haodaone.tenant.TenantContext.getCurrentTenant();
+        if (companyId == null) {
+            throw new BadRequestException("Company context is required.");
+        }
+
+        List<MonitoredDevice> devices = deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId);
+        if (devices.isEmpty()) {
+            return new com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO(0, 0, 0, 0, 0, 0, 0);
+        }
+
+        int queuedCount = 0;
+        int scanningCount = 0;
+        int completedCount = 0;
+        int failedCount = 0;
+        int offlineCount = 0;
+        int neverScannedCount = 0;
+
+        for (MonitoredDevice device : devices) {
+            if (!device.isActive()) {
+                continue;
+            }
+            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+            DeviceInventoryScan latest = latestScan(device);
+            expireIfNeeded(device, latest, now);
+
+            if (latest != null && "PENDING".equals(latest.getStatus())) {
+                queuedCount++;
+                continue;
+            }
+            if (latest != null && "SCANNING".equals(latest.getStatus())) {
+                scanningCount++;
+                continue;
+            }
+            if (latest != null && "COMPLETED".equals(latest.getStatus())) {
+                completedCount++;
+                continue;
+            }
+            if (latest != null && "FAILED".equals(latest.getStatus())) {
+                failedCount++;
+            }
+            if (latest == null) {
+                neverScannedCount++;
+            }
+
+            if (!device.isOnline()) {
+                offlineCount++;
+                device.setInventoryStatus("OFFLINE");
+                deviceRepository.save(device);
+                continue;
+            }
+
+            DeviceInventoryScan scan = new DeviceInventoryScan();
+            scan.setDevice(device);
+            scan.setRequestId(UUID.randomUUID());
+            scan.setStatus("PENDING");
+            scan.setRequestedAt(now);
+            scan.setExpiresAt(now.plusMinutes(SCAN_TIMEOUT_MINUTES));
+            scanRepository.save(scan);
+            device.setInventoryStatus("PENDING");
+            deviceRepository.save(device);
+            queuedCount++;
+            auditLogService.log("MonitoredDevice", device.getId(), "INVENTORY_SCAN_REQUESTED",
+                    "Administrator queued a bulk hardware inventory scan");
+        }
+
+        return new com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO(
+                devices.size(), queuedCount, scanningCount, completedCount, failedCount, offlineCount, neverScannedCount);
+    }
+
+    @Transactional(readOnly = true)
+    public com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO getBulkInventoryScanSummary() {
+        Long companyId = com.haodaone.tenant.TenantContext.getCurrentTenant();
+        if (companyId == null) {
+            throw new BadRequestException("Company context is required.");
+        }
+
+        List<MonitoredDevice> devices = deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId);
+        int total = 0;
+        int queued = 0;
+        int scanning = 0;
+        int completed = 0;
+        int failed = 0;
+        int offline = 0;
+        int neverScanned = 0;
+
+        for (MonitoredDevice device : devices) {
+            if (!device.isActive()) {
+                continue;
+            }
+            total++;
+            String status = device.getInventoryStatus() == null ? "NOT_SCANNED" : device.getInventoryStatus();
+            if ("PENDING".equals(status)) {
+                queued++;
+            } else if ("SCANNING".equals(status)) {
+                scanning++;
+            } else if ("COMPLETED".equals(status)) {
+                completed++;
+            } else if ("FAILED".equals(status)) {
+                failed++;
+            } else if ("OFFLINE".equals(status)) {
+                offline++;
+            } else {
+                neverScanned++;
+            }
+        }
+        return new com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO(total, queued, scanning, completed, failed, offline, neverScanned);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] exportInventoryReport(String format) {
+        Long companyId = com.haodaone.tenant.TenantContext.getCurrentTenant();
+        if (companyId == null) {
+            throw new BadRequestException("Company context is required.");
+        }
+
+        List<MonitoredDevice> devices = deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId);
+        String normalizedFormat = format == null ? "csv" : format.trim().toLowerCase();
+        if (!"csv".equals(normalizedFormat) && !"excel".equals(normalizedFormat)) {
+            throw new BadRequestException("Export format must be CSV or Excel.");
+        }
+
+        if ("csv".equals(normalizedFormat)) {
+            return buildInventoryCsv(devices);
+        }
+        return buildInventoryExcel(devices);
     }
 
     @Transactional
@@ -347,6 +487,206 @@ public class DeviceInventoryService {
         device.setInventoryStatus("FAILED");
         deviceRepository.save(device);
         scanRepository.save(scan);
+    }
+
+    private byte[] buildInventoryCsv(List<MonitoredDevice> devices) {
+        List<String> headers = List.of(
+                "Employee ID",
+                "Employee Name",
+                "Work Email",
+                "Department",
+                "Designation",
+                "Device ID",
+                "Hostname",
+                "Device Name",
+                "Manufacturer",
+                "Model",
+                "Serial Number",
+                "CPU Model",
+                "Physical Cores",
+                "Logical Processors",
+                "Installed RAM",
+                "Physical Disk Names",
+                "Physical Disk Capacities",
+                "Total Physical Storage",
+                "Windows Edition",
+                "Windows Version",
+                "Windows Build",
+                "Architecture",
+                "BIOS Manufacturer",
+                "BIOS Version",
+                "System UUID",
+                "Agent Version",
+                "Online/Offline",
+                "Latest Scan Status",
+                "Last Heartbeat",
+                "Last Successful Scan",
+                "Inventory Collection Timestamp"
+        );
+
+        StringBuilder csv = new StringBuilder();
+        csv.append(String.join(",", headers)).append(System.lineSeparator());
+
+        for (MonitoredDevice device : devices) {
+            Map<String, String> values = inventoryExportValues(device);
+            for (String key : headers) {
+                csv.append(sanitizeCsvCell(values.getOrDefault(key, ""))).append(',');
+            }
+            csv.setLength(csv.length() - 1);
+            csv.append(System.lineSeparator());
+        }
+
+        return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private byte[] buildInventoryExcel(List<MonitoredDevice> devices) {
+        List<String> headers = List.of(
+                "Employee ID",
+                "Employee Name",
+                "Work Email",
+                "Department",
+                "Designation",
+                "Device ID",
+                "Hostname",
+                "Device Name",
+                "Manufacturer",
+                "Model",
+                "Serial Number",
+                "CPU Model",
+                "Physical Cores",
+                "Logical Processors",
+                "Installed RAM",
+                "Physical Disk Names",
+                "Physical Disk Capacities",
+                "Total Physical Storage",
+                "Windows Edition",
+                "Windows Version",
+                "Windows Build",
+                "Architecture",
+                "BIOS Manufacturer",
+                "BIOS Version",
+                "System UUID",
+                "Agent Version",
+                "Online/Offline",
+                "Latest Scan Status",
+                "Last Heartbeat",
+                "Last Successful Scan",
+                "Inventory Collection Timestamp"
+        );
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Device Inventory");
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.size(); i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers.get(i));
+            }
+
+            for (int rowIndex = 0; rowIndex < devices.size(); rowIndex++) {
+                Map<String, String> values = inventoryExportValues(devices.get(rowIndex));
+                Row row = sheet.createRow(rowIndex + 1);
+                for (int columnIndex = 0; columnIndex < headers.size(); columnIndex++) {
+                    String cellValue = values.getOrDefault(headers.get(columnIndex), "");
+                    row.createCell(columnIndex).setCellValue(cellValue);
+                }
+            }
+
+            for (int i = 0; i < headers.size(); i++) {
+                sheet.autoSizeColumn(i);
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to build inventory Excel export", e);
+        }
+    }
+
+    private Map<String, String> inventoryExportValues(MonitoredDevice device) {
+        Map<String, String> values = new LinkedHashMap<>();
+        JsonNode inventory = device.getHardwareInventory();
+        String employeeName = device.getEmployee() != null ? device.getEmployee().getFullName() : "";
+        String employeeCode = device.getEmployee() != null ? device.getEmployee().getEmployeeCode() : "";
+        String workEmail = device.getEmployee() != null ? device.getEmployee().getEmail() : "";
+        String department = device.getEmployee() != null && device.getEmployee().getDepartment() != null
+                ? device.getEmployee().getDepartment().getName() : "";
+        String designation = device.getEmployee() != null && device.getEmployee().getDesignation() != null
+                ? device.getEmployee().getDesignation().getTitle() : "";
+
+        values.put("Employee ID", employeeCode);
+        values.put("Employee Name", employeeName);
+        values.put("Work Email", workEmail);
+        values.put("Department", department);
+        values.put("Designation", designation);
+        values.put("Device ID", device.getDeviceId());
+        values.put("Hostname", device.getHostname());
+        values.put("Device Name", device.getDeviceName());
+        values.put("Manufacturer", inventory != null ? textValue(inventory, "manufacturer") : "");
+        values.put("Model", inventory != null ? textValue(inventory, "model") : "");
+        values.put("Serial Number", device.getSerialNumber() != null ? device.getSerialNumber() : (inventory != null ? textValue(inventory, "serialNumber") : ""));
+        values.put("CPU Model", inventory != null ? textValue(inventory, "processorName") : "");
+        values.put("Physical Cores", inventory != null && inventory.has("physicalCoreCount") ? String.valueOf(inventory.get("physicalCoreCount").asInt()) : "");
+        values.put("Logical Processors", inventory != null && inventory.has("logicalProcessorCount") ? String.valueOf(inventory.get("logicalProcessorCount").asInt()) : "");
+        values.put("Installed RAM", inventory != null && inventory.has("installedMemoryBytes") ? formatBytes(inventory.get("installedMemoryBytes").asLong()) : "");
+
+        List<String> diskModels = new ArrayList<>();
+        List<String> diskCapacities = new ArrayList<>();
+        long totalStorageBytes = 0L;
+        if (inventory != null && inventory.has("physicalDisks") && inventory.get("physicalDisks").isArray()) {
+            for (JsonNode disk : inventory.get("physicalDisks")) {
+                if (disk == null) continue;
+                String model = disk.has("model") ? disk.get("model").asText() : "";
+                String capacity = disk.has("capacityBytes") ? formatBytes(disk.get("capacityBytes").asLong()) : "";
+                if (!model.isBlank()) diskModels.add(model);
+                if (!capacity.isBlank()) diskCapacities.add(capacity);
+                if (disk.has("capacityBytes")) totalStorageBytes += disk.get("capacityBytes").asLong();
+            }
+        }
+        values.put("Physical Disk Names", String.join("; ", diskModels));
+        values.put("Physical Disk Capacities", String.join("; ", diskCapacities));
+        values.put("Total Physical Storage", totalStorageBytes > 0 ? formatBytes(totalStorageBytes) : "");
+        values.put("Windows Edition", inventory != null ? textValue(inventory, "windowsEdition") : "");
+        values.put("Windows Version", inventory != null ? textValue(inventory, "windowsVersion") : "");
+        values.put("Windows Build", inventory != null ? textValue(inventory, "windowsBuild") : "");
+        values.put("Architecture", inventory != null ? textValue(inventory, "architecture") : "");
+        values.put("BIOS Manufacturer", inventory != null ? textValue(inventory, "biosManufacturer") : "");
+        values.put("BIOS Version", inventory != null ? textValue(inventory, "biosVersion") : "");
+        values.put("System UUID", inventory != null ? textValue(inventory, "systemUuid") : "");
+        values.put("Agent Version", device.getAgentVersion() != null ? device.getAgentVersion() : (inventory != null ? textValue(inventory, "agentVersion") : ""));
+        values.put("Online/Offline", device.isOnline() ? "ONLINE" : "OFFLINE");
+        values.put("Latest Scan Status", device.getInventoryStatus() == null ? "NOT_SCANNED" : device.getInventoryStatus());
+        values.put("Last Heartbeat", device.getLastSeenAt() == null ? "" : device.getLastSeenAt().toString());
+        values.put("Last Successful Scan", device.getLastInventoryScanAt() == null ? "" : device.getLastInventoryScanAt().toString());
+        values.put("Inventory Collection Timestamp", inventory != null && inventory.has("collectedAt") ? inventory.get("collectedAt").asText() : "");
+        return values;
+    }
+
+    private String sanitizeCsvCell(String value) {
+        String text = value == null ? "" : value.replace("\r", " ").replace("\n", " ");
+        if (text.startsWith("=") || text.startsWith("+") || text.startsWith("-") || text.startsWith("@")) {
+            return "'" + text;
+        }
+        return text;
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes <= 0) return "";
+        String[] units = {"B", "KB", "MB", "GB", "TB"};
+        double value = bytes;
+        int unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024d;
+            unitIndex++;
+        }
+        if (unitIndex == 0) {
+            return String.format("%d %s", Math.round(value), units[unitIndex]);
+        }
+        return String.format("%.1f %s", value, units[unitIndex]);
+    }
+
+    private String textValue(JsonNode root, String field) {
+        if (root == null || !root.has(field)) return "";
+        JsonNode v = root.get(field);
+        return v == null || v.isNull() ? "" : v.asText();
     }
 
     private EmployeeDeviceInventoryDTO toEmployeeDTO(

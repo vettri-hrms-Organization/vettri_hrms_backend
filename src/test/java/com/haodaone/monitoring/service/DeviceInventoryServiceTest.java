@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.employee.repository.EmployeeRepository;
+import com.haodaone.monitoring.dto.BulkInventoryScanSummaryDTO;
 import com.haodaone.monitoring.dto.HardwareInventoryPayload;
 import com.haodaone.monitoring.dto.InventorySubmissionRequest;
 import com.haodaone.monitoring.dto.MonitoredDeviceDTO;
@@ -15,9 +16,11 @@ import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -179,5 +182,73 @@ class DeviceInventoryServiceTest {
         assertThrows(BadRequestException.class, () -> service.requestAdminScan(21L));
 
         verify(scanRepository, never()).save(any());
+    }
+
+    @Test
+    void queuesBulkScanForEligibleDevicesAndCountsOfflineDevices() throws Exception {
+        com.haodaone.tenant.TenantContext.setCurrentTenant(42L);
+
+        MonitoredDevice online = new MonitoredDevice();
+        online.setId(101L);
+        online.setDeviceName("Online Laptop");
+        online.setActive(true);
+        online.setLastSeenAt(LocalDateTime.now(ZoneOffset.UTC));
+
+        MonitoredDevice offline = new MonitoredDevice();
+        offline.setId(102L);
+        offline.setDeviceName("Offline Laptop");
+        offline.setActive(true);
+        offline.setLastSeenAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(10));
+
+        MonitoredDevice pending = new MonitoredDevice();
+        pending.setId(103L);
+        pending.setDeviceName("Pending Laptop");
+        pending.setActive(true);
+        pending.setLastSeenAt(LocalDateTime.now(ZoneOffset.UTC));
+
+        DeviceInventoryScan pendingScan = new DeviceInventoryScan();
+        pendingScan.setDevice(pending);
+        pendingScan.setStatus("PENDING");
+        pendingScan.setRequestedAt(LocalDateTime.now(ZoneOffset.UTC));
+        pendingScan.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(10));
+
+        when(deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(42L))
+                .thenReturn(List.of(online, offline, pending));
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(101L)).thenReturn(Optional.empty());
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(102L)).thenReturn(Optional.empty());
+        when(scanRepository.findFirstByDevice_IdAndDeletedFalseOrderByRequestedAtDesc(103L))
+                .thenReturn(Optional.of(pendingScan));
+        when(scanRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BulkInventoryScanSummaryDTO summary = service.requestBulkInventoryScanForCurrentCompany();
+
+        assertEquals(3, summary.getTotalDevices());
+        assertEquals(2, summary.getQueuedCount());
+        assertEquals(1, summary.getOfflineCount());
+        verify(scanRepository, times(1)).save(any(DeviceInventoryScan.class));
+        verify(deviceRepository, times(2)).save(any(MonitoredDevice.class));
+    }
+
+    @Test
+    void sanitizesCsvExportsToPreventSpreadsheetFormulaInjection() throws Exception {
+        com.haodaone.tenant.TenantContext.setCurrentTenant(55L);
+
+        MonitoredDevice exportDevice = new MonitoredDevice();
+        exportDevice.setId(555L);
+        exportDevice.setDeviceId("device-555");
+        exportDevice.setDeviceName("Laptop");
+        exportDevice.setActive(true);
+        exportDevice.setLastSeenAt(LocalDateTime.now(ZoneOffset.UTC));
+        exportDevice.setInventoryStatus("COMPLETED");
+        exportDevice.setHardwareInventory(objectMapper.readTree("{\"manufacturer\":\"Contoso\",\"model\":\"=cmd|'/C calc'\",\"windowsEdition\":\"Windows 11\",\"windowsVersion\":\"23H2\",\"agentVersion\":\"1.2.3\"}"));
+
+        when(deviceRepository.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(55L))
+                .thenReturn(List.of(exportDevice));
+
+        byte[] csv = service.exportInventoryReport("csv");
+        String content = new String(csv, StandardCharsets.UTF_8);
+
+        assertTrue(content.contains("'=cmd|'/C calc'"));
+        assertFalse(content.contains("\n=cmd|'/C calc'"));
     }
 }
