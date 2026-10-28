@@ -37,7 +37,14 @@ public class SalaryStructureDTO {
         dto.notes = s.getNotes();
         dto.createdAt = s.getCreatedAt();
         dto.createdBy = s.getCreatedBy();
+        dto.autoStatutory = s.isAutoStatutory();
         return dto;
+    }
+
+    private boolean autoStatutory;
+
+    public boolean isAutoStatutory() {
+        return autoStatutory;
     }
 
     public Long getId() {

@@ -77,22 +77,26 @@ public class DataSeeder implements CommandLineRunner {
                 permissionsByCode(managerPermissionCodes().toArray(String[]::new)));
         Role employee = seedRole("EMPLOYEE", "Baseline self-service access", permissionsByCode(
             "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-            "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+            "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+            "SELF_EXPENSE_SUBMIT"));
         Role hrExecutive = seedRole("HR_EXECUTIVE", "HR operations without role administration, payroll management, or IT access",
                 permissionsByCode("EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
                         "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                        "SELF_EXPENSE_SUBMIT"));
         Role hrCoordinator = seedRole("HR_COORDINATOR", "Basic HR coordination without approval, role administration, or IT access",
                 permissionsByCode("EMPLOYEE_VIEW", "ORG_VIEW", "ATTENDANCE_VIEW", "LEAVE_VIEW", "RECRUITMENT_VIEW",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                        "SELF_EXPENSE_SUBMIT"));
         Role departmentManager = seedRole("DEPARTMENT_MANAGER", "Department-scoped people and workflow management",
                 permissionsByCode("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE",
-                        "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                        "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "EXPENSE_APPROVE",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW"));
+                        "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                        "SELF_EXPENSE_SUBMIT"));
         Role itAdministrator = seedRole("IT_ADMINISTRATOR", "IT operations for managed devices, monitoring, and software",
                 permissionsByCode(itAdministratorPermissionCodes().toArray(String[]::new)));
 
@@ -108,26 +112,6 @@ public class DataSeeder implements CommandLineRunner {
         syncRoleScopes(itAdministrator, PermissionScope.ORGANIZATION);
 
         seedSuperAdminUser(superAdmin);
-        seedDefaultLeaveTypes();
-    }
-
-    private void seedDefaultLeaveTypes() {
-        if (leaveTypeRepository.count() > 0) {
-            return;
-        }
-        seedLeaveType("Casual Leave", "CL", 12, false);
-        seedLeaveType("Sick Leave", "SL", 10, false);
-        seedLeaveType("Earned Leave", "EL", 15, true);
-        log.info("Seeded 3 default leave types (CL/SL/EL). Adjust or add more via Settings > Leave Types.");
-    }
-
-    private void seedLeaveType(String name, String code, double daysPerYear, boolean carryForward) {
-        LeaveType type = new LeaveType();
-        type.setName(name);
-        type.setCode(code);
-        type.setDefaultDaysPerYear(daysPerYear);
-        type.setCarryForward(carryForward);
-        leaveTypeRepository.save(type);
     }
 
     private void seedPermissions() {
@@ -158,6 +142,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"LEAVE_APPLY", "Apply for leave on behalf of employees and view leave balances", "Leave"},
                 new String[]{"LEAVE_VIEW", "View all leave requests and the team leave calendar", "Leave"},
                 new String[]{"LEAVE_APPROVE", "Approve or reject leave requests", "Leave"},
+                new String[]{"OVERTIME_APPROVE", "Approve or reject overtime entries", "Attendance"},
                 new String[]{"LEAVE_MANAGE", "Manage leave types and the holiday calendar", "Leave"},
                 new String[]{"RECRUITMENT_VIEW", "View job openings, candidates, and interviews", "Recruitment"},
                 new String[]{"RECRUITMENT_MANAGE", "Manage job openings, candidate pipeline, and interviews", "Recruitment"},
@@ -180,6 +165,8 @@ public class DataSeeder implements CommandLineRunner {
         );
 
             permissions = new java.util.ArrayList<>(permissions);
+            permissions.add(new String[]{"LETTER_MANAGE", "Manage HR letter templates and letterhead; generate and issue letters", "Letters"});
+            permissions.add(new String[]{"ONBOARDING_MANAGE", "Manage onboarding and offboarding checklists and their templates", "Onboarding"});
             permissions.addAll(List.of(
                 new String[]{"SELF_PROFILE_VIEW", "View your own employee profile", "Self Service"},
                 new String[]{"SELF_ATTENDANCE_VIEW", "View your own attendance", "Self Service"},
@@ -191,6 +178,13 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"SELF_PAYSLIP_VIEW", "View your own payslips", "Self Service"},
                 new String[]{"SELF_ASSET_VIEW", "View your own assets", "Self Service"}
             ));
+            permissions.addAll(List.of(
+                new String[]{"SELF_EXPENSE_SUBMIT", "Create and submit your own expense claims", "Self Service"},
+                new String[]{"EXPENSE_APPROVE", "Approve or reject expense claims at the manager stage", "Expenses"},
+                new String[]{"EXPENSE_MANAGE", "Final-approve and reimburse expense claims, manage categories, and export reports", "Expenses"},
+                new String[]{"ANNOUNCEMENT_MANAGE", "Create, schedule, and publish announcements and track acknowledgements", "Announcements"}
+            ));
+            permissions.add(new String[]{"PRIVACY_MANAGE", "Manage privacy settings, data principal requests, erasure, and consent registers", "Privacy"});
 
         for (String[] p : permissions) {
             if (permissionRepository.findByCode(p[0]).isEmpty()) {
@@ -320,16 +314,19 @@ public class DataSeeder implements CommandLineRunner {
     static Set<String> companyAdminPermissionCodes() {
         return Set.of("USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
                 "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
+                "LETTER_MANAGE", "ONBOARDING_MANAGE",
                 "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
-                "OFFICE_LOCATION_DEACTIVATE",
+                "OFFICE_LOCATION_DEACTIVATE", "EXPENSE_MANAGE", "ANNOUNCEMENT_MANAGE", "PRIVACY_MANAGE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                "SELF_EXPENSE_SUBMIT");
     }
 
     static PermissionScope companyAdminScope(String permissionCode) {
         return switch (permissionCode) {
             case "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW" ->
+                    "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                    "SELF_EXPENSE_SUBMIT" ->
                     PermissionScope.SELF;
             default -> PermissionScope.ORGANIZATION;
         };
@@ -337,9 +334,11 @@ public class DataSeeder implements CommandLineRunner {
 
     static Set<String> managerPermissionCodes() {
         return Set.of("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
-                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
+                "OVERTIME_APPROVE",
+                "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "EXPENSE_APPROVE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                "SELF_EXPENSE_SUBMIT");
     }
 
     static Set<String> hrManagerPermissionCodes() {
@@ -347,12 +346,15 @@ public class DataSeeder implements CommandLineRunner {
                 "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
                 "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
                 "OFFICE_LOCATION_DEACTIVATE",
-                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE",
+                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "OVERTIME_APPROVE",
                 "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                 "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                 "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",
+                "LETTER_MANAGE", "ONBOARDING_MANAGE",
+                "EXPENSE_APPROVE", "EXPENSE_MANAGE", "ANNOUNCEMENT_MANAGE", "PRIVACY_MANAGE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                "SELF_EXPENSE_SUBMIT");
     }
 
     static Set<String> itAdministratorPermissionCodes() {
@@ -363,6 +365,7 @@ public class DataSeeder implements CommandLineRunner {
                 "IT_DEVICE_MAPPING_MANAGE", "MONITORING_VIEW", "MONITORING_MANAGE", "REMOTE_SUPPORT_MANAGE",
                 "DEVICE_MANAGE", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
+                "SELF_EXPENSE_SUBMIT");
     }
 }

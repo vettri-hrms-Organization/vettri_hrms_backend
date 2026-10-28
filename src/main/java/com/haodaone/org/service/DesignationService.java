@@ -2,6 +2,7 @@ package com.haodaone.org.service;
 
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.exception.BadRequestException;
+import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.org.dto.DesignationDTO;
 import com.haodaone.org.entity.Department;
 import com.haodaone.org.entity.Designation;
@@ -18,18 +19,19 @@ public class DesignationService {
     private final DesignationRepository designationRepository;
     private final DepartmentRepository departmentRepository;
     private final AuditLogService auditLogService;
+    private final CompanyRepository companyRepository;
 
     public DesignationService(DesignationRepository designationRepository, DepartmentRepository departmentRepository,
-                               AuditLogService auditLogService) {
+                               AuditLogService auditLogService, CompanyRepository companyRepository) {
         this.designationRepository = designationRepository;
         this.departmentRepository = departmentRepository;
         this.auditLogService = auditLogService;
+        this.companyRepository = companyRepository;
     }
 
     public List<DesignationDTO> listAll() {
         Long companyId = requiredTenant();
-        return designationRepository.findAllByDeletedFalseOrderByTitleAsc().stream()
-                .filter(d -> d.getDepartment() == null || (d.getDepartment().getCompany() != null && d.getDepartment().getCompany().getId() != null && d.getDepartment().getCompany().getId().equals(companyId)))
+        return designationRepository.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).stream()
                 .map(DesignationDTO::from)
                 .toList();
     }
@@ -40,6 +42,7 @@ public class DesignationService {
         Designation designation = new Designation();
         designation.setTitle(request.getTitle());
         designation.setLevel(request.getLevel());
+        designation.setCompany(companyRepository.getReferenceById(companyId));
         if (request.getDepartmentId() != null) {
             Department department = departmentRepository.findByIdAndCompany_IdAndDeletedFalse(request.getDepartmentId(), companyId)
                     .orElseThrow(() -> new BadRequestException("Unknown department: " + request.getDepartmentId()));

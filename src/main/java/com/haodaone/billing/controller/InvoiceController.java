@@ -33,7 +33,7 @@ public class InvoiceController {
 
     @GetMapping("/{id}")
     public InvoiceResponse get(@PathVariable Long id, @AuthenticationPrincipal CustomUserPrincipal principal) {
-        return InvoiceResponse.from(invoiceService.get(id, principal.getCompanyId()));
+        return invoiceService.getResponse(id, principal.getCompanyId());
     }
 
     @GetMapping("/{id}/pdf")

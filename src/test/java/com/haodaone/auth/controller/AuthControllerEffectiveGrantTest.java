@@ -49,7 +49,8 @@ class AuthControllerEffectiveGrantTest {
                 .thenReturn(java.util.Optional.empty());
         AuthController controller = new AuthController(
                 mock(AuthService.class), mock(RegistrationService.class), mock(VerificationService.class),
-                mock(PasswordResetService.class), employeeRepository);
+                mock(PasswordResetService.class), employeeRepository,
+                mock(com.haodaone.company.repository.CompanyRepository.class));
 
         var response = controller.me(new CustomUserPrincipal(user, List.of(grant)));
 

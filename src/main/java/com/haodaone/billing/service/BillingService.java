@@ -61,6 +61,18 @@ public class BillingService {
     private final AuthService authService;
     private final EmailService emailService;
     private final InvoiceService invoiceService;
+    private RenewalPaymentService renewalPayments;
+    private com.haodaone.billing.repository.BillingWebhookEventRepository webhookEvents;
+
+    @Autowired(required = false)
+    void setRenewalPayments(RenewalPaymentService renewalPayments) {
+        this.renewalPayments = renewalPayments;
+    }
+
+    @Autowired(required = false)
+    void setWebhookEvents(com.haodaone.billing.repository.BillingWebhookEventRepository webhookEvents) {
+        this.webhookEvents = webhookEvents;
+    }
 
     @Value("${app.razorpay.key-id:}")
     private String razorpayKeyId;
@@ -111,6 +123,12 @@ public class BillingService {
 
     @Transactional
     public Map<String, Object> createOrder(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount) {
+        return createOrder(companyId, userId, plan, billingCycle, employeeCount, false, null);
+    }
+
+    @Transactional
+    public Map<String, Object> createOrder(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount,
+                                           boolean signupCheckout, String expectedEmail) {
         if (companyId == null || userId == null) {
             throw new BadRequestException("A company and user are required for checkout.");
         }
@@ -132,6 +150,10 @@ public class BillingService {
 
         if (user.getCompany() != null && !Objects.equals(user.getCompany().getId(), companyId)) {
             throw new BadRequestException("Company mismatch for payment checkout.");
+        }
+        if (signupCheckout && !(isPendingPayment(user) && expectedEmail != null && expectedEmail.trim().equalsIgnoreCase(user.getEmail()))) {
+            // Same message whether the id or the email was wrong, so ids can't be probed.
+            throw new BadRequestException("This checkout link is no longer valid. Sign in to manage billing.");
         }
 
         if (razorpayKeyId == null || razorpayKeyId.isBlank() || razorpayKeySecret == null || razorpayKeySecret.isBlank()) {
@@ -199,6 +221,13 @@ public class BillingService {
     @Transactional
     public Map<String, Object> verifyPayment(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount,
                                             String razorpayPaymentId, String razorpayOrderId, String razorpaySignature) {
+        return verifyPayment(companyId, userId, plan, billingCycle, employeeCount, razorpayPaymentId, razorpayOrderId, razorpaySignature, false);
+    }
+
+    @Transactional
+    public Map<String, Object> verifyPayment(Long companyId, Long userId, String plan, String billingCycle, Integer employeeCount,
+                                            String razorpayPaymentId, String razorpayOrderId, String razorpaySignature,
+                                            boolean signupCheckout) {
         if (companyId == null || userId == null) {
             throw new BadRequestException("Payment verification is missing a user or company.");
         }
@@ -216,6 +245,12 @@ public class BillingService {
 
         if (user.getCompany() != null && !Objects.equals(user.getCompany().getId(), companyId)) {
             throw new BadRequestException("Company mismatch for payment verification.");
+        }
+        // Without a session, verification may only finish a signup (or replay an already verified order).
+        if (signupCheckout && !isPendingPayment(user)
+                && paymentTransactions.findByRazorpayOrderId(razorpayOrderId)
+                    .map(tx -> !PaymentTransactionStatus.VERIFIED.equals(tx.getStatus())).orElse(true)) {
+            throw new BadRequestException("This checkout link is no longer valid. Sign in to manage billing.");
         }
 
         if (razorpayPaymentId == null || razorpayOrderId == null || razorpaySignature == null || razorpaySignature.isBlank()) {
@@ -326,18 +361,23 @@ public class BillingService {
             return created;
         });
 
-        subscription.setCompany(company);
-        subscription.setPlan(Plan.valueOf(normalizedPlan));
-        subscription.setStatus(SubscriptionStatus.ACTIVE);
-        subscription.setAmount(subscriptionAmount);
-        subscription.setEmployeeLimit(spec.employeeLimit());
-        subscription.setDeviceLimit(spec.deviceLimit());
-        subscription.setBillingCycle(normalizedCycle);
-        subscription.setBillableEmployeeCount(normalizedEmployees);
-        subscription.setStartDate(LocalDate.now());
-        subscription.setRenewalDate(LocalDate.now().plusDays(30));
-        subscription.setRate(BillingPricing.rateFor(normalizedPlan, normalizedCycle));
-        subscriptions.save(subscription);
+        // The ₹1 verification starts the 30-day free trial (TRIALING; BillingLifecycleService takes it from
+        // there). It only activates a signup that is still awaiting payment: a ₹1 order must never extend or
+        // re-activate an existing subscription - renewals are paid through RenewalPaymentService.
+        if (subscription.getId() == null || subscription.getStatus() == SubscriptionStatus.PENDING_PAYMENT) {
+            subscription.setCompany(company);
+            subscription.setPlan(Plan.valueOf(normalizedPlan));
+            subscription.setStatus(SubscriptionStatus.TRIALING);
+            subscription.setAmount(subscriptionAmount);
+            subscription.setEmployeeLimit(spec.employeeLimit());
+            subscription.setDeviceLimit(spec.deviceLimit());
+            subscription.setBillingCycle(normalizedCycle);
+            subscription.setBillableEmployeeCount(normalizedEmployees);
+            subscription.setStartDate(LocalDate.now(BillingLifecycleService.IST));
+            subscription.setRenewalDate(LocalDate.now(BillingLifecycleService.IST).plusDays(30));
+            subscription.setRate(BillingPricing.rateFor(normalizedPlan, normalizedCycle));
+            subscriptions.save(subscription);
+        }
 
         paymentTransaction.setCompany(company);
         paymentTransaction.setSubscription(subscription);
@@ -353,9 +393,12 @@ public class BillingService {
         paymentTransactions.save(paymentTransaction);
         Optional<Invoice> createdInvoice = invoiceService == null ? Optional.empty() : invoiceService.createIfMissing(paymentTransaction);
 
-        user.setAccountStatus("ACTIVE");
-        user.setActive(true);
-        users.save(user);
+        // Payment only completes a signup; it must never re-enable an account an admin disabled.
+        if (isPendingPayment(user)) {
+            user.setAccountStatus("ACTIVE");
+            user.setActive(true);
+            users.save(user);
+        }
 
         String customerEmail = user.getEmail();
         String customerName = user.getFullName();
@@ -379,6 +422,26 @@ public class BillingService {
 
     @Transactional
     public void processWebhookEvent(String rawPayload, String signature) {
+        processWebhookEvent(rawPayload, signature, null);
+    }
+
+    /** Dedupe key: Razorpay's X-Razorpay-Event-Id header when present, else event + entity id (+ charge time). */
+    static String webhookEventKey(String eventId, String event, JSONObject payload, JSONObject paymentEntity) {
+        if (eventId != null && !eventId.isBlank()) return "evt:" + eventId.trim();
+        if (event == null || event.isBlank()) return null;
+        if (paymentEntity != null && !paymentEntity.optString("id", "").isBlank()) {
+            return event + ":" + paymentEntity.optString("id");
+        }
+        JSONObject subWrapper = payload == null ? null : payload.optJSONObject("subscription");
+        JSONObject subEntity = subWrapper == null ? null : subWrapper.optJSONObject("entity");
+        if (subEntity != null && !subEntity.optString("id", "").isBlank()) {
+            return event + ":" + subEntity.optString("id") + ":" + subEntity.optLong("paid_count", 0L) + ":" + subEntity.optString("status", "");
+        }
+        return null;
+    }
+
+    @Transactional
+    public void processWebhookEvent(String rawPayload, String signature, String eventId) {
         if (rawPayload == null || rawPayload.isBlank()) {
             throw new BadRequestException("Missing Razorpay webhook payload.");
         }
@@ -400,8 +463,38 @@ public class BillingService {
         JSONObject paymentData = paymentPayload != null ? paymentPayload.optJSONObject("payment") : null;
         JSONObject paymentEntity = paymentData != null ? paymentData.optJSONObject("entity") : null;
 
+        // Idempotency: Razorpay redelivers webhooks; a processed delivery is skipped.
+        String eventKey = webhookEventKey(eventId, event, paymentPayload, paymentEntity);
+        if (eventKey != null && webhookEvents != null) {
+            if (webhookEvents.existsByEventKey(eventKey)) {
+                return;
+            }
+            com.haodaone.billing.entity.BillingWebhookEvent record = new com.haodaone.billing.entity.BillingWebhookEvent();
+            record.setEventKey(eventKey);
+            record.setEventType(event);
+            record.setProcessedAt(LocalDateTime.now());
+            webhookEvents.save(record);
+        }
+
+        if (event.startsWith("subscription.")) {
+            if (renewalPayments != null) {
+                renewalPayments.handleSubscriptionEvent(event, paymentPayload);
+            }
+            return;
+        }
+
         if (paymentEntity == null) {
             return;
+        }
+
+        String renewalOrderId = paymentEntity.optString("order_id", "");
+        if (renewalPayments != null && !renewalOrderId.isBlank()) {
+            Optional<PaymentTransaction> renewalTx = paymentTransactions.findByRazorpayOrderId(renewalOrderId)
+                    .filter(tx -> tx.getPurpose() == com.haodaone.billing.entity.PaymentPurpose.RENEWAL);
+            if (renewalTx.isPresent()) {
+                renewalPayments.handleRenewalPaymentEvent(event, renewalTx.get(), paymentEntity);
+                return;
+            }
         }
 
         String paymentId = paymentEntity.optString("id", "");
@@ -436,9 +529,11 @@ public class BillingService {
         }
 
         if ("payment.captured".equalsIgnoreCase(event) || "payment.authorized".equalsIgnoreCase(event)) {
-            if (paymentTransaction.getCompany() != null && paymentTransaction.getSubscription() != null) {
+            if (paymentTransaction.getCompany() != null && paymentTransaction.getSubscription() != null
+                    && paymentTransaction.getSubscription().getStatus() == SubscriptionStatus.PENDING_PAYMENT) {
+                // ₹1 signup verification: starts the trial; never re-activates a lapsed subscription.
                 Subscription subscription = paymentTransaction.getSubscription();
-                subscription.setStatus(SubscriptionStatus.ACTIVE);
+                subscription.setStatus(SubscriptionStatus.TRIALING);
                 subscriptions.save(subscription);
             }
             paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
@@ -527,5 +622,9 @@ public class BillingService {
     }
 
     private record PlanSpec(Plan plan, String label, Integer employeeLimit, Integer deviceLimit) {
+    }
+
+    private static boolean isPendingPayment(User user) {
+        return "PENDING_PAYMENT".equalsIgnoreCase(user.getAccountStatus());
     }
 }

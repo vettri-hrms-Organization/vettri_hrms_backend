@@ -36,6 +36,27 @@ public class CreateEmployeeRequest {
     private String emergencyContactName;
     private String emergencyContactPhone;
 
+    /** Optional bank/statutory fields - format-checked in EmployeeService. Null on update means "leave unchanged". */
+    private String bankAccountNumber;
+    private String bankIfsc;
+    private String bankName;
+    private String panNumber;
+    private String uanNumber;
+    private String esiNumber;
+
+    public String getBankAccountNumber() { return bankAccountNumber; }
+    public void setBankAccountNumber(String bankAccountNumber) { this.bankAccountNumber = bankAccountNumber; }
+    public String getBankIfsc() { return bankIfsc; }
+    public void setBankIfsc(String bankIfsc) { this.bankIfsc = bankIfsc; }
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+    public String getPanNumber() { return panNumber; }
+    public void setPanNumber(String panNumber) { this.panNumber = panNumber; }
+    public String getUanNumber() { return uanNumber; }
+    public void setUanNumber(String uanNumber) { this.uanNumber = uanNumber; }
+    public String getEsiNumber() { return esiNumber; }
+    public void setEsiNumber(String esiNumber) { this.esiNumber = esiNumber; }
+
     public String getFirstName() {
         return firstName;
     }

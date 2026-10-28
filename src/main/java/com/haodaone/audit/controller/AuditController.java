@@ -44,6 +44,8 @@ public class AuditController {
     @PreAuthorize("hasAuthority('AUDIT_VIEW')")
     public Page<LoginHistory> loginHistory(@RequestParam(defaultValue = "0") int page,
                                             @RequestParam(defaultValue = "50") int size) {
-        return loginHistoryRepository.findAllByOrderByAttemptedAtDesc(PageRequest.of(page, size));
+        Long companyId = TenantContext.getCurrentTenant();
+        if (companyId == null) throw new BadRequestException("Company context is required");
+        return loginHistoryRepository.findForCompany(companyId, PageRequest.of(page, Math.min(Math.max(size, 1), 200)));
     }
 }

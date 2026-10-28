@@ -49,6 +49,10 @@ public class AttendanceSessionDTO {
     public void setDurationMinutes(Long durationMinutes) { this.durationMinutes = durationMinutes; }
     public boolean isWfh() { return wfh; }
     public void setWfh(boolean wfh) { this.wfh = wfh; }
+    /** True when a check-in selfie is stored; fetch it from GET /api/attendance/sessions/{id}/selfie. */
+    private boolean hasSelfie;
+    public boolean isHasSelfie() { return hasSelfie; }
+    public void setHasSelfie(boolean hasSelfie) { this.hasSelfie = hasSelfie; }
 
     private static OffsetDateTime toIstOffset(LocalDateTime value) {
         return value == null ? null : value.atZone(ZoneId.of("Asia/Kolkata")).toOffsetDateTime();

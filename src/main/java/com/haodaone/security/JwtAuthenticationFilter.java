@@ -31,6 +31,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String AUTH_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String TOKEN_QUERY_PARAM = "token";
+    private static final String SSE_STREAM_PATH = "/api/attendance/stream";
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
@@ -63,6 +64,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || path.equals("/api/auth/logout")
                 || path.equals("/api/auth/forgot-password")
                 || path.equals("/api/auth/reset-password")
+                || path.equals("/api/auth/mfa/verify")
+                || path.equals("/api/auth/mfa/email/send")
                 || path.startsWith("/api/auth/invitation/")
                 || path.startsWith("/api/auth/activate/")
                 || path.startsWith("/api/careers/")
@@ -86,12 +89,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
          */
         if (authHeader != null && authHeader.startsWith(BEARER_PREFIX)) {
             token = authHeader.substring(BEARER_PREFIX.length());
-        } else {
+        } else if (SSE_STREAM_PATH.equals(request.getRequestURI())) {
             /*
-             * Special case for SSE endpoint where EventSource cannot
-             * send custom Authorization headers.
+             * Special case for the SSE endpoint where EventSource cannot
+             * send custom Authorization headers. Nowhere else, so tokens
+             * don't end up in URLs and access logs.
              */
             token = request.getParameter(TOKEN_QUERY_PARAM);
+        } else {
+            token = null;
         }
 
         /*

@@ -15,6 +15,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findByCompany_IdAndDeletedFalseOrderByInvoiceDateDescIdDesc(Long companyId, Pageable pageable);
     List<Invoice> findByCompany_IdAndStatusAndDeletedFalseOrderByInvoiceDateDescIdDesc(Long companyId, InvoiceStatus status, Pageable pageable);
     List<Invoice> findByCompany_IdAndInvoiceNumberContainingIgnoreCaseAndDeletedFalseOrderByInvoiceDateDescIdDesc(Long companyId, String query, Pageable pageable);
+    Optional<Invoice> findFirstBySubscription_IdAndStatusAndInvoiceTypeAndDeletedFalseOrderByIdDesc(Long subscriptionId, InvoiceStatus status, com.haodaone.billing.entity.InvoiceType invoiceType);
+    Optional<Invoice> findFirstByRazorpayOrderIdAndDeletedFalse(String razorpayOrderId);
+    boolean existsBySubscription_IdAndInvoiceTypeAndStatusAndDeletedFalse(Long subscriptionId, com.haodaone.billing.entity.InvoiceType invoiceType, InvoiceStatus status);
+    List<Invoice> findByOriginalInvoice_IdAndDeletedFalse(Long originalInvoiceId);
     @Query(value = "select nextval('billing_invoice_number_seq')", nativeQuery = true)
     Long nextInvoiceSequence();
 }

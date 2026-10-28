@@ -90,11 +90,8 @@ public class WfhRequestController {
     @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedWfhRequest(#id)")
     @Transactional
     public ResponseEntity<WfhRequestDTO> approve(@PathVariable Long id, @RequestParam(required = false) String note) {
-        WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
+        WfhRequest entity = decidable(id);
         Employee manager = currentEmployee();
-        if (!Objects.equals(entity.getCompany().getId(), manager.getCompany().getId())) {
-            throw new BadRequestException("WFH_REQUEST_NOT_FOUND");
-        }
         entity.setStatus("APPROVED");
         entity.setApprovedByEmployee(manager);
         entity.setApprovedAt(LocalDateTime.now(applicationClock));
@@ -106,16 +103,30 @@ public class WfhRequestController {
     @PreAuthorize("hasAuthority('LEAVE_APPROVE') and @authorizationService.isAllowedWfhRequest(#id)")
     @Transactional
     public ResponseEntity<WfhRequestDTO> reject(@PathVariable Long id, @RequestParam(required = false) String note) {
-        WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
+        WfhRequest entity = decidable(id);
         Employee manager = currentEmployee();
-        if (!Objects.equals(entity.getCompany().getId(), manager.getCompany().getId())) {
-            throw new BadRequestException("WFH_REQUEST_NOT_FOUND");
-        }
         entity.setStatus("REJECTED");
         entity.setApprovedByEmployee(manager);
         entity.setApprovedAt(LocalDateTime.now(applicationClock));
         entity.setManagerNote(note);
         return ResponseEntity.ok(toDto(wfhRequestRepository.save(entity)));
+    }
+
+    /** A pending request in the approver's company that isn't their own. */
+    private WfhRequest decidable(Long id) {
+        WfhRequest entity = wfhRequestRepository.findById(id).orElseThrow(() -> new BadRequestException("WFH_REQUEST_NOT_FOUND"));
+        Employee manager = currentEmployee();
+        if (!Objects.equals(entity.getCompany().getId(), manager.getCompany().getId())) {
+            throw new BadRequestException("WFH_REQUEST_NOT_FOUND");
+        }
+        if (!"PENDING".equals(entity.getStatus())) {
+            throw new BadRequestException("Only pending work-from-home requests can be approved or rejected.");
+        }
+        if (entity.getEmployee() != null && Objects.equals(entity.getEmployee().getId(), manager.getId())
+                && !authorizationService.hasOrganizationScope("LEAVE_APPROVE")) {
+            throw new org.springframework.security.access.AccessDeniedException("You can't approve or reject your own request.");
+        }
+        return entity;
     }
 
     private WfhRequestDTO toDto(WfhRequest entity) {

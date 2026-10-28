@@ -16,6 +16,8 @@ public class LeaveRequestDTO {
     private LocalDate startDate;
     private LocalDate endDate;
     private double days;
+    private boolean halfDay;
+    private String halfDaySession;
     private String reason;
     private String status;
     private String decidedByName;
@@ -34,6 +36,8 @@ public class LeaveRequestDTO {
         dto.startDate = lr.getStartDate();
         dto.endDate = lr.getEndDate();
         dto.days = lr.getDays();
+        dto.halfDay = lr.isHalfDay();
+        dto.halfDaySession = lr.getHalfDaySession();
         dto.reason = lr.getReason();
         dto.status = lr.getStatus();
         dto.decidedByName = lr.getDecidedBy() != null ? lr.getDecidedBy().getFullName() : null;
@@ -80,6 +84,14 @@ public class LeaveRequestDTO {
 
     public double getDays() {
         return days;
+    }
+
+    public boolean isHalfDay() {
+        return halfDay;
+    }
+
+    public String getHalfDaySession() {
+        return halfDaySession;
     }
 
     public String getReason() {

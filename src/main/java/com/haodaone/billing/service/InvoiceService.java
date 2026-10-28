@@ -37,6 +37,9 @@ public class InvoiceService {
     public Optional<Invoice> createIfMissing(PaymentTransaction payment) {
         if (payment == null || payment.getId() == null) return Optional.empty();
         if (payment.getStatus() != PaymentTransactionStatus.VERIFIED) return Optional.empty();
+        // Renewal / auto-debit payments settle their own PENDING invoice (BillingLifecycleService.markInvoicePaid).
+        if (payment.getInvoiceId() != null || payment.getPurpose() == PaymentPurpose.RENEWAL
+                || payment.getPurpose() == PaymentPurpose.AUTO_DEBIT) return Optional.empty();
         if (invoices.findByPaymentTransaction_Id(payment.getId()).isPresent()) return Optional.empty();
 
         Invoice invoice = new Invoice();
@@ -83,6 +86,10 @@ public class InvoiceService {
         return invoices.findByIdAndCompany_IdAndDeletedFalse(id, companyId).orElseThrow(() -> new BadRequestException("Invoice not found."));
     }
 
+    /** Builds the response inside the transaction (open-in-view is off; company / original invoice are lazy). */
+    @Transactional(readOnly = true)
+    public InvoiceResponse getResponse(Long id, Long companyId) { return InvoiceResponse.from(get(id, companyId)); }
+
     @Transactional(readOnly = true)
     public byte[] pdf(Long id, Long companyId) { return pdfService.generate(get(id, companyId)); }
 
@@ -90,7 +97,9 @@ public class InvoiceService {
     public void email(Long id, Long companyId, String recipientEmail, String recipientName) {
         Invoice invoice = get(id, companyId);
         String documentLabel = invoice.getInvoiceType() == InvoiceType.PAYMENT_VERIFICATION_RECEIPT
-            ? "Payment Verification Receipt" : "Invoice";
+            ? "Payment Verification Receipt"
+            : invoice.getInvoiceType() == InvoiceType.CREDIT_NOTE ? "Credit Note"
+            : invoice.getStatus() == InvoiceStatus.PENDING ? "Proforma Invoice" : "Tax Invoice";
         boolean sent = emailService.sendInvoiceEmail(recipientEmail, recipientName, invoice.getInvoiceNumber(), documentLabel, pdfService.generate(invoice));
         invoice.setEmailStatus(sent ? "SENT" : "FAILED");
         invoices.save(invoice);

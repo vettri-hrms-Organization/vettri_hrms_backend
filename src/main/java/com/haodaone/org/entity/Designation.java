@@ -1,12 +1,17 @@
 package com.haodaone.org.entity;
 
 import com.haodaone.common.entity.BaseEntity;
+import com.haodaone.company.entity.Company;
 import jakarta.persistence.*;
 
 /** A job title/grade, e.g. "Senior Software Engineer" at level 4. Optionally scoped to a department. */
 @Entity
 @Table(name = "designation")
 public class Designation extends BaseEntity {
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id")
+    private Company company;
 
     @Column(nullable = false, length = 150)
     private String title;
@@ -44,6 +49,14 @@ public class Designation extends BaseEntity {
 
     public void setDepartment(Department department) {
         this.department = department;
+    }
+
+    public Company getCompany() {
+        return company;
+    }
+
+    public void setCompany(Company company) {
+        this.company = company;
     }
 
     public boolean isActive() {

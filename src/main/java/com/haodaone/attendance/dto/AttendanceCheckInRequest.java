@@ -10,6 +10,19 @@ public class AttendanceCheckInRequest {
     private Long officeLocationId;
     private Boolean wfh;
     private String workingMode;
+    /**
+     * Optional check-in selfie as base64 (raw or a "data:image/jpeg;base64,..." URL).
+     * JPEG/PNG only, at most 1 MB decoded. Required when the company policy demands a selfie.
+     */
+    private String selfieImage;
+
+    public String getSelfieImage() {
+        return selfieImage;
+    }
+
+    public void setSelfieImage(String selfieImage) {
+        this.selfieImage = selfieImage;
+    }
 
     public Double getLatitude() {
         return latitude;

@@ -21,7 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.haodaone.notifications.service.NotificationService;
 
-import java.time.DayOfWeek;
+import com.haodaone.company.service.WorkingWeek;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,6 +33,7 @@ import com.haodaone.tenant.TenantContext;
 public class LeaveRequestService {
 
     private static final Set<String> DECIDABLE = Set.of("PENDING");
+    private static final Set<String> HALF_DAY_SESSIONS = Set.of("FIRST_HALF", "SECOND_HALF");
 
     private final LeaveRequestRepository leaveRequestRepository;
     private final LeaveTypeRepository leaveTypeRepository;
@@ -116,9 +118,20 @@ public class LeaveRequestService {
                 .toList();
     }
 
+    /** Policy-aware balances (accrual, cap, carry expiry, comp-off, adjustments, encashment - V45). Setter-injected so plain-constructor tests keep the legacy calculation below. */
+    private LeaveBalanceService leaveBalanceService;
+
+    @Autowired
+    public void setLeaveBalanceService(LeaveBalanceService leaveBalanceService) {
+        this.leaveBalanceService = leaveBalanceService;
+    }
+
     @Transactional(readOnly = true)
     public List<LeaveBalanceDTO> getBalances(Long employeeId, int year) {
         Long companyId = requiredTenant();
+        if (leaveBalanceService != null) {
+            return leaveBalanceService.balancesFor(companyId, employeeId, year);
+        }
         List<LeaveType> activeTypes = leaveTypeRepository.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream()
                 .filter(LeaveType::isActive)
                 .toList();
@@ -136,6 +149,9 @@ public class LeaveRequestService {
     @Transactional
     public LeaveRequestDTO apply(ApplyLeaveRequest request) {
         ValidatedLeaveApplication validated = validateApplication(request);
+        // Lock the employee, then validate again so two concurrent requests can't both pass the balance/overlap checks.
+        employeeRepository.lockById(validated.employee().getId());
+        validated = validateApplication(request);
         Employee employee = validated.employee();
         LeaveType leaveType = validated.leaveType();
         double requestedDays = validated.requestedDays();
@@ -147,6 +163,9 @@ public class LeaveRequestService {
         leaveRequest.setStartDate(request.getStartDate());
         leaveRequest.setEndDate(request.getEndDate());
         leaveRequest.setDays(requestedDays);
+        boolean halfDay = Boolean.TRUE.equals(request.getHalfDay());
+        leaveRequest.setHalfDay(halfDay);
+        leaveRequest.setHalfDaySession(halfDay ? normalizeHalfDaySession(request) : null);
         leaveRequest.setReason(request.getReason());
         boolean autoApproved = leaveType.isAutoApprove();
         leaveRequest.setStatus(autoApproved ? "APPROVED" : "PENDING");
@@ -172,8 +191,9 @@ public class LeaveRequestService {
             }
         }
         auditLogService.log("LeaveRequest", saved.getId(), "CREATE",
-                String.format("%s applied for %.1f day(s) of %s (%s to %s)", employee.getFullName(), requestedDays,
-                        leaveType.getName(), request.getStartDate(), request.getEndDate()));
+                String.format("%s applied for %.1f day(s) of %s (%s to %s)%s", employee.getFullName(), requestedDays,
+                        leaveType.getName(), request.getStartDate(), request.getEndDate(),
+                        halfDay ? " - half day (" + leaveRequest.getHalfDaySession() + ")" : ""));
         if (autoApproved) {
             auditLogService.log("LeaveRequest", saved.getId(), "AUTO_APPROVE",
                 "Automatically approved by leave type policy '" + leaveType.getName() + "'");
@@ -209,26 +229,43 @@ public class LeaveRequestService {
         LeaveType leaveType = leaveTypeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getLeaveTypeId(), companyId)
                 .orElseThrow(() -> new BadRequestException("Unknown leave type: " + request.getLeaveTypeId()));
 
-        if (!leaveRequestRepository.findOverlapping(employee.getId(), request.getStartDate(), request.getEndDate()).isEmpty()) {
+        boolean halfDay = Boolean.TRUE.equals(request.getHalfDay());
+        String halfDaySession = halfDay ? normalizeHalfDaySession(request) : null;
+
+        boolean overlapping = leaveRequestRepository.findOverlapping(employee.getId(), request.getStartDate(), request.getEndDate())
+                .stream()
+                .anyMatch(existing -> !(halfDay && existing.isHalfDay()
+                        && existing.getHalfDaySession() != null
+                        && !existing.getHalfDaySession().equalsIgnoreCase(halfDaySession)));
+        if (overlapping) {
             throw new BadRequestException("This employee already has a pending or approved leave request overlapping these dates");
         }
 
-        double requestedDays = countBusinessDays(companyId, request.getStartDate(), request.getEndDate());
-        if (requestedDays <= 0) {
-            throw new BadRequestException("The selected date range contains no working days");
+        WorkingWeek workingWeek = WorkingWeek.of(employee.getCompany());
+        double workingDays = countBusinessDays(companyId, employee, workingWeek, request.getStartDate(), request.getEndDate());
+        if (workingDays <= 0) {
+            throw new BadRequestException(halfDay
+                    ? "Half-day leave can only be applied on a working day"
+                    : "The selected date range contains no working days");
         }
+        double requestedDays = halfDay ? 0.5 : workingDays;
 
         List<LeaveBalanceDTO> balances = getBalances(employee.getId(), request.getStartDate().getYear());
         LeaveBalanceDTO balance = balances.stream().filter(b -> b.getLeaveTypeId().equals(leaveType.getId())).findFirst().orElse(null);
-        if (balance != null && requestedDays > balance.getRemainingDays()) {
+        double pendingDays = LeaveBalanceService.isCompOff(leaveType)
+                ? leaveRequestRepository.sumPendingDaysAllYears(companyId, employee.getId(), leaveType.getId())
+                : leaveRequestRepository.sumPendingDays(companyId, employee.getId(), leaveType.getId(), request.getStartDate().getYear());
+        // Policy negative allowance lets the balance dip to -N days (0 unless configured).
+        double available = balance == null ? 0 : balance.getRemainingDays() + balance.getNegativeAllowanceDays() - pendingDays;
+        if (balance != null && requestedDays > available) {
             throw new BadRequestException(String.format(
-                    "Insufficient balance: requesting %.1f day(s) but only %.1f day(s) of %s remain",
-                    requestedDays, balance.getRemainingDays(), leaveType.getName()));
+                    "Insufficient balance: requesting %.1f day(s) but only %.1f day(s) of %s are available%s",
+                    requestedDays, Math.max(available, 0), leaveType.getName(),
+                    pendingDays > 0 ? String.format(" (%.1f day(s) are in pending requests)", pendingDays) : ""));
         }
 
         return new ValidatedLeaveApplication(
-                employee, leaveType, companyId, requestedDays,
-                balance == null ? 0 : balance.getRemainingDays()
+                employee, leaveType, companyId, requestedDays, available
         );
     }
 
@@ -262,6 +299,23 @@ public class LeaveRequestService {
 
         if (!DECIDABLE.contains(leaveRequest.getStatus())) {
             throw new BadRequestException("Only pending requests can be approved or rejected (current status: " + leaveRequest.getStatus() + ")");
+        }
+        boolean ownRequest = currentEmployee().map(me -> me.getId().equals(leaveRequest.getEmployee().getId())).orElse(false);
+        if (ownRequest && !authorizationService.hasOrganizationScope("LEAVE_APPROVE")) {
+            throw new org.springframework.security.access.AccessDeniedException("You can't approve or reject your own leave request.");
+        }
+        if (approve) {
+            employeeRepository.lockById(leaveRequest.getEmployee().getId());
+            int year = leaveRequest.getStartDate().getYear();
+            double remaining = getBalances(leaveRequest.getEmployee().getId(), year).stream()
+                    .filter(b -> b.getLeaveTypeId().equals(leaveRequest.getLeaveType().getId()))
+                    .mapToDouble(b -> b.getRemainingDays() + b.getNegativeAllowanceDays())
+                    .findFirst().orElse(Double.MAX_VALUE);
+            if (leaveRequest.getDays() > remaining) {
+                throw new BadRequestException(String.format(
+                        "Approving would exceed the balance: %.1f day(s) requested, %.1f day(s) of %s left",
+                        leaveRequest.getDays(), Math.max(remaining, 0), leaveRequest.getLeaveType().getName()));
+            }
         }
 
         leaveRequest.setStatus(approve ? "APPROVED" : "REJECTED");
@@ -306,19 +360,43 @@ public class LeaveRequestService {
         return LeaveRequestDTO.from(saved);
     }
 
-    /** Excludes weekends and any date on the company Holiday calendar. */
-    private double countBusinessDays(Long companyId, LocalDate start, LocalDate end) {
-        List<LocalDate> holidays = holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, start, end).stream()
-                .map(h -> h.getDate()).toList();
+    private HolidayCalendarService holidayCalendarService;
+
+    /** Employee-aware holiday rules (location + optional holidays); optional so unit tests can omit it. */
+    @Autowired(required = false)
+    public void setHolidayCalendarService(HolidayCalendarService holidayCalendarService) {
+        this.holidayCalendarService = holidayCalendarService;
+    }
+
+    /**
+     * Excludes the company's weekly offs (see WorkingWeek) and every holiday that applies to the
+     * employee: holidays for their work location (or company-wide ones) and optional holidays they
+     * picked. Without the calendar service every holiday on the calendar is excluded (legacy behaviour).
+     */
+    private double countBusinessDays(Long companyId, Employee employee, WorkingWeek workingWeek, LocalDate start, LocalDate end) {
+        java.util.Collection<LocalDate> holidays = holidayCalendarService != null
+                ? holidayCalendarService.holidayDatesFor(companyId, employee, start, end)
+                : holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, start, end).stream()
+                        .map(h -> h.getDate()).toList();
 
         double count = 0;
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
-            boolean isWeekend = date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY;
-            if (!isWeekend && !holidays.contains(date)) {
+            if (!workingWeek.isWeeklyOff(date) && !holidays.contains(date)) {
                 count++;
             }
         }
         return count;
+    }
+
+    private String normalizeHalfDaySession(ApplyLeaveRequest request) {
+        if (!request.getStartDate().equals(request.getEndDate())) {
+            throw new BadRequestException("Half-day leave must start and end on the same date");
+        }
+        String session = request.getHalfDaySession() == null ? "" : request.getHalfDaySession().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!HALF_DAY_SESSIONS.contains(session)) {
+            throw new BadRequestException("Choose the first half or the second half for a half-day leave");
+        }
+        return session;
     }
 
     private Employee resolveEmployeeForApply(ApplyLeaveRequest request) {

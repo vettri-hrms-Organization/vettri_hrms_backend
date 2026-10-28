@@ -9,6 +9,17 @@ public class UpdateStatusRequest {
 
     private String reason;
 
+    /** Optional - only used for Resigned / Terminated. Defaults to today (IST). */
+    private java.time.LocalDate lastWorkingDate;
+
+    public java.time.LocalDate getLastWorkingDate() {
+        return lastWorkingDate;
+    }
+
+    public void setLastWorkingDate(java.time.LocalDate lastWorkingDate) {
+        this.lastWorkingDate = lastWorkingDate;
+    }
+
     public String getStatus() {
         return status;
     }

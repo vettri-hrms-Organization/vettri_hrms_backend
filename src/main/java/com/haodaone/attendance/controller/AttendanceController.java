@@ -65,6 +65,7 @@ public class AttendanceController {
     private final AttendanceRegularizationRepository attendanceRegularizationRepository;
     private final DeviceRepository deviceRepository;
     private final WfhRequestRepository wfhRequestRepository;
+    private final com.haodaone.attendance.service.AttendanceSelfieService attendanceSelfieService;
 
     public AttendanceController(AttendanceRecordRepository attendanceRecordRepository,
                                AttendanceSessionRepository attendanceSessionRepository,
@@ -80,7 +81,8 @@ public class AttendanceController {
                                AttendancePolicyService attendancePolicyService,
                                AttendanceRegularizationRepository attendanceRegularizationRepository,
                                DeviceRepository deviceRepository,
-                               WfhRequestRepository wfhRequestRepository) {
+                               WfhRequestRepository wfhRequestRepository,
+                               com.haodaone.attendance.service.AttendanceSelfieService attendanceSelfieService) {
         this.attendanceRecordRepository = attendanceRecordRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
         this.eventPublisher = eventPublisher;
@@ -96,6 +98,7 @@ public class AttendanceController {
         this.attendanceRegularizationRepository = attendanceRegularizationRepository;
         this.deviceRepository = deviceRepository;
         this.wfhRequestRepository = wfhRequestRepository;
+        this.attendanceSelfieService = attendanceSelfieService;
     }
 
     @GetMapping
@@ -122,7 +125,9 @@ public class AttendanceController {
         Long companyId = requiredTenant();
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
 
-        boolean isWeekend = targetDate.getDayOfWeek() == DayOfWeek.SATURDAY || targetDate.getDayOfWeek() == DayOfWeek.SUNDAY;
+        boolean isWeekend = com.haodaone.company.service.WorkingWeek
+                .of(companyRepository.findById(companyId).orElse(null))
+                .isWeeklyOff(targetDate);
         boolean isHoliday = !holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, targetDate, targetDate).isEmpty();
         boolean workingDay = !isWeekend && !isHoliday;
 
@@ -311,6 +316,7 @@ public class AttendanceController {
         String normalizedSource = attendanceValidationService.normalizeSource(request.getSource());
         boolean wfh = Boolean.TRUE.equals(request.getWfh()) || "WFH".equalsIgnoreCase(request.getWorkingMode());
         attendancePolicyService.validateWebCheckIn(employee, company, wfh, LocalDate.now(applicationClock));
+        var selfie = attendanceSelfieService.validateForCheckIn(company, request.getSelfieImage());
         log.info("CHECK-IN LOCATION REQUEST received source={} workingMode={} latitude={} longitude={} accuracy={} timestamp={} officeLocationId={}",
                 normalizedSource, request.getWorkingMode(), request.getLatitude(), request.getLongitude(), request.getAccuracy(), request.getTimestamp(), request.getOfficeLocationId());
         attendanceValidationService.validateManagedDevice(employee, request.getDeviceId(), normalizedSource);
@@ -350,6 +356,7 @@ public class AttendanceController {
             session.setAccuracyMeters(request.getAccuracy());
         }
 
+        attendanceSelfieService.attach(session, selfie);
         session = attendanceSessionRepository.save(session);
         return ResponseEntity.ok(mapSession(session));
     }
@@ -403,6 +410,17 @@ public class AttendanceController {
             return ResponseEntity.ok().build();
         }
         return ResponseEntity.ok(mapSession(session));
+    }
+
+    /** Streams a check-in selfie; the service enforces ATTENDANCE_VIEW scope over the employee, or self. */
+    @GetMapping("/sessions/{sessionId}/selfie")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or @authorizationService.canAccessOwnAttendance()")
+    public ResponseEntity<byte[]> sessionSelfie(@PathVariable Long sessionId) {
+        var content = attendanceSelfieService.loadForViewer(sessionId);
+        return ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType(content.contentType()))
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "private, no-store")
+                .body(content.bytes());
     }
 
     @GetMapping("/office-locations")
@@ -493,6 +511,7 @@ public class AttendanceController {
         dto.setOfficeLocationName(session.getOfficeLocationName());
         dto.setDurationMinutes(session.getDurationMinutes());
         dto.setWfh(session.isWfh());
+        dto.setHasSelfie(session.getCheckInSelfieKey() != null && !session.getCheckInSelfieKey().isBlank());
         return dto;
     }
 

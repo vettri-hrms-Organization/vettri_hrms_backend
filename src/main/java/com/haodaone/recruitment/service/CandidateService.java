@@ -263,7 +263,7 @@ public class CandidateService {
             throw new BadRequestException("Only a candidate currently in the HR interview round (ROUND1) can be selected for the manager round - this candidate is " + candidate.getStage() + ".");
         }
 
-        Employee manager = employeeRepository.findById(request.getManagerEmployeeId())
+        Employee manager = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getManagerEmployeeId(), candidate.getJobOpening().getCompany().getId())
                 .orElseThrow(() -> new BadRequestException("Unknown hiring manager: " + request.getManagerEmployeeId()));
 
         Interview interview = new Interview();
@@ -384,6 +384,32 @@ public class CandidateService {
         auditLogService.log("Candidate", saved.getId(), "OFFER_LETTER_SENT",
                 "Offer letter emailed to '" + saved.getFullName() + "' (" + saved.getOfferLetterEmailStatus() + ")");
 
+        return CandidateDTO.from(saved);
+    }
+
+    /**
+     * Letters module hook: attaches a generated offer letter PDF as the
+     * candidate's current offer letter (same fields as uploadOfferLetter),
+     * so the existing "Send Offer Letter" action emails the generated one.
+     */
+    @Transactional
+    public CandidateDTO attachGeneratedOfferLetter(Long id, byte[] pdfBytes, String fileName) {
+        Candidate candidate = findActiveOrThrow(id);
+        if (!OFFER_LETTER_STAGES.contains(candidate.getStage())) {
+            throw new BadRequestException("An offer letter can only be generated after an offer has been generated for this candidate.");
+        }
+        String previousKey = candidate.getOfferLetterFileKey();
+        String key = offerLetterStorageService.storeGeneratedPdf(pdfBytes);
+        candidate.setOfferLetterFileKey(key);
+        candidate.setOfferLetterOriginalName(fileName);
+        candidate.setOfferLetterUploadedAt(LocalDateTime.now());
+        candidate.setOfferLetterUploadedBy(currentActorName());
+        Candidate saved = candidateRepository.save(candidate);
+        if (previousKey != null && !previousKey.isBlank()) {
+            offerLetterStorageService.delete(previousKey);
+        }
+        auditLogService.log("Candidate", saved.getId(), "OFFER_LETTER_GENERATED",
+                "Offer letter generated from template for '" + saved.getFullName() + "': " + fileName);
         return CandidateDTO.from(saved);
     }
 

@@ -8,6 +8,7 @@ import com.haodaone.common.exception.BadRequestException;
 import com.haodaone.security.CustomUserPrincipal;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -29,12 +30,25 @@ public class BillingController {
         return billingService.pricing();
     }
 
+    /**
+     * Checkout is reachable without a session only for the signup flow, where the
+     * new owner's account is still PENDING_PAYMENT and the caller must also know the
+     * account email. Signed-in callers always pay for their own company, and only
+     * a company admin may change the subscription.
+     */
     @PostMapping("/create-order")
-    public ResponseEntity<Map<String, Object>> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        if (request.companyId() == null || request.userId() == null) {
-            throw new BadRequestException("Company and user identifiers are required.");
+    public ResponseEntity<Map<String, Object>> createOrder(@AuthenticationPrincipal CustomUserPrincipal principal,
+                                                           @Valid @RequestBody CreateOrderRequest request) {
+        if (principal != null) {
+            requireCompanyAdmin(principal);
+            return ResponseEntity.ok(billingService.createOrder(principal.getCompanyId(), principal.getId(), request.plan(),
+                    request.billingCycle(), request.employeeCount(), false, null));
         }
-        return ResponseEntity.ok(billingService.createOrder(request.companyId(), request.userId(), request.plan(), request.billingCycle(), request.employeeCount()));
+        if (request.companyId() == null || request.userId() == null || request.customerEmail() == null || request.customerEmail().isBlank()) {
+            throw new BadRequestException("Company, user and email are required.");
+        }
+        return ResponseEntity.ok(billingService.createOrder(request.companyId(), request.userId(), request.plan(),
+                request.billingCycle(), request.employeeCount(), true, request.customerEmail()));
     }
 
     @PostMapping("/verify")
@@ -42,14 +56,12 @@ public class BillingController {
                                                             @Valid @RequestBody PaymentVerificationRequest request) {
         Long effectiveCompanyId = request.companyId();
         Long effectiveUserId = request.userId();
+        boolean signupCheckout = principal == null;
 
         if (principal != null) {
-            if (principal.getCompanyId() != null && (effectiveCompanyId == null || !principal.getCompanyId().equals(effectiveCompanyId))) {
-                effectiveCompanyId = principal.getCompanyId();
-            }
-            if (principal.getId() != null && (effectiveUserId == null || !principal.getId().equals(effectiveUserId))) {
-                effectiveUserId = principal.getId();
-            }
+            requireCompanyAdmin(principal);
+            effectiveCompanyId = principal.getCompanyId();
+            effectiveUserId = principal.getId();
         }
 
         if (effectiveCompanyId == null || effectiveUserId == null) {
@@ -64,14 +76,24 @@ public class BillingController {
                 request.employeeCount(),
                 request.razorpayPaymentId(),
                 request.razorpayOrderId(),
-                request.razorpaySignature());
+                request.razorpaySignature(),
+                signupCheckout);
         return ResponseEntity.ok(verified);
+    }
+
+    private static void requireCompanyAdmin(CustomUserPrincipal principal) {
+        boolean admin = principal.getRoleNames().stream()
+                .anyMatch(role -> "COMPANY_ADMIN".equals(role) || "SUPER_ADMIN".equals(role));
+        if (!admin || principal.getCompanyId() == null) {
+            throw new AccessDeniedException("Only a company admin can change the subscription.");
+        }
     }
 
     @PostMapping("/webhook")
     public ResponseEntity<String> handleWebhook(@RequestHeader(value = "X-Razorpay-Signature", required = false) String razorpaySignature,
+                                              @RequestHeader(value = "X-Razorpay-Event-Id", required = false) String razorpayEventId,
                                               @RequestBody String rawBody) {
-        billingService.processWebhookEvent(rawBody, razorpaySignature);
+        billingService.processWebhookEvent(rawBody, razorpaySignature, razorpayEventId);
         return ResponseEntity.ok("ok");
     }
 }

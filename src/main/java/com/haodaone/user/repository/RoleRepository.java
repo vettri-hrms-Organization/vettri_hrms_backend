@@ -10,7 +10,12 @@ import java.util.Optional;
 
 public interface RoleRepository extends JpaRepository<Role, Long> {
 
-    Optional<Role> findByName(String name);
+    /**
+     * Built-in (platform) role by name. Tenants may create custom roles with the same
+     * name, so this deliberately ignores company roles instead of returning several rows.
+     */
+    @Query("select r from Role r where r.name = :name and r.company is null")
+    Optional<Role> findByName(@Param("name") String name);
 
     Optional<Role> findByNameAndCompany_Id(String name, Long companyId);
 

@@ -31,15 +31,25 @@ public class AuthController {
     private final VerificationService verificationService;
     private final PasswordResetService passwordResetService;
     private final EmployeeRepository employeeRepository;
+    private final com.haodaone.company.repository.CompanyRepository companyRepository;
+
+    /** Optional setter injection keeps the public constructor (used directly by unit tests) unchanged. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.auth.service.MfaService mfaService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.privacy.service.LegalAcceptanceService legalAcceptanceService;
 
     public AuthController(AuthService authService, RegistrationService registrationService,
                           VerificationService verificationService, PasswordResetService passwordResetService,
-                          EmployeeRepository employeeRepository) {
+                          EmployeeRepository employeeRepository,
+                          com.haodaone.company.repository.CompanyRepository companyRepository) {
         this.authService = authService;
         this.registrationService = registrationService;
         this.verificationService = verificationService;
         this.passwordResetService = passwordResetService;
         this.employeeRepository = employeeRepository;
+        this.companyRepository = companyRepository;
     }
 
     @GetMapping("/verify-email")
@@ -91,13 +101,33 @@ public class AuthController {
         employeeRepository.findByUser_UsernameAndDeletedFalse(principal.getUsername())
             .or(() -> employeeRepository.findByEmailIgnoreCaseAndDeletedFalse(principal.getUser().getEmail()))
                 .ifPresent(employee -> dto.setEmployeeId(employee.getId()));
+        if (dto.getCompanyName() == null && dto.getCompanyId() != null) {
+            companyRepository.findById(dto.getCompanyId()).ifPresent(company -> dto.setCompanyName(company.getName()));
+        }
+        if (mfaService != null) {
+            mfaService.applyTo(dto, principal.getId());
+        }
+        if (legalAcceptanceService != null) {
+            legalAcceptanceService.applyTo(dto, principal.getId());
+        }
         return ResponseEntity.ok(dto);
     }
 
     @PostMapping("/change-password")
-    public ResponseEntity<Map<String, String>> changePassword(@AuthenticationPrincipal CustomUserPrincipal principal,
-                                                                @Valid @RequestBody ChangePasswordRequest request) {
+    public ResponseEntity<Map<String, Object>> changePassword(@AuthenticationPrincipal CustomUserPrincipal principal,
+                                                                @Valid @RequestBody ChangePasswordRequest request,
+                                                                HttpServletRequest httpRequest) {
         authService.changePassword(principal.getId(), request.getCurrentPassword(), request.getNewPassword());
-        return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
+        // Old sessions are revoked; give this (already two-factor verified) session a fresh token pair.
+        LoginResponse session = authService.issueSessionAfterPasswordChange(principal.getId(), httpRequest);
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("message", "Password changed successfully");
+        if (session != null) {
+            body.put("accessToken", session.getAccessToken());
+            body.put("refreshToken", session.getRefreshToken());
+            body.put("tokenType", session.getTokenType());
+            body.put("user", session.getUser());
+        }
+        return ResponseEntity.ok(body);
     }
 }

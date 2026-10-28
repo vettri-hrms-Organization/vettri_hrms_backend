@@ -100,6 +100,31 @@ public class OfferLetterS3StorageService {
     }
 
     /**
+     * Stores an already-generated PDF offer letter (letters module) under
+     * the same offer-letters/ prefix. Returns the S3 object key.
+     */
+    public String storeGeneratedPdf(byte[] pdfBytes) {
+        if (pdfBytes == null || pdfBytes.length == 0) {
+            throw new BadRequestException("The generated offer letter is empty.");
+        }
+        String key = OFFER_LETTER_PREFIX + UUID.randomUUID() + ".pdf";
+        try {
+            PutObjectRequest putRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .contentType("application/pdf")
+                    .contentLength((long) pdfBytes.length)
+                    .build();
+            s3Client.putObject(putRequest, RequestBody.fromBytes(pdfBytes));
+            log.info("Stored generated offer letter as key '{}' in bucket '{}'", key, bucketName);
+            return key;
+        } catch (S3Exception e) {
+            log.error("S3 upload failed for key '{}': {}", key, errorMessageOf(e), e);
+            throw new IllegalStateException("Failed to save the generated offer letter. Please try again.", e);
+        }
+    }
+
+    /**
      * Opens a live stream directly from S3 for the given key, wrapped as
      * an InputStreamResource - used for both preview (viewed inline in
      * the browser) and download of the currently-uploaded offer letter.

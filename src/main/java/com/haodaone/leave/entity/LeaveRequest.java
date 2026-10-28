@@ -34,6 +34,13 @@ public class LeaveRequest extends BaseEntity {
     @Column(nullable = false)
     private double days;
 
+    /** True for a single-date, 0.5-day request; halfDaySession is then FIRST_HALF or SECOND_HALF. */
+    @Column(name = "half_day", nullable = false)
+    private boolean halfDay = false;
+
+    @Column(name = "half_day_session", length = 20)
+    private String halfDaySession;
+
     @Column(length = 500)
     private String reason;
 
@@ -89,6 +96,22 @@ public class LeaveRequest extends BaseEntity {
 
     public void setDays(double days) {
         this.days = days;
+    }
+
+    public boolean isHalfDay() {
+        return halfDay;
+    }
+
+    public void setHalfDay(boolean halfDay) {
+        this.halfDay = halfDay;
+    }
+
+    public String getHalfDaySession() {
+        return halfDaySession;
+    }
+
+    public void setHalfDaySession(String halfDaySession) {
+        this.halfDaySession = halfDaySession;
     }
 
     public String getReason() {

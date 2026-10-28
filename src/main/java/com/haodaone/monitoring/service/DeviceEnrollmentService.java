@@ -87,6 +87,7 @@ public class DeviceEnrollmentService {
         if (request.getEmployeeId() != null) {
             Employee employee = findEmployeeInTenant(request.getEmployeeId())
                     .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
+            requireMonitoringConsent(employee);
             device.setEmployee(employee);
         }
 
@@ -130,6 +131,9 @@ public class DeviceEnrollmentService {
             requireManageScope(request.getEmployeeId());
             Employee employee = findEmployeeInTenant(request.getEmployeeId())
                     .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getEmployeeId()));
+            if (device.getEmployee() == null || !employee.getId().equals(device.getEmployee().getId())) {
+                requireMonitoringConsent(employee);
+            }
             device.setEmployee(employee);
             if (device.getAssignedDate() == null) {
                 device.setAssignedDate(java.time.LocalDate.now());
@@ -156,6 +160,21 @@ public class DeviceEnrollmentService {
                 "Device assignment updated: employeeId=" + (device.getEmployee() != null ? device.getEmployee().getId() : null)
                         + ", active=" + device.isActive());
         return MonitoredDeviceDTO.from(saved);
+    }
+
+    /** Privacy hook (optional so the unit-test constructor stays unchanged). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.privacy.service.MonitoringConsentService monitoringConsentService;
+
+    public void setMonitoringConsentService(com.haodaone.privacy.service.MonitoringConsentService monitoringConsentService) {
+        this.monitoringConsentService = monitoringConsentService;
+    }
+
+    /** When the company requires monitoring consent, the employee must have accepted the notice first. */
+    private void requireMonitoringConsent(Employee employee) {
+        if (monitoringConsentService != null && employee != null && employee.getCompany() != null) {
+            monitoringConsentService.requireConsent(employee.getCompany().getId(), employee.getId());
+        }
     }
 
     @Transactional

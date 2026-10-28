@@ -35,6 +35,7 @@ public class EmployeeService {
     private static final Set<String> VALID_STATUSES = com.haodaone.employee.entity.EmploymentStatus.VALID_STATUSES;
     private static final String EMPLOYEE_CODE_PREFIX = "EMP";
     private static final int EMPLOYEE_CODE_DIGITS = 4;
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
 
     private final EmployeeRepository employeeRepository;
     private final DepartmentRepository departmentRepository;
@@ -45,12 +46,26 @@ public class EmployeeService {
     private final com.haodaone.company.repository.CompanyRepository companyRepository;
     private final com.haodaone.company.repository.SubscriptionService subscriptionService;
     private final com.haodaone.security.AuthorizationService authorizationService;
+    /** Nullable only for legacy unit tests built with the 9-arg constructor. */
+    private final com.haodaone.auth.repository.RefreshTokenRepository refreshTokenRepository;
 
     public EmployeeService(EmployeeRepository employeeRepository, DepartmentRepository departmentRepository,
                             DesignationRepository designationRepository, TeamRepository teamRepository,
                             AuditLogService auditLogService, UserRepository userRepository, com.haodaone.company.repository.CompanyRepository companyRepository,
                             com.haodaone.company.repository.SubscriptionService subscriptionService,
                             com.haodaone.security.AuthorizationService authorizationService) {
+        this(employeeRepository, departmentRepository, designationRepository, teamRepository, auditLogService,
+                userRepository, companyRepository, subscriptionService, authorizationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EmployeeService(EmployeeRepository employeeRepository, DepartmentRepository departmentRepository,
+                            DesignationRepository designationRepository, TeamRepository teamRepository,
+                            AuditLogService auditLogService, UserRepository userRepository, com.haodaone.company.repository.CompanyRepository companyRepository,
+                            com.haodaone.company.repository.SubscriptionService subscriptionService,
+                            com.haodaone.security.AuthorizationService authorizationService,
+                            com.haodaone.auth.repository.RefreshTokenRepository refreshTokenRepository) {
+        this.refreshTokenRepository = refreshTokenRepository;
         this.employeeRepository = employeeRepository;
         this.departmentRepository = departmentRepository;
         this.designationRepository = designationRepository;
@@ -117,7 +132,7 @@ public class EmployeeService {
                     employeeRepository.countByCompany_IdAndIdInAndDeletedFalse(companyId, scope.get()));
         }
 
-        return PageResponse.from(result, EmployeeSummaryDTO::from);
+        return PageResponse.from(result, EmployeeSummaryDTO::forDirectory);
     }
 
     @Transactional(readOnly = true)
@@ -125,7 +140,7 @@ public class EmployeeService {
         Long companyId = requiredTenant();
         Employee employee = employeeRepository.findByIdAndCompany_IdAndDeletedFalse(id, companyId)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found: " + id));
-        EmployeeDetailDTO dto = EmployeeDetailDTO.from(employee);
+        EmployeeDetailDTO dto = withStatutoryVisibility(EmployeeDetailDTO.from(employee), employee);
         List<EmployeeSummaryDTO> directReports = employeeRepository.findAllByReportingManagerIdAndDeletedFalse(id).stream()
                 .filter(e -> companyId.equals(e.getCompany() == null ? null : e.getCompany().getId()))
                 .map(EmployeeSummaryDTO::from)
@@ -177,7 +192,8 @@ public class EmployeeService {
             });
         auditLogService.log("Employee", saved.getId(), "CREATE",
                 "Onboarded '" + saved.getFullName() + "' (" + saved.getEmployeeCode() + ")");
-        return EmployeeDetailDTO.from(saved);
+        publishEvent(new com.haodaone.employee.event.EmployeeCreatedEvent(company.getId(), saved.getId()));
+        return withStatutoryVisibility(EmployeeDetailDTO.from(saved), saved);
     }
 
     /**
@@ -222,7 +238,7 @@ public class EmployeeService {
             auditDetails += "; email: " + previousEmail + " -> " + normalizedEmail;
         }
         auditLogService.log("Employee", saved.getId(), "UPDATE", auditDetails);
-        return EmployeeDetailDTO.from(saved);
+        return withStatutoryVisibility(EmployeeDetailDTO.from(saved), saved);
     }
 
     private String normalizeEmail(String email) {
@@ -238,6 +254,19 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeDetailDTO updateStatus(Long id, String newStatus, String reason) {
+        return updateStatus(id, newStatus, reason, null);
+    }
+
+    /**
+     * Status change with exit handling: moving to Resigned / Terminated
+     * records lastWorkingDate (default today IST) and disables the login
+     * (revoking refresh tokens) unless the last working date is in the
+     * future - EmployeeExitScheduler disables it once that date passes.
+     * Moving back to Active never re-enables login; HR does that explicitly
+     * via the account-status action.
+     */
+    @Transactional
+    public EmployeeDetailDTO updateStatus(Long id, String newStatus, String reason, java.time.LocalDate lastWorkingDate) {
         String normalizedStatus = com.haodaone.employee.entity.EmploymentStatus.normalize(newStatus);
         if (!VALID_STATUSES.contains(normalizedStatus)) {
             throw new BadRequestException("Unknown status: " + newStatus + ". Must be one of " + VALID_STATUSES);
@@ -246,10 +275,33 @@ public class EmployeeService {
         Employee employee = findActiveOrThrow(id);
         String oldStatus = employee.getStatus();
         employee.setStatus(normalizedStatus);
+
+        boolean exiting = isExitStatus(normalizedStatus);
+        java.time.LocalDate today = java.time.LocalDate.now(IST);
+        java.time.LocalDate effectiveLastWorkingDate = null;
+        if (exiting) {
+            effectiveLastWorkingDate = lastWorkingDate != null ? lastWorkingDate : today;
+            if (employee.getDateOfJoining() != null && effectiveLastWorkingDate.isBefore(employee.getDateOfJoining())) {
+                throw new BadRequestException("Last working date cannot be before the date of joining");
+            }
+            employee.setLastWorkingDate(effectiveLastWorkingDate);
+        } else if (com.haodaone.employee.entity.EmploymentStatus.ACTIVE.equals(normalizedStatus)) {
+            employee.setLastWorkingDate(null);
+        }
         Employee saved = employeeRepository.save(employee);
 
-        String details = "status: " + oldStatus + " -> " + newStatus + (reason != null && !reason.isBlank() ? " (" + reason + ")" : "");
+        String details = "status: " + oldStatus + " -> " + newStatus + (reason != null && !reason.isBlank() ? " (" + reason + ")" : "")
+                + (effectiveLastWorkingDate != null ? "; last working date: " + effectiveLastWorkingDate : "");
         auditLogService.log("Employee", saved.getId(), "STATUS_CHANGE", details);
+        if (exiting && !isExitStatus(com.haodaone.employee.entity.EmploymentStatus.normalize(oldStatus)) && saved.getCompany() != null) {
+            publishEvent(new com.haodaone.employee.event.EmployeeExitedEvent(saved.getCompany().getId(), saved.getId(),
+                    normalizedStatus, effectiveLastWorkingDate));
+        }
+
+        if (exiting && !effectiveLastWorkingDate.isAfter(today) && saved.getUser() != null
+                && !("DISABLED".equalsIgnoreCase(saved.getUser().getAccountStatus()) && !saved.getUser().isActive())) {
+            disableLogin(saved, saved.getUser(), "employee exited (" + normalizedStatus + ")");
+        }
         return EmployeeDetailDTO.from(saved);
     }
 
@@ -265,13 +317,66 @@ public class EmployeeService {
             throw new BadRequestException("This employee has no login account");
         }
 
+        if ("DISABLED".equals(accountStatus)) {
+            disableLogin(employee, user, null);
+            return EmployeeDetailDTO.from(employee);
+        }
+
         String previousStatus = user.getAccountStatus();
         user.setAccountStatus(accountStatus);
-        user.setActive("ACTIVE".equals(accountStatus));
+        user.setActive(true);
         userRepository.save(user);
         auditLogService.log("Employee", employee.getId(), "ACCOUNT_STATUS_CHANGED",
                 "account status: " + previousStatus + " -> " + accountStatus);
         return EmployeeDetailDTO.from(employee);
+    }
+
+    /**
+     * Daily offboarding sweep (called by EmployeeExitScheduler, no tenant
+     * context): disables logins of Resigned / Terminated employees whose
+     * last working date is before {@code today}. Returns how many were disabled.
+     */
+    @Transactional
+    public int disableLoginsPastLastWorkingDate(java.time.LocalDate today) {
+        java.util.Set<String> statuses = new java.util.HashSet<>();
+        statuses.addAll(com.haodaone.employee.entity.EmploymentStatus.aliases(com.haodaone.employee.entity.EmploymentStatus.RESIGNED));
+        statuses.addAll(com.haodaone.employee.entity.EmploymentStatus.aliases(com.haodaone.employee.entity.EmploymentStatus.TERMINATED));
+        int disabled = 0;
+        for (Employee employee : employeeRepository.findExitedWithActiveLogin(statuses, today)) {
+            Long previousTenant = com.haodaone.tenant.TenantContext.getCurrentTenant();
+            try {
+                if (employee.getCompany() != null) {
+                    com.haodaone.tenant.TenantContext.setCurrentTenant(employee.getCompany().getId());
+                }
+                disableLogin(employee, employee.getUser(), "last working date " + employee.getLastWorkingDate() + " passed");
+                disabled++;
+            } finally {
+                if (previousTenant != null) {
+                    com.haodaone.tenant.TenantContext.setCurrentTenant(previousTenant);
+                } else {
+                    com.haodaone.tenant.TenantContext.clear();
+                }
+            }
+        }
+        return disabled;
+    }
+
+    /** Single disable path: flips the account off and revokes refresh tokens so existing sessions can't be renewed. */
+    private void disableLogin(Employee employee, User user, String why) {
+        String previousStatus = user.getAccountStatus();
+        user.setAccountStatus("DISABLED");
+        user.setActive(false);
+        userRepository.save(user);
+        if (refreshTokenRepository != null && user.getId() != null) {
+            refreshTokenRepository.revokeAllForUser(user.getId());
+        }
+        auditLogService.log("Employee", employee.getId(), "ACCOUNT_STATUS_CHANGED",
+                "account status: " + previousStatus + " -> DISABLED" + (why != null ? " (" + why + ")" : ""));
+    }
+
+    private static boolean isExitStatus(String normalizedStatus) {
+        return com.haodaone.employee.entity.EmploymentStatus.RESIGNED.equals(normalizedStatus)
+                || com.haodaone.employee.entity.EmploymentStatus.TERMINATED.equals(normalizedStatus);
     }
 
     private void applyRequestFields(Employee employee, CreateEmployeeRequest request) {
@@ -286,6 +391,7 @@ public class EmployeeService {
         employee.setAddress(request.getAddress());
         employee.setEmergencyContactName(request.getEmergencyContactName());
         employee.setEmergencyContactPhone(request.getEmergencyContactPhone());
+        applyBankAndStatutoryFields(employee, request);
 
         if (request.getDepartmentId() != null) {
             Department department = departmentRepository.findByIdAndCompany_IdAndDeletedFalse(request.getDepartmentId(), requiredTenant())
@@ -296,7 +402,7 @@ public class EmployeeService {
         }
 
         if (request.getDesignationId() != null) {
-            Designation designation = designationRepository.findById(request.getDesignationId())
+            Designation designation = designationRepository.findByIdAndCompany_IdAndDeletedFalse(request.getDesignationId(), requiredTenant())
                     .orElseThrow(() -> new BadRequestException("Unknown designation: " + request.getDesignationId()));
             employee.setDesignation(designation);
         } else {
@@ -322,6 +428,106 @@ public class EmployeeService {
         } else {
             employee.setReportingManager(null);
         }
+    }
+
+    /**
+     * Bank/statutory fields are optional and partial-update friendly: null
+     * leaves the stored value alone (older clients and the bulk importer
+     * never send them), blank clears it. A masked account number echoed
+     * back from a read ("XXXX1234") is ignored rather than saved.
+     */
+    /**
+     * Validates and applies only the bank/statutory fields of {@code request} to {@code employee} (null = leave
+     * unchanged), with the same rules as create/update. Does not save. Used by the bulk data importer
+     * (com.haodaone.imports), which also calls it on a scratch Employee to validate a row without writing.
+     */
+    public void applyBankAndStatutoryDetails(Employee employee, CreateEmployeeRequest request) {
+        applyBankAndStatutoryFields(employee, request);
+    }
+
+    private void applyBankAndStatutoryFields(Employee employee, CreateEmployeeRequest request) {
+        String account = request.getBankAccountNumber();
+        if (account != null && !account.trim().matches("^[X*]+[0-9A-Za-z]{0,4}$")) {
+            String normalized = account.replaceAll("\\s", "");
+            if (!normalized.isEmpty() && !normalized.matches("^[0-9A-Za-z]{6,34}$")) {
+                throw new BadRequestException("Bank account number must be 6-34 letters or digits");
+            }
+            employee.setBankAccountNumber(normalized.isEmpty() ? null : normalized.toUpperCase(Locale.ROOT));
+        }
+        String ifsc = upperOrNull(request.getBankIfsc());
+        if (request.getBankIfsc() != null) {
+            if (ifsc != null && !ifsc.matches("^[A-Z]{4}0[A-Z0-9]{6}$")) {
+                throw new BadRequestException("IFSC must be 11 characters: 4 letters, 0, then 6 letters/digits (e.g. HDFC0001234)");
+            }
+            employee.setBankIfsc(ifsc);
+        }
+        if (request.getBankName() != null) {
+            employee.setBankName(request.getBankName().isBlank() ? null : request.getBankName().trim());
+        }
+        String pan = upperOrNull(request.getPanNumber());
+        if (request.getPanNumber() != null) {
+            if (pan != null && !pan.matches("^[A-Z]{5}[0-9]{4}[A-Z]$")) {
+                throw new BadRequestException("PAN must be 10 characters in the format ABCDE1234F");
+            }
+            employee.setPanNumber(pan);
+        }
+        String uan = upperOrNull(request.getUanNumber());
+        if (request.getUanNumber() != null) {
+            if (uan != null && !uan.matches("^[0-9]{12}$")) {
+                throw new BadRequestException("UAN must be 12 digits");
+            }
+            employee.setUanNumber(uan);
+        }
+        String esi = upperOrNull(request.getEsiNumber());
+        if (request.getEsiNumber() != null) {
+            if (esi != null && !esi.matches("^[0-9]{10,17}$")) {
+                throw new BadRequestException("ESI number must be 10-17 digits");
+            }
+            employee.setEsiNumber(esi);
+        }
+    }
+
+    private static String upperOrNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.replaceAll("\\s", "").toUpperCase(Locale.ROOT);
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** Setter-injected so the existing constructors (and unit tests using them) stay unchanged; null = no self bypass. */
+    private com.haodaone.security.EmployeeSecurity employeeSecurity;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setEmployeeSecurity(com.haodaone.security.EmployeeSecurity employeeSecurity) {
+        this.employeeSecurity = employeeSecurity;
+    }
+
+    /** Setter-injected (null in plain unit tests) - lifecycle events for onboarding/offboarding listeners. */
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setEventPublisher(org.springframework.context.ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    private void publishEvent(Object event) {
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(event);
+        }
+    }
+
+    /**
+     * Full bank/statutory identifiers go only to the employee themself or
+     * someone holding SALARY_VIEW / EMPLOYEE_MANAGE over them; everyone else
+     * (e.g. a manager with just EMPLOYEE_VIEW) gets the masked account number.
+     */
+    private EmployeeDetailDTO withStatutoryVisibility(EmployeeDetailDTO dto, Employee employee) {
+        if (employee.getId() == null) return dto;
+        boolean self = employeeSecurity != null && employeeSecurity.isSelf(employee.getId());
+        if (self || authorizationService.isAllowed("SALARY_VIEW", "EMPLOYEE", employee.getId())
+                || authorizationService.isAllowed("EMPLOYEE_MANAGE", "EMPLOYEE", employee.getId())) {
+            dto.revealStatutory(employee);
+        }
+        return dto;
     }
 
     /** EMP0001, EMP0002, ... - looks at the highest existing suffix rather than a separate counter table, so it self-heals if a row is ever removed. */

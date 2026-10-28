@@ -81,6 +81,7 @@ class OrganizationStructureApiTest {
         Designation designation = new Designation();
         designation.setTitle("Engineer " + suffix);
         designation.setDepartment(department);
+        designation.setCompany(company);
         designation = designationRepository.saveAndFlush(designation);
 
         Employee manager = createEmployee(company, "Zara", "Manager", "M" + suffix);

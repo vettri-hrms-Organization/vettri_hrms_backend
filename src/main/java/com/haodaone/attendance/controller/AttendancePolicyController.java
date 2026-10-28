@@ -42,6 +42,19 @@ public class AttendancePolicyController {
         return attendancePolicyService.updatePolicy(request);
     }
 
+    @GetMapping("/policy/working-week")
+    @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or @authorizationService.canAccessOwnAttendance()")
+    public com.haodaone.attendance.dto.WorkingWeekDTO workingWeek() {
+        return attendancePolicyService.getWorkingWeek();
+    }
+
+    @PutMapping("/policy/working-week")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('ATTENDANCE_MANAGE')")
+    public com.haodaone.attendance.dto.WorkingWeekDTO updateWorkingWeek(
+            @RequestBody com.haodaone.attendance.dto.WorkingWeekDTO request) {
+        return attendancePolicyService.updateWorkingWeek(request);
+    }
+
     @GetMapping("/policy/context")
     @PreAuthorize("@authorizationService.canAccessOwnAttendance()")
     public AttendanceContextDTO currentContext() {

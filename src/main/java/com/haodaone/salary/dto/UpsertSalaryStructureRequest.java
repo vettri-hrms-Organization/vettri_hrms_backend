@@ -20,6 +20,17 @@ public class UpsertSalaryStructureRequest {
 
     private String notes;
 
+    /** Auto-calculate PF/ESI/PT/TDS from the company's statutory settings. Null (omitted) = true for new structures. */
+    private Boolean autoStatutory;
+
+    public Boolean getAutoStatutory() {
+        return autoStatutory;
+    }
+
+    public void setAutoStatutory(Boolean autoStatutory) {
+        this.autoStatutory = autoStatutory;
+    }
+
     public Long getEmployeeId() {
         return employeeId;
     }

@@ -54,6 +54,10 @@ public class DepartmentService {
         department.setCode(request.getCode());
         department.setDescription(request.getDescription());
         department.setCompany(company);
+        if (request.getHeadEmployeeId() != null
+                && employeeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getHeadEmployeeId(), companyId).isEmpty()) {
+            throw new BadRequestException("Unknown department head: " + request.getHeadEmployeeId());
+        }
         department.setHeadEmployeeId(request.getHeadEmployeeId());
         if (request.getParentDepartmentId() != null) {
             Department parent = departmentRepository.findByIdAndCompany_IdAndDeletedFalse(request.getParentDepartmentId(), companyId)
@@ -80,7 +84,7 @@ public class DepartmentService {
         DepartmentDTO dto = DepartmentDTO.from(department);
         dto.setEmployeeCount(employeeRepository.countByDepartmentIdAndDeletedFalse(department.getId()));
         if (department.getHeadEmployeeId() != null) {
-            employeeRepository.findById(department.getHeadEmployeeId())
+            employeeRepository.findByIdAndCompany_IdAndDeletedFalse(department.getHeadEmployeeId(), department.getCompany().getId())
                     .map(Employee::getFullName)
                     .ifPresent(dto::setHeadEmployeeName);
         }

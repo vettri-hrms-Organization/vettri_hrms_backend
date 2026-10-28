@@ -7,6 +7,8 @@ import com.haodaone.company.entity.Company;
 import com.haodaone.company.entity.Subscription;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.company.repository.SubscriptionRepository;
+import com.haodaone.leave.repository.LeaveTypeRepository;
+import com.haodaone.leave.service.DefaultLeaveTypes;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -15,9 +17,10 @@ import java.util.List;
 public class CompanyAdminService {
     private final CompanyRepository companies;
     private final SubscriptionRepository subscriptions;
-    public CompanyAdminService(CompanyRepository companies, SubscriptionRepository subscriptions) { this.companies = companies; this.subscriptions = subscriptions; }
+    private final LeaveTypeRepository leaveTypes;
+    public CompanyAdminService(CompanyRepository companies, SubscriptionRepository subscriptions, LeaveTypeRepository leaveTypes) { this.companies = companies; this.subscriptions = subscriptions; this.leaveTypes = leaveTypes; }
     @Transactional(readOnly = true) public List<CompanyAdminDTO> companies() { return companies.findAll().stream().filter(c -> !c.isDeleted()).map(CompanyAdminDTO::from).toList(); }
-    @Transactional public CompanyAdminDTO createCompany(CompanyAdminDTO.WriteRequest request) { Company c = new Company(); apply(c, request); return CompanyAdminDTO.from(companies.save(c)); }
+    @Transactional public CompanyAdminDTO createCompany(CompanyAdminDTO.WriteRequest request) { Company c = new Company(); apply(c, request); Company saved = companies.save(c); DefaultLeaveTypes.seedFor(saved, leaveTypes); return CompanyAdminDTO.from(saved); }
     @Transactional public CompanyAdminDTO updateCompany(Long id, CompanyAdminDTO.WriteRequest request) { Company c = company(id); apply(c, request); return CompanyAdminDTO.from(companies.save(c)); }
     @Transactional(readOnly = true) public List<SubscriptionAdminDTO> subscriptions() { return subscriptions.findAll().stream().filter(s -> !s.isDeleted()).map(SubscriptionAdminDTO::from).toList(); }
     @Transactional public SubscriptionAdminDTO createSubscription(Long companyId, SubscriptionAdminDTO.WriteRequest request) { Subscription s = new Subscription(); s.setCompany(company(companyId)); apply(s, request); return SubscriptionAdminDTO.from(subscriptions.save(s)); }

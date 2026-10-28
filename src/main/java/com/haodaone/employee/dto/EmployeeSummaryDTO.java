@@ -37,6 +37,26 @@ public class EmployeeSummaryDTO {
         return dto;
     }
 
+    /** Only populated by the directory listing (EmployeeService#listPaged, inside its transaction) - feeds the employee master export. */
+    private String teamName;
+    /** The employee import maps "Work Location" onto Employee.address, so that is what is exposed here. */
+    private String workLocation;
+
+    public static EmployeeSummaryDTO forDirectory(Employee e) {
+        EmployeeSummaryDTO dto = from(e);
+        dto.teamName = e.getTeam() != null ? e.getTeam().getName() : null;
+        dto.workLocation = e.getAddress();
+        return dto;
+    }
+
+    public String getTeamName() {
+        return teamName;
+    }
+
+    public String getWorkLocation() {
+        return workLocation;
+    }
+
     public Long getId() {
         return id;
     }

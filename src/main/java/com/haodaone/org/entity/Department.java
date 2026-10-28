@@ -14,13 +14,14 @@ import jakarta.persistence.*;
  * name when building DTOs.
  */
 @Entity
-@Table(name = "department", uniqueConstraints = @UniqueConstraint(columnNames = "code"))
+/** Codes are unique per company (ux_department_company_code, V38). */
+@Table(name = "department")
 public class Department extends BaseEntity {
 
     @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(nullable = false, length = 20)
     private String code;
 
     @Column(length = 500)

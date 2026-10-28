@@ -46,6 +46,7 @@ public class AuthService {
     private final EmployeeRepository employeeRepository;
     private final UserPermissionGrantRepository permissionGrantRepository;
     private final SecureRandom secureRandom = new SecureRandom();
+    private final MfaService mfaService;
 
     @Value("${app.jwt.refresh-token-expiry-days:7}")
     private long refreshTokenExpiryDays;
@@ -57,7 +58,9 @@ public class AuthService {
                         JwtService jwtService,
                         AuditLogService auditLogService,
                         EmployeeRepository employeeRepository,
-                        UserPermissionGrantRepository permissionGrantRepository) {
+                        UserPermissionGrantRepository permissionGrantRepository,
+                        MfaService mfaService) {
+        this.mfaService = mfaService;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.loginHistoryRepository = loginHistoryRepository;
@@ -75,8 +78,19 @@ public class AuthService {
                         user.getCompany().getId(), user.getId()));
         employeeRepository.findByUser_UsernameAndDeletedFalse(user.getUsername())
                 .ifPresent(employee -> dto.setEmployeeId(employee.getId()));
+        if (user.getCompany() != null) {
+            dto.setCompanyName(user.getCompany().getName());
+        }
+        mfaService.applyTo(dto, user);
+        if (legalAcceptanceService != null) {
+            legalAcceptanceService.applyTo(dto, user);
+        }
         return dto;
     }
+
+    /** Optional field injection keeps the constructor (used directly by unit tests) unchanged. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.privacy.service.LegalAcceptanceService legalAcceptanceService;
 
     @Transactional(noRollbackFor = AuthenticationFailedException.class)
     public LoginResponse login(LoginRequest request, HttpServletRequest httpRequest) {
@@ -110,19 +124,138 @@ public class AuthService {
             throw new AuthenticationFailedException("Invalid username or password");
         }
 
-        // Success - reset lockout counters, record login, issue tokens.
+        // Company enforces SSO-only sign-in (break-glass admin excepted). Checked after the
+        // password so the message never reveals the policy to someone without the password.
+        if (ssoPolicyService != null && ssoPolicyService.isPasswordLoginBlocked(user)) {
+            recordLoginAttempt(request.getUsername(), false, "Password login disabled (SSO only)", httpRequest);
+            throw new com.haodaone.common.exception.SsoRequiredException(
+                    "Your organisation requires signing in with Google or Microsoft. Use the single sign-on buttons.");
+        }
+
+        // Password is right. If a second factor is due, hand back a short-lived
+        // challenge instead of tokens (counters reset only once MFA succeeds).
+        MfaService.LoginChallenge challenge = mfaService.startLoginChallengeIfRequired(
+                user, request.getDeviceToken(), httpRequest == null ? null : httpRequest.getRemoteAddr());
+        if (challenge != null) {
+            return LoginResponse.mfaChallenge(challenge.mfaToken(), challenge.methods(),
+                    MfaService.CHALLENGE_TTL_SECONDS, challenge.maskedEmail());
+        }
+
+        return completeLogin(user, request.getUsername(), "Successful login", httpRequest);
+    }
+
+    /** Optional setter injection keeps the constructor (used directly by unit tests) unchanged. */
+    private com.haodaone.sso.service.SsoPolicyService ssoPolicyService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSsoPolicyService(com.haodaone.sso.service.SsoPolicyService ssoPolicyService) {
+        this.ssoPolicyService = ssoPolicyService;
+    }
+
+    /**
+     * Finishes an SSO sign-in for a user whose identity provider ID token was
+     * already validated (see sso.service.SsoService). The same lockout/active
+     * checks as password login apply; Vettri two-factor still applies unless
+     * skipVettriMfa (company setting "trust SSO MFA").
+     */
+    @Transactional(noRollbackFor = AuthenticationFailedException.class)
+    public LoginResponse completeSsoLogin(User user, String providerName, boolean skipVettriMfa, HttpServletRequest httpRequest) {
+        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(LocalDateTime.now())) {
+            recordLoginAttempt(user.getUsername(), false, "Account locked (SSO " + providerName + ")", httpRequest);
+            throw new AuthenticationFailedException(
+                    "Account locked due to too many failed attempts. Try again after " + user.getLockedUntil());
+        }
+        if (!isAuthenticationEnabled(user)) {
+            recordLoginAttempt(user.getUsername(), false, "Account inactive (SSO " + providerName + ")", httpRequest);
+            throw new AuthenticationFailedException("This account is not active. Complete account setup or contact your administrator.");
+        }
+        if (!skipVettriMfa) {
+            MfaService.LoginChallenge challenge = mfaService.startLoginChallengeIfRequired(
+                    user, null, httpRequest == null ? null : httpRequest.getRemoteAddr());
+            if (challenge != null) {
+                return LoginResponse.mfaChallenge(challenge.mfaToken(), challenge.methods(),
+                        MfaService.CHALLENGE_TTL_SECONDS, challenge.maskedEmail());
+            }
+        }
+        return completeLogin(user, user.getUsername(), "Successful login (SSO: " + providerName + ")", httpRequest);
+    }
+
+    /** login_history entry for an SSO attempt that failed before a user could be resolved. */
+    @Transactional
+    public void recordSsoFailure(String identifier, String reason, HttpServletRequest httpRequest) {
+        recordLoginAttempt(identifier == null ? "(sso)" : identifier, false, reason, httpRequest);
+    }
+
+    /** Success - reset lockout counters, record login, issue tokens. Shared by password-only and MFA logins. */
+    private LoginResponse completeLogin(User user, String loginIdentifier, String auditDetail, HttpServletRequest httpRequest) {
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.save(user);
 
-        recordLoginAttempt(request.getUsername(), true, null, httpRequest);
-        auditLogService.log("User", user.getId(), "LOGIN", "Successful login");
+        recordLoginAttempt(loginIdentifier, true, null, httpRequest);
+        auditLogService.log("User", user.getId(), "LOGIN", auditDetail);
 
         List<String> roleNames = user.getRoles().stream().map(r -> r.getName()).toList();
         String accessToken = jwtService.generateAccessToken(user.getUsername(), roleNames);
         String refreshToken = issueRefreshToken(user, httpRequest);
 
+        return new LoginResponse(accessToken, refreshToken, toUserDTO(user));
+    }
+
+    /**
+     * Second step of an MFA login. Wrong codes count toward the same lockout as
+     * wrong passwords and are recorded in login_history; the challenge itself
+     * dies after MfaService.CHALLENGE_MAX_FAILURES wrong codes or 5 minutes.
+     */
+    @Transactional(noRollbackFor = AuthenticationFailedException.class)
+    public LoginResponse verifyMfa(String mfaToken, String method, String code, boolean rememberDevice,
+                                   HttpServletRequest httpRequest) {
+        com.haodaone.auth.entity.MfaMethod mfaMethod = MfaService.parseMethod(method);
+        com.haodaone.auth.entity.MfaChallenge challenge = mfaService.findActiveChallenge(mfaToken)
+                .orElseThrow(() -> new AuthenticationFailedException("Your sign-in session expired. Please sign in again."));
+        User user = challenge.getUser();
+
+        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(LocalDateTime.now())) {
+            recordLoginAttempt(user.getUsername(), false, "Account locked", httpRequest);
+            throw new AuthenticationFailedException(
+                    "Account locked due to too many failed attempts. Try again after " + user.getLockedUntil());
+        }
+        if (!isAuthenticationEnabled(user)) {
+            recordLoginAttempt(user.getUsername(), false, "Account inactive", httpRequest);
+            throw new AuthenticationFailedException("This account is not active. Complete account setup or contact your administrator.");
+        }
+
+        if (!mfaService.verifyChallenge(challenge, mfaMethod, code)) {
+            mfaService.recordChallengeFailure(challenge);
+            handleFailedAttempt(user);
+            recordLoginAttempt(user.getUsername(), false, "Invalid " + mfaMethod.name() + " code", httpRequest);
+            throw new AuthenticationFailedException("Invalid or expired verification code");
+        }
+
+        mfaService.consumeChallenge(challenge);
+        LoginResponse response = completeLogin(user, user.getUsername(),
+                "Successful login (two-factor: " + mfaMethod.name() + ")", httpRequest);
+        if (rememberDevice) {
+            response.setDeviceToken(mfaService.issueTrustedDevice(user,
+                    httpRequest == null ? null : httpRequest.getRemoteAddr(),
+                    httpRequest == null ? null : httpRequest.getHeader("User-Agent")));
+        }
+        return response;
+    }
+
+    /**
+     * After a successful password change every refresh token is revoked; the
+     * caller already proved both factors for the current session, so hand it a
+     * fresh token pair instead of forcing a full (two-factor) sign-in again.
+     */
+    @Transactional
+    public LoginResponse issueSessionAfterPasswordChange(Long userId, HttpServletRequest httpRequest) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AuthenticationFailedException("User not found"));
+        List<String> roleNames = user.getRoles().stream().map(r -> r.getName()).toList();
+        String accessToken = jwtService.generateAccessToken(user.getUsername(), roleNames);
+        String refreshToken = issueRefreshToken(user, httpRequest);
         return new LoginResponse(accessToken, refreshToken, toUserDTO(user));
     }
 

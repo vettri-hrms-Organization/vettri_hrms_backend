@@ -89,12 +89,20 @@ public class JobOpeningService {
                     .orElseThrow(() -> new BadRequestException("Unknown department: " + request.getDepartmentId())));
         }
         if (request.getDesignationId() != null) {
-            opening.setDesignation(designationRepository.findById(request.getDesignationId())
+            opening.setDesignation(designationRepository.findByIdAndCompany_IdAndDeletedFalse(request.getDesignationId(), tenant)
                     .orElseThrow(() -> new BadRequestException("Unknown designation: " + request.getDesignationId())));
         }
         if (request.getRecruiterId() != null) {
             opening.setRecruiter(employeeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getRecruiterId(), tenant)
                     .orElseThrow(() -> new BadRequestException("Unknown employee: " + request.getRecruiterId())));
+        } else {
+            // Default the recruiter to whoever raised the requisition, so it shows in their "My requisitions".
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                employeeRepository.findByUser_UsernameAndDeletedFalse(auth.getName())
+                        .filter(employee -> employee.getCompany() != null && tenant.equals(employee.getCompany().getId()))
+                        .ifPresent(opening::setRecruiter);
+            }
         }
 
         JobOpening saved = jobOpeningRepository.save(opening);

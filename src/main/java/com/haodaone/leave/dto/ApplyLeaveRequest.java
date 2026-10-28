@@ -20,6 +20,28 @@ public class ApplyLeaveRequest {
 
     private String reason;
 
+    /** Optional: a 0.5-day request for a single working date. */
+    private Boolean halfDay;
+
+    /** FIRST_HALF or SECOND_HALF; required when halfDay is true. */
+    private String halfDaySession;
+
+    public Boolean getHalfDay() {
+        return halfDay;
+    }
+
+    public void setHalfDay(Boolean halfDay) {
+        this.halfDay = halfDay;
+    }
+
+    public String getHalfDaySession() {
+        return halfDaySession;
+    }
+
+    public void setHalfDaySession(String halfDaySession) {
+        this.halfDaySession = halfDaySession;
+    }
+
     public Long getEmployeeId() {
         return employeeId;
     }

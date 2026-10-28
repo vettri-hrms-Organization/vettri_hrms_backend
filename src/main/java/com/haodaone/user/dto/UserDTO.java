@@ -25,6 +25,8 @@ public class UserDTO {
     private Set<String> rolePermissions;
     private Set<String> directPermissions;
     private Long employeeId;
+    private Long companyId;
+    private String companyName;
     private java.util.Map<String, Set<PermissionScope>> scopes;
 
     public static UserDTO from(User user) {
@@ -40,6 +42,13 @@ public class UserDTO {
         dto.active = user.isActive();
         dto.mustChangePassword = user.isMustChangePassword();
         dto.lastLoginAt = user.getLastLoginAt();
+        if (user.getCompany() != null) {
+            dto.companyId = user.getCompany().getId();
+            // Only read the name if it's already loaded; callers outside a session set it explicitly.
+            if (org.hibernate.Hibernate.isInitialized(user.getCompany())) {
+                dto.companyName = user.getCompany().getName();
+            }
+        }
         dto.roles = user.getRoles().stream()
                 .filter(role -> !role.isDeleted())
                 .map(com.haodaone.user.entity.Role::getName)
@@ -125,6 +134,58 @@ public class UserDTO {
     public Set<String> getDirectPermissions() { return directPermissions; }
 
     /** Null for logins with no linked Employee record (see Employee.user javadoc) - not every account is an employee. */
+    public Long getCompanyId() {
+        return companyId;
+    }
+
+    public String getCompanyName() {
+        return companyName;
+    }
+
+    public void setCompanyName(String companyName) {
+        this.companyName = companyName;
+    }
+
+    /** Two-factor state, filled by auth.service.MfaService#applyTo (login, refresh, /me). */
+    private boolean mfaEnabled;
+    private boolean mfaEnrollmentRequired;
+
+    public boolean isMfaEnabled() {
+        return mfaEnabled;
+    }
+
+    public void setMfaEnabled(boolean mfaEnabled) {
+        this.mfaEnabled = mfaEnabled;
+    }
+
+    public boolean isMfaEnrollmentRequired() {
+        return mfaEnrollmentRequired;
+    }
+
+    public void setMfaEnrollmentRequired(boolean mfaEnrollmentRequired) {
+        this.mfaEnrollmentRequired = mfaEnrollmentRequired;
+    }
+
+    /** Legal acceptance gate, filled by privacy.service.LegalAcceptanceService#applyTo (login, refresh, /me). */
+    private boolean legalAcceptanceRequired;
+    private List<String> pendingLegalDocuments = List.of();
+
+    public boolean isLegalAcceptanceRequired() {
+        return legalAcceptanceRequired;
+    }
+
+    public void setLegalAcceptanceRequired(boolean legalAcceptanceRequired) {
+        this.legalAcceptanceRequired = legalAcceptanceRequired;
+    }
+
+    public List<String> getPendingLegalDocuments() {
+        return pendingLegalDocuments;
+    }
+
+    public void setPendingLegalDocuments(List<String> pendingLegalDocuments) {
+        this.pendingLegalDocuments = pendingLegalDocuments == null ? List.of() : pendingLegalDocuments;
+    }
+
     public Long getEmployeeId() {
         return employeeId;
     }

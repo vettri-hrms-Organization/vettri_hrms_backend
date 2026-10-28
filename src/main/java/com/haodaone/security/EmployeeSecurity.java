@@ -70,7 +70,11 @@ public class EmployeeSecurity {
     }
 
     private java.util.Optional<Long> currentEmployeeId() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            return java.util.Optional.empty();
+        }
+        String username = authentication.getName();
         return employeeRepository.findByUser_UsernameAndDeletedFalse(username).map(e -> e.getId());
     }
 }

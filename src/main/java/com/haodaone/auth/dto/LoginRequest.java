@@ -10,6 +10,17 @@ public class LoginRequest {
     @NotBlank(message = "Password is required")
     private String password;
 
+    /** Optional "remember this device" token from a previous MFA verification; skips the second factor while valid. */
+    private String deviceToken;
+
+    public String getDeviceToken() {
+        return deviceToken;
+    }
+
+    public void setDeviceToken(String deviceToken) {
+        this.deviceToken = deviceToken;
+    }
+
     public String getUsername() {
         return username;
     }

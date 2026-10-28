@@ -78,6 +78,14 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(SsoRequiredException.class)
+    public ResponseEntity<ApiError> handleSsoRequired(SsoRequiredException ex, HttpServletRequest request) {
+        log.warn("Password login refused (SSO only)");
+        ResponseEntity<ApiError> response = build(HttpStatus.UNAUTHORIZED, ex.getMessage(), request);
+        if (response.getBody() != null) response.getBody().setCode("SSO_REQUIRED");
+        return response;
+    }
+
     @ExceptionHandler({AuthenticationFailedException.class, BadCredentialsException.class})
     public ResponseEntity<ApiError> handleAuthFailed(RuntimeException ex, HttpServletRequest request) {
         errorLogService.capture(ex, request, HttpStatus.UNAUTHORIZED.value(), "GlobalExceptionHandler");

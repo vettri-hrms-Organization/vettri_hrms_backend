@@ -7,5 +7,7 @@ public enum SubscriptionStatus {
     ACTIVE,
     PAST_DUE,
     SUSPENDED,
+    /** Trial ended without payment: read-only until the first invoice is paid. */
+    EXPIRED,
     CANCELLED
 }

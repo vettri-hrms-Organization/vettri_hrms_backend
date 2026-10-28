@@ -125,7 +125,7 @@ public class EmployeeController {
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAuthority('EMPLOYEE_MANAGE') and (@companySecurity.canManageEmployee(#id) or @companySecurity.isSuperAdmin())")
     public EmployeeDetailDTO updateStatus(@PathVariable Long id, @Valid @RequestBody UpdateStatusRequest request) {
-        return employeeService.updateStatus(id, request.getStatus(), request.getReason());
+        return employeeService.updateStatus(id, request.getStatus(), request.getReason(), request.getLastWorkingDate());
     }
 
     @PatchMapping("/{id}/biometric-mapping")

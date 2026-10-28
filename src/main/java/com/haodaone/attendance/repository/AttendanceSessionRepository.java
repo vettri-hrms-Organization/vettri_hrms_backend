@@ -27,5 +27,16 @@ public interface AttendanceSessionRepository extends JpaRepository<AttendanceSes
     List<AttendanceSession> findAllByCompany_IdAndEmployee_IdAndDeletedFalseAndAttendanceDateBetweenOrderByAttendanceDateDescCheckInTimeDesc(
             Long companyId, Long employeeId, LocalDate from, LocalDate to);
 
+    /** Every web/mobile/WFH session in a date range - feeds the monthly attendance muster. */
+    @EntityGraph(attributePaths = "employee")
+    List<AttendanceSession> findAllByCompany_IdAndDeletedFalseAndAttendanceDateBetween(
+            Long companyId, LocalDate from, LocalDate to);
+
+    /** Selfie retention purge: sessions (incl. soft-deleted) whose selfie is older than the cutoff. */
+    List<AttendanceSession> findTop500ByCompany_IdAndCheckInSelfieKeyIsNotNullAndAttendanceDateBeforeOrderByAttendanceDateAsc(
+            Long companyId, LocalDate cutoff);
+
+    Optional<AttendanceSession> findByIdAndCompany_Id(Long id, Long companyId);
+
     Optional<AttendanceSession> findByEmployee_IdAndCompany_IdAndStatusAndAttendanceDate(Long employeeId, Long companyId, String status, LocalDate attendanceDate);
 }

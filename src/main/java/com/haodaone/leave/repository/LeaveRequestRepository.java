@@ -59,6 +59,28 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
             "and lr.company.id = :companyId and lr.leaveType.id = :leaveTypeId and lr.status = 'APPROVED' and year(lr.startDate) = :year")
     double sumApprovedDays(@Param("companyId") Long companyId, @Param("employeeId") Long employeeId, @Param("leaveTypeId") Long leaveTypeId, @Param("year") int year);
 
+    /** Approved days of one type whose start date falls in [from, to] - used for carry-forward expiry (V45). */
+    @Query("select coalesce(sum(lr.days), 0) from LeaveRequest lr where lr.employee.id = :employeeId " +
+            "and lr.company.id = :companyId and lr.leaveType.id = :leaveTypeId and lr.status = 'APPROVED' and lr.startDate between :from and :to")
+    double sumApprovedDaysBetween(@Param("companyId") Long companyId, @Param("employeeId") Long employeeId, @Param("leaveTypeId") Long leaveTypeId,
+                                  @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** Every approved request of one type for one employee, oldest first - leave ledger and comp-off FIFO (V45). */
+    @Query("select lr from LeaveRequest lr where lr.employee.id = :employeeId and lr.company.id = :companyId " +
+            "and lr.leaveType.id = :leaveTypeId and lr.status = 'APPROVED' order by lr.startDate asc")
+    List<LeaveRequest> findApprovedForEmployeeAndType(@Param("companyId") Long companyId, @Param("employeeId") Long employeeId,
+                                                      @Param("leaveTypeId") Long leaveTypeId);
+
+    /** Year-independent pending days - comp-off credits are not bound to a leave year (V45). */
+    @Query("select coalesce(sum(lr.days), 0) from LeaveRequest lr where lr.employee.id = :employeeId " +
+            "and lr.company.id = :companyId and lr.leaveType.id = :leaveTypeId and lr.status = 'PENDING'")
+    double sumPendingDaysAllYears(@Param("companyId") Long companyId, @Param("employeeId") Long employeeId, @Param("leaveTypeId") Long leaveTypeId);
+
+    /** Days still awaiting a decision - counted as committed so several pending requests can't overspend a balance. */
+    @Query("select coalesce(sum(lr.days), 0) from LeaveRequest lr where lr.employee.id = :employeeId " +
+            "and lr.company.id = :companyId and lr.leaveType.id = :leaveTypeId and lr.status = 'PENDING' and year(lr.startDate) = :year")
+    double sumPendingDays(@Param("companyId") Long companyId, @Param("employeeId") Long employeeId, @Param("leaveTypeId") Long leaveTypeId, @Param("year") int year);
+
     /** Any overlapping APPROVED or PENDING request for this employee - used to block double-booking the same dates. */
     @Query("select lr from LeaveRequest lr where lr.employee.id = :employeeId and lr.status in ('PENDING','APPROVED') " +
             "and lr.startDate <= :endDate and lr.endDate >= :startDate")
@@ -68,7 +90,12 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     @Query("select lr from LeaveRequest lr where lr.status = 'APPROVED' and lr.startDate <= :today and lr.endDate >= :today")
     List<LeaveRequest> findActiveOn(@Param("today") LocalDate today);
 
-    long countByStatusAndStartDateBetween(String status, LocalDate start, LocalDate end);
+    /** Approved leave in this company touching [start, end] - feeds the monthly attendance muster. */
+    @Query("select lr from LeaveRequest lr join fetch lr.leaveType join fetch lr.employee where lr.company.id = :companyId " +
+            "and lr.status = 'APPROVED' and lr.startDate <= :end and lr.endDate >= :start")
+    List<LeaveRequest> findApprovedOverlappingForCompany(@Param("companyId") Long companyId, @Param("start") LocalDate start, @Param("end") LocalDate end);
+
+    long countByCompany_IdAndStatusAndStartDateBetween(Long companyId, String status, LocalDate start, LocalDate end);
 
     long countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(Long companyId, Set<Long> employeeIds, String status, LocalDate start, LocalDate end);
 
@@ -79,11 +106,11 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     List<Object[]> sumApprovedDaysByDepartmentScoped(@Param("companyId") Long companyId, @Param("employeeIds") Set<Long> employeeIds, @Param("year") int year);
 
     @Query("select lr.leaveType.name, coalesce(sum(lr.days), 0) from LeaveRequest lr " +
-            "where lr.status = 'APPROVED' and year(lr.startDate) = :year group by lr.leaveType.name")
-    List<Object[]> sumApprovedDaysByLeaveType(@Param("year") int year);
+            "where lr.company.id = :companyId and lr.status = 'APPROVED' and year(lr.startDate) = :year group by lr.leaveType.name")
+    List<Object[]> sumApprovedDaysByLeaveTypeForCompany(@Param("companyId") Long companyId, @Param("year") int year);
 
     @Query("select lr.employee.department.name, coalesce(sum(lr.days), 0) from LeaveRequest lr " +
-            "where lr.status = 'APPROVED' and year(lr.startDate) = :year and lr.employee.department is not null " +
+            "where lr.company.id = :companyId and lr.status = 'APPROVED' and year(lr.startDate) = :year and lr.employee.department is not null " +
             "group by lr.employee.department.name")
-    List<Object[]> sumApprovedDaysByDepartment(@Param("year") int year);
+    List<Object[]> sumApprovedDaysByDepartmentForCompany(@Param("companyId") Long companyId, @Param("year") int year);
 }

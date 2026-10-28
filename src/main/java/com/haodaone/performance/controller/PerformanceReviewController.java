@@ -43,8 +43,9 @@ public class PerformanceReviewController {
         return performanceReviewService.submit(id);
     }
 
+    /** The reviewed employee acknowledges their own review; PerformanceReviewService enforces self-or-scoped access. */
     @PatchMapping("/{id}/acknowledge")
-    @PreAuthorize("hasAuthority('PERFORMANCE_VIEW') or hasAuthority('PERFORMANCE_MANAGE')")
+    @PreAuthorize("isAuthenticated()")
     public PerformanceReviewDTO acknowledge(@PathVariable Long id) {
         return performanceReviewService.acknowledge(id);
     }

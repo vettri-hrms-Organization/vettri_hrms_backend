@@ -173,7 +173,7 @@ class LeaveModuleVerificationTest {
         employee.setFirstName(firstName);
         employee.setLastName(lastName);
         employee.setEmail(user.getEmail());
-        employee.setDateOfJoining(LocalDate.now());
+        employee.setDateOfJoining(LocalDate.of(2024, 1, 1)); // before the 2025 leave dates used below, so leave has accrued
         employee.setCompany(company);
         employee.setUser(user);
         employee.setStatus("Active");

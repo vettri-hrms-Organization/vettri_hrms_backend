@@ -29,7 +29,25 @@ public record InvoiceResponse(
         String companyName,
         String companyLegalName,
         String billingAddress,
-        String gstin
+        String gstin,
+        LocalDate dueDate,
+        BigDecimal baseAmount,
+        BigDecimal seatAddonAmount,
+        BigDecimal taxableValue,
+        BigDecimal cgstRate,
+        BigDecimal cgstAmount,
+        BigDecimal sgstRate,
+        BigDecimal sgstAmount,
+        BigDecimal igstRate,
+        BigDecimal igstAmount,
+        String taxNote,
+        String sacCode,
+        String placeOfSupply,
+        String sellerGstin,
+        String buyerPoNumber,
+        Long originalInvoiceId,
+        String originalInvoiceNumber,
+        String notes
 ) {
     public static InvoiceResponse from(Invoice invoice) {
         var company = invoice.getCompany();
@@ -40,8 +58,15 @@ public record InvoiceResponse(
                 invoice.getDiscount(), invoice.getTax(), invoice.getTotal(), invoice.getCurrency(), invoice.getPaymentMethod(),
                 invoice.getRazorpayOrderId(), invoice.getRazorpayPaymentId(), invoice.getEmailStatus(),
                 company == null ? null : company.getName(),
-                company == null ? null : company.getLegalName(),
-                company == null ? null : company.getBillingAddress(),
-                company == null ? null : company.getGstin());
+                invoice.getBuyerLegalName() != null ? invoice.getBuyerLegalName() : company == null ? null : company.getLegalName(),
+                invoice.getBuyerAddress() != null ? invoice.getBuyerAddress() : company == null ? null : company.getBillingAddress(),
+                invoice.getBuyerGstin() != null ? invoice.getBuyerGstin() : company == null ? null : company.getGstin(),
+                invoice.getDueDate(), invoice.getBaseAmount(), invoice.getSeatAddonAmount(), invoice.getTaxableValue(),
+                invoice.getCgstRate(), invoice.getCgstAmount(), invoice.getSgstRate(), invoice.getSgstAmount(),
+                invoice.getIgstRate(), invoice.getIgstAmount(), invoice.getTaxNote(), invoice.getSacCode(),
+                invoice.getPlaceOfSupply(), invoice.getSellerGstin(), invoice.getBuyerPoNumber(),
+                invoice.getOriginalInvoice() == null ? null : invoice.getOriginalInvoice().getId(),
+                invoice.getOriginalInvoice() == null ? null : invoice.getOriginalInvoice().getInvoiceNumber(),
+                invoice.getNotes());
     }
 }

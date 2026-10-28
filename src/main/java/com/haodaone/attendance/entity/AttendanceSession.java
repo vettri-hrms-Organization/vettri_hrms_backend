@@ -78,6 +78,18 @@ public class AttendanceSession extends BaseEntity {
     @Column(name = "is_wfh", nullable = false)
     private boolean wfh = false;
 
+    /** S3 key of the check-in selfie; nulled when the retention job purges the object (V52). */
+    @Column(name = "check_in_selfie_key", length = 500)
+    private String checkInSelfieKey;
+
+    public String getCheckInSelfieKey() {
+        return checkInSelfieKey;
+    }
+
+    public void setCheckInSelfieKey(String checkInSelfieKey) {
+        this.checkInSelfieKey = checkInSelfieKey;
+    }
+
     public Company getCompany() {
         return company;
     }

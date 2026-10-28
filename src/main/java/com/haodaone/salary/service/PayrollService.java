@@ -15,7 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import com.haodaone.tenant.TenantContext;
 import com.haodaone.company.entity.Company;
 import com.haodaone.company.repository.CompanyRepository;
@@ -56,6 +59,82 @@ public class PayrollService {
     @Autowired
     public void setNotificationService(NotificationService notificationService) {
         this.notificationService = notificationService;
+    }
+
+    private StatutoryPayrollEngine statutoryPayrollEngine;
+    private List<com.haodaone.salary.adjustment.PayrollAdjustmentProvider> adjustmentProviders = List.of();
+
+    @Autowired
+    public void setStatutoryPayrollEngine(StatutoryPayrollEngine statutoryPayrollEngine) {
+        this.statutoryPayrollEngine = statutoryPayrollEngine;
+    }
+
+    private com.haodaone.attendance.shift.service.DailyAttendanceService dailyAttendanceService;
+
+    /** Source of the "N late marks = X days LOP" penalty (attendance/shift); optional so payroll works without it. */
+    @Autowired(required = false)
+    public void setDailyAttendanceService(com.haodaone.attendance.shift.service.DailyAttendanceService dailyAttendanceService) {
+        this.dailyAttendanceService = dailyAttendanceService;
+    }
+
+    /** Adds late-mark penalty days to loss of pay, never paying fewer than zero days. */
+    private PayrollProration.Result withLatePenalty(PayrollProration.Result days, Long companyId, Long employeeId, YearMonth period) {
+        if (dailyAttendanceService == null) return days;
+        java.math.BigDecimal penalty = dailyAttendanceService.latePenaltyDays(companyId, employeeId, period);
+        if (penalty == null || penalty.signum() <= 0) return days;
+        java.math.BigDecimal applied = penalty.min(days.paidDays());
+        return new PayrollProration.Result(days.daysInPeriod(), days.lopDays().add(applied), days.paidDays().subtract(applied));
+    }
+
+    /** Every PayrollAdjustmentProvider bean (overtime, leave encashment, reimbursements...); empty when none exist. */
+    @Autowired(required = false)
+    public void setAdjustmentProviders(List<com.haodaone.salary.adjustment.PayrollAdjustmentProvider> adjustmentProviders) {
+        this.adjustmentProviders = adjustmentProviders != null ? adjustmentProviders : List.of();
+    }
+
+    private List<PayrollExclusionProvider> exclusionProviders = List.of();
+
+    /** Every PayrollExclusionProvider bean (e.g. Full & Final settlement); empty when none exist. */
+    @Autowired(required = false)
+    public void setExclusionProviders(List<PayrollExclusionProvider> exclusionProviders) {
+        this.exclusionProviders = exclusionProviders != null ? exclusionProviders : List.of();
+    }
+
+    /** Asks every provider for this employee's extra earnings in the period and attaches them to the item. */
+    private void attachAdjustments(PayrollItem item, Company company, Long employeeId, YearMonth period) {
+        for (var provider : adjustmentProviders) {
+            List<com.haodaone.salary.adjustment.PayrollAdjustment> lines = provider.adjustmentsFor(company.getId(), employeeId, period);
+            if (lines == null) continue;
+            for (var line : lines) {
+                if (line == null || line.amount() == null || line.amount().signum() <= 0) continue;
+                PayrollItemAdjustment row = new PayrollItemAdjustment();
+                row.setCompany(company);
+                row.setCode(line.code() != null ? line.code() : "ADJUSTMENT");
+                row.setLabel(line.label() != null ? line.label() : row.getCode());
+                row.setAmount(line.amount().setScale(2, java.math.RoundingMode.HALF_UP));
+                row.setTaxable(line.taxable());
+                row.setSourceType(line.sourceType());
+                row.setSourceId(line.sourceId());
+                item.addAdjustment(row);
+            }
+        }
+    }
+
+    /** Routes a processed item's adjustment lines back to the provider(s) that own their sourceType. */
+    private void settleAdjustments(PayrollItem item) {
+        if (item.getAdjustments().isEmpty() || adjustmentProviders.isEmpty()) return;
+        for (var provider : adjustmentProviders) {
+            java.util.Set<String> types = provider.sourceTypes() != null ? provider.sourceTypes() : java.util.Set.of();
+            List<PayrollItemAdjustment> rows = item.getAdjustments().stream()
+                    .filter(a -> !a.isDeleted() && !a.isSettled() && a.getSourceType() != null && types.contains(a.getSourceType()))
+                    .toList();
+            if (rows.isEmpty()) continue;
+            provider.markSettled(rows.stream()
+                    .map(a -> new com.haodaone.salary.adjustment.PayrollAdjustment(a.getCode(), a.getLabel(), a.getAmount(),
+                            a.isTaxable(), a.getSourceType(), a.getSourceId()))
+                    .toList(), item.getId());
+            rows.forEach(a -> a.setSettled(true));
+        }
     }
 
     public List<PayrollRunSummaryDTO> listRuns() {
@@ -106,21 +185,57 @@ public class PayrollService {
         run.setCompany(company);
         PayrollRun savedRun = payrollRunRepository.save(run);
 
+        YearMonth period = YearMonth.of(request.getPeriodYear(), request.getPeriodMonth());
+        LocalDate periodStart = period.atDay(1);
+        LocalDate periodEnd = period.atEndOfMonth();
+        // Approved unpaid leave overlapping the month, grouped per employee - one query for the whole run.
+        Map<Long, List<PayrollProration.LeaveSpan>> unpaidLeaveByEmployee = payrollItemRepository
+                .findApprovedUnpaidLeavesOverlapping(companyId, periodStart, periodEnd).stream()
+                .collect(Collectors.groupingBy(lr -> lr.getEmployee().getId(),
+                        Collectors.mapping(lr -> new PayrollProration.LeaveSpan(lr.getStartDate(), lr.getEndDate(), lr.getDays()),
+                                Collectors.toList())));
+
         List<SalaryStructure> activeStructures = salaryStructureRepository.findAllActiveByCompany(companyId);
+        StatutoryPayrollEngine.Context statutory = statutoryPayrollEngine != null
+                && activeStructures.stream().anyMatch(SalaryStructure::isAutoStatutory)
+                ? statutoryPayrollEngine.contextFor(companyId) : null;
         int included = 0;
+        // Employees paid outside payroll (e.g. approved/paid Full & Final settlement).
+        java.util.Set<Long> excludedEmployeeIds = new java.util.HashSet<>();
+        for (PayrollExclusionProvider exclusionProvider : exclusionProviders) {
+            java.util.Set<Long> ids = exclusionProvider.excludedEmployeeIds(companyId);
+            if (ids != null) excludedEmployeeIds.addAll(ids);
+        }
         for (SalaryStructure structure : activeStructures) {
             Employee employee = structure.getEmployee();
             if (employee.isDeleted() || EmploymentStatus.RESIGNED.equals(employee.getStatus())
-                    || EmploymentStatus.TERMINATED.equals(employee.getStatus())) {
+                    || EmploymentStatus.TERMINATED.equals(employee.getStatus())
+                    || excludedEmployeeIds.contains(employee.getId())) {
                 continue;
             }
+            // Not yet employed / structure not yet in force for this period.
+            if ((employee.getDateOfJoining() != null && employee.getDateOfJoining().isAfter(periodEnd))
+                    || (structure.getEffectiveFrom() != null && structure.getEffectiveFrom().isAfter(periodEnd))) {
+                continue;
+            }
+            PayrollProration.Result days = withLatePenalty(PayrollProration.compute(period, employee.getDateOfJoining(),
+                    unpaidLeaveByEmployee.getOrDefault(employee.getId(), List.of())), companyId, employee.getId(), period);
             PayrollItem item = new PayrollItem();
             item.setPayrollRun(savedRun);
             item.setCompany(company);
             item.setEmployee(employee);
             item.setSalaryStructure(structure);
-            item.setComponents(copyComponents(structure));
+            item.setComponents(days.isFullPeriod()
+                    ? copyComponents(structure)
+                    : PayrollProration.prorate(structure.getComponents(), days.paidDays(), days.daysInPeriod()));
+            item.setLopDays(days.lopDays());
+            item.setPaidDays(days.paidDays());
+            attachAdjustments(item, company, employee.getId(), period);
             item.recalculate();
+            if (statutory != null && structure.isAutoStatutory()) {
+                // Overwrites PF/ESI/PT/TDS, fills employer contributions, caps deductions at gross, recalculates.
+                statutoryPayrollEngine.apply(item, structure, period, statutory);
+            }
             item.setStatus(PayrollItemStatus.PENDING);
             payrollItemRepository.save(item);
             included++;
@@ -174,6 +289,7 @@ public class PayrollService {
         for (PayrollItem item : items) {
             if (PayrollItemStatus.PENDING.equals(item.getStatus())) {
                 item.setStatus(PayrollItemStatus.PROCESSED);
+                settleAdjustments(item);
                 payrollItemRepository.save(item);
             }
         }

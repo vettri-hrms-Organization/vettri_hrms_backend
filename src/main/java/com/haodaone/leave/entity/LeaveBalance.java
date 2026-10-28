@@ -37,6 +37,29 @@ public class LeaveBalance extends BaseEntity {
     @Column(name = "carried_forward_days", nullable = false)
     private double carriedForwardDays = 0;
 
+    /** Date allocatedDays was last materialised by the accrual job (V45); informational only. */
+    @Column(name = "accrued_through")
+    private java.time.LocalDate accruedThrough;
+
+    /** Set on the closing year's row when year-end processing ran (V45). */
+    @Column(name = "year_end_processed_at")
+    private java.time.LocalDateTime yearEndProcessedAt;
+
+    @Column(name = "closing_balance_days")
+    private Double closingBalanceDays;
+
+    @Column(name = "lapsed_days")
+    private Double lapsedDays;
+
+    public java.time.LocalDate getAccruedThrough() { return accruedThrough; }
+    public void setAccruedThrough(java.time.LocalDate accruedThrough) { this.accruedThrough = accruedThrough; }
+    public java.time.LocalDateTime getYearEndProcessedAt() { return yearEndProcessedAt; }
+    public void setYearEndProcessedAt(java.time.LocalDateTime yearEndProcessedAt) { this.yearEndProcessedAt = yearEndProcessedAt; }
+    public Double getClosingBalanceDays() { return closingBalanceDays; }
+    public void setClosingBalanceDays(Double closingBalanceDays) { this.closingBalanceDays = closingBalanceDays; }
+    public Double getLapsedDays() { return lapsedDays; }
+    public void setLapsedDays(Double lapsedDays) { this.lapsedDays = lapsedDays; }
+
     public Employee getEmployee() {
         return employee;
     }

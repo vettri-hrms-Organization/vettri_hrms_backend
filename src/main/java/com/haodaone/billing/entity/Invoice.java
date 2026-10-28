@@ -26,8 +26,8 @@ public class Invoice extends BaseEntity {
     @JoinColumn(name = "subscription_id")
     private Subscription subscription;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "payment_transaction_id", nullable = false)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_transaction_id")
     private PaymentTransaction paymentTransaction;
 
     @Enumerated(EnumType.STRING)
@@ -85,6 +85,102 @@ public class Invoice extends BaseEntity {
 
     @Column(name = "email_status", length = 20)
     private String emailStatus = "NOT_SENT";
+
+    // ---- V49: GST tax invoice fields (null on legacy invoices) ----
+    @Column(name = "financial_year", length = 10)
+    private String financialYear;
+    @Column(name = "due_date")
+    private LocalDate dueDate;
+    @Column(name = "paid_at")
+    private java.time.LocalDateTime paidAt;
+    @Column(name = "base_amount", precision = 12, scale = 2)
+    private BigDecimal baseAmount;
+    @Column(name = "seat_addon_amount", precision = 12, scale = 2)
+    private BigDecimal seatAddonAmount;
+    @Column(name = "taxable_value", precision = 12, scale = 2)
+    private BigDecimal taxableValue;
+    @Column(name = "cgst_rate", precision = 5, scale = 2)
+    private BigDecimal cgstRate;
+    @Column(name = "cgst_amount", precision = 12, scale = 2)
+    private BigDecimal cgstAmount;
+    @Column(name = "sgst_rate", precision = 5, scale = 2)
+    private BigDecimal sgstRate;
+    @Column(name = "sgst_amount", precision = 12, scale = 2)
+    private BigDecimal sgstAmount;
+    @Column(name = "igst_rate", precision = 5, scale = 2)
+    private BigDecimal igstRate;
+    @Column(name = "igst_amount", precision = 12, scale = 2)
+    private BigDecimal igstAmount;
+    @Column(name = "tax_note", length = 255)
+    private String taxNote;
+    @Column(name = "sac_code", length = 10)
+    private String sacCode;
+    @Column(name = "place_of_supply", length = 100)
+    private String placeOfSupply;
+    @Column(name = "place_of_supply_code", length = 2)
+    private String placeOfSupplyCode;
+    @Column(name = "seller_gstin", length = 20)
+    private String sellerGstin;
+    @Column(name = "buyer_legal_name", length = 255)
+    private String buyerLegalName;
+    @Column(name = "buyer_gstin", length = 20)
+    private String buyerGstin;
+    @Column(name = "buyer_address", length = 1000)
+    private String buyerAddress;
+    @Column(name = "buyer_po_number", length = 60)
+    private String buyerPoNumber;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "original_invoice_id")
+    private Invoice originalInvoice;
+    @Column(name = "notes", length = 1000)
+    private String notes;
+
+    public String getFinancialYear() { return financialYear; }
+    public void setFinancialYear(String financialYear) { this.financialYear = financialYear; }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+    public java.time.LocalDateTime getPaidAt() { return paidAt; }
+    public void setPaidAt(java.time.LocalDateTime paidAt) { this.paidAt = paidAt; }
+    public BigDecimal getBaseAmount() { return baseAmount; }
+    public void setBaseAmount(BigDecimal baseAmount) { this.baseAmount = baseAmount; }
+    public BigDecimal getSeatAddonAmount() { return seatAddonAmount; }
+    public void setSeatAddonAmount(BigDecimal seatAddonAmount) { this.seatAddonAmount = seatAddonAmount; }
+    public BigDecimal getTaxableValue() { return taxableValue; }
+    public void setTaxableValue(BigDecimal taxableValue) { this.taxableValue = taxableValue; }
+    public BigDecimal getCgstRate() { return cgstRate; }
+    public void setCgstRate(BigDecimal cgstRate) { this.cgstRate = cgstRate; }
+    public BigDecimal getCgstAmount() { return cgstAmount; }
+    public void setCgstAmount(BigDecimal cgstAmount) { this.cgstAmount = cgstAmount; }
+    public BigDecimal getSgstRate() { return sgstRate; }
+    public void setSgstRate(BigDecimal sgstRate) { this.sgstRate = sgstRate; }
+    public BigDecimal getSgstAmount() { return sgstAmount; }
+    public void setSgstAmount(BigDecimal sgstAmount) { this.sgstAmount = sgstAmount; }
+    public BigDecimal getIgstRate() { return igstRate; }
+    public void setIgstRate(BigDecimal igstRate) { this.igstRate = igstRate; }
+    public BigDecimal getIgstAmount() { return igstAmount; }
+    public void setIgstAmount(BigDecimal igstAmount) { this.igstAmount = igstAmount; }
+    public String getTaxNote() { return taxNote; }
+    public void setTaxNote(String taxNote) { this.taxNote = taxNote; }
+    public String getSacCode() { return sacCode; }
+    public void setSacCode(String sacCode) { this.sacCode = sacCode; }
+    public String getPlaceOfSupply() { return placeOfSupply; }
+    public void setPlaceOfSupply(String placeOfSupply) { this.placeOfSupply = placeOfSupply; }
+    public String getPlaceOfSupplyCode() { return placeOfSupplyCode; }
+    public void setPlaceOfSupplyCode(String placeOfSupplyCode) { this.placeOfSupplyCode = placeOfSupplyCode; }
+    public String getSellerGstin() { return sellerGstin; }
+    public void setSellerGstin(String sellerGstin) { this.sellerGstin = sellerGstin; }
+    public String getBuyerLegalName() { return buyerLegalName; }
+    public void setBuyerLegalName(String buyerLegalName) { this.buyerLegalName = buyerLegalName; }
+    public String getBuyerGstin() { return buyerGstin; }
+    public void setBuyerGstin(String buyerGstin) { this.buyerGstin = buyerGstin; }
+    public String getBuyerAddress() { return buyerAddress; }
+    public void setBuyerAddress(String buyerAddress) { this.buyerAddress = buyerAddress; }
+    public String getBuyerPoNumber() { return buyerPoNumber; }
+    public void setBuyerPoNumber(String buyerPoNumber) { this.buyerPoNumber = buyerPoNumber; }
+    public Invoice getOriginalInvoice() { return originalInvoice; }
+    public void setOriginalInvoice(Invoice originalInvoice) { this.originalInvoice = originalInvoice; }
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
 
     public String getInvoiceNumber() { return invoiceNumber; }
     public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }

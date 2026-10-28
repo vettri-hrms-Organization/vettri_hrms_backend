@@ -53,6 +53,19 @@ public class SalaryStructure extends BaseEntity {
     @Column(length = 1000)
     private String notes;
 
+    /**
+     * When true, payroll computes PF/ESI/PT/TDS from the company's statutory
+     * settings and ignores the pf/esi/professionalTax/tds typed on this
+     * structure. Defaults to false here (and for pre-V43 rows) so existing
+     * manual structures keep their values; new structures saved through the
+     * API default to true (see UpsertSalaryStructureRequest).
+     */
+    @Column(name = "auto_statutory", nullable = false)
+    private boolean autoStatutory = false;
+
+    public boolean isAutoStatutory() { return autoStatutory; }
+    public void setAutoStatutory(boolean autoStatutory) { this.autoStatutory = autoStatutory; }
+
     /** Recomputes {@link #grossSalary}/{@link #totalDeductions}/{@link #netSalary} from {@link #components}. Call after every component change, before persisting. */
     public void recalculate() {
         this.grossSalary = components.grossSalary();

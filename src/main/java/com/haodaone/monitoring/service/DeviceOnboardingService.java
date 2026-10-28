@@ -137,6 +137,7 @@ public class DeviceOnboardingService {
     public String installerDownloadUrl(String rawToken) {
         DeviceEnrollment enrollment = findByToken(rawToken, false);
         requirePendingAndUnexpired(enrollment, LocalDateTime.now(ZoneOffset.UTC));
+        requireMonitoringConsent(enrollment);
         return installerStorageService.createDownloadUrl();
     }
 
@@ -186,6 +187,7 @@ public class DeviceOnboardingService {
         DeviceEnrollment enrollment = findByToken(rawToken, true);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         requirePendingAndUnexpired(enrollment, now);
+        requireMonitoringConsent(enrollment);
         validateDeviceInfo(info);
         Long companyId = enrollment.getCompany().getId();
         String deviceId = info.getDeviceId().trim();
@@ -251,6 +253,21 @@ public class DeviceOnboardingService {
         return (lock ? enrollmentRepository.findByTokenHashForUpdate(hashHex(rawToken))
                 : enrollmentRepository.findByTokenHashAndDeletedFalse(hashHex(rawToken)))
                 .orElseThrow(() -> new BadRequestException("Enrollment link is invalid."));
+    }
+
+    /** Privacy hook (optional so the unit-test constructor stays unchanged). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.privacy.service.MonitoringConsentService monitoringConsentService;
+
+    public void setMonitoringConsentService(com.haodaone.privacy.service.MonitoringConsentService monitoringConsentService) {
+        this.monitoringConsentService = monitoringConsentService;
+    }
+
+    /** When the company requires monitoring consent, the employee must accept the notice before installing the agent. */
+    private void requireMonitoringConsent(DeviceEnrollment enrollment) {
+        if (monitoringConsentService != null && enrollment.getCompany() != null && enrollment.getEmployee() != null) {
+            monitoringConsentService.requireConsent(enrollment.getCompany().getId(), enrollment.getEmployee().getId());
+        }
     }
 
     private void requirePendingAndUnexpired(DeviceEnrollment enrollment, LocalDateTime now) {

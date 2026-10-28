@@ -210,6 +210,16 @@ public class EmailService {
         send(toEmail, toName, subject, body);
     }
 
+    /** Two-factor sign-in / verification code. Returns false if the email could not be sent. */
+    public boolean sendMfaCodeEmail(String toEmail, String toName, String code, int expiryMinutes) {
+        String subject = "Your Vettri HRMS verification code";
+        String body = "<p>Hello " + escape(toName) + ",</p>"
+                + "<p>Use this code to verify your sign-in to Vettri HRMS:</p>"
+                + "<p style=\"margin:22px 0;padding:17px 20px;background:#F4F7FB;border:1px solid #E2E8F0;border-radius:8px;color:#0F1B3D;font-size:30px;font-weight:700;letter-spacing:8px;text-align:center\">" + escape(code) + "</p>"
+                + "<p>This code expires in " + expiryMinutes + " minutes and can be used once. If you did not try to sign in, change your password immediately.</p>";
+        return sendAndReport(toEmail, toName, subject, body);
+    }
+
     public boolean sendDeviceEnrollmentEmail(String toEmail, String toName, String enrollmentUrl, String companyName) {
         String subject = "Install Vettri Windows Agent";
         String body = "<p>Hello " + escape(toName) + ",</p>"
@@ -250,6 +260,12 @@ public class EmailService {
             log.error("Failed to send email to {} <{}>: {}", toName, toEmail, e.getMessage(), e);
             return false;
         }
+    }
+
+    /** Letters module: emails a generated HR letter (PDF) to an employee. htmlBody must already be escaped. */
+    public boolean sendLetterEmail(String toEmail, String toName, String subject, String htmlBody,
+                                   byte[] pdfBytes, String filename) {
+        return sendWithAttachment(toEmail, toName, subject, htmlBody, pdfBytes, filename);
     }
 
     private boolean sendWithAttachment(String toEmail, String toName, String subject, String htmlBody,

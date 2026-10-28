@@ -19,5 +19,9 @@ public record RegisterRequest(
         List<@Size(max = 100) String> interests,
         @Size(max = 50) String plan,
         @Size(max = 20) String billingCycle,
-        Integer employeeCount
+        Integer employeeCount,
+        /** "I agree to the Terms of Service and Privacy Policy" - required. */
+        Boolean acceptTerms,
+        /** The signing-up admin accepts the Data Processing Agreement on behalf of the organization - required. */
+        Boolean acceptDpa
 ) { }

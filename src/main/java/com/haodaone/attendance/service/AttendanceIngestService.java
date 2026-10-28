@@ -147,10 +147,8 @@ public class AttendanceIngestService {
             return null;
         }
 
-        Employee employee = employeeRepository.findByBiometricDeviceUserIdAndDeletedFalse(devicePin)
-            .filter(candidate -> candidate.getCompany() != null
-                && Objects.equals(candidate.getCompany().getId(), device.getCompany().getId())
-                && (candidate.getBiometricDeviceId() == null
+        Employee employee = employeeRepository.findByCompany_IdAndBiometricDeviceUserIdAndDeletedFalse(device.getCompany().getId(), devicePin)
+            .filter(candidate -> (candidate.getBiometricDeviceId() == null
                     || Objects.equals(candidate.getBiometricDeviceId(), device.getId())))
             .orElse(null);
 

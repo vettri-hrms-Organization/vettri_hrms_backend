@@ -36,4 +36,11 @@ public class LeaveTypeController {
     public LeaveTypeDTO update(@PathVariable Long id, @Valid @RequestBody LeaveTypeDTO.CreateRequest request) {
         return leaveTypeService.update(id, request);
     }
+
+    /** Accrual / cap / probation / negative / carry-forward / encashment policy (V45). */
+    @PutMapping("/{id}/policy")
+    @PreAuthorize("@authorizationService.hasOrganizationScope('LEAVE_MANAGE')")
+    public LeaveTypeDTO updatePolicy(@PathVariable Long id, @RequestBody com.haodaone.leave.dto.LeavePolicyDTOs.PolicyRequest request) {
+        return leaveTypeService.updatePolicy(id, request);
+    }
 }

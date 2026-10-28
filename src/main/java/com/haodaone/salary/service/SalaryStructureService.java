@@ -89,6 +89,7 @@ public class SalaryStructureService {
         structure.setActive(true);
         structure.setComponents(request.getComponents().toEntity());
         structure.setNotes(request.getNotes());
+        structure.setAutoStatutory(request.getAutoStatutory() == null || request.getAutoStatutory());
         structure.recalculate();
 
         if (structure.getComponents().getBasicSalary().signum() <= 0) {

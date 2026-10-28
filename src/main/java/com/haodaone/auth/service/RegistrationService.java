@@ -12,6 +12,8 @@ import com.haodaone.company.entity.Subscription;
 import com.haodaone.company.entity.SubscriptionStatus;
 import com.haodaone.company.repository.CompanyRepository;
 import com.haodaone.company.repository.SubscriptionRepository;
+import com.haodaone.leave.repository.LeaveTypeRepository;
+import com.haodaone.leave.service.DefaultLeaveTypes;
 import com.haodaone.recruitment.service.EmailService;
 import com.haodaone.auth.service.VerificationService;
 import com.haodaone.user.entity.Role;
@@ -41,11 +43,12 @@ public class RegistrationService {
     private final AuthService authService;
     private final EmailService emailService;
     private final VerificationService verificationService;
+    private final LeaveTypeRepository leaveTypes;
 
     public RegistrationService(UserRepository users, CompanyRepository companies, RoleRepository roles,
                                SubscriptionRepository subscriptions, PasswordEncoder passwordEncoder,
                                AuthService authService, EmailService emailService,
-                               VerificationService verificationService) {
+                               VerificationService verificationService, LeaveTypeRepository leaveTypes) {
         this.users = users;
         this.companies = companies;
         this.roles = roles;
@@ -54,6 +57,7 @@ public class RegistrationService {
         this.authService = authService;
         this.emailService = emailService;
         this.verificationService = verificationService;
+        this.leaveTypes = leaveTypes;
     }
 
     @Transactional
@@ -68,6 +72,12 @@ public class RegistrationService {
         if (!request.password().matches(".*[A-Z].*") || !request.password().matches(".*[0-9].*")) {
             throw new BadRequestException("Choose a stronger password.");
         }
+        if (!Boolean.TRUE.equals(request.acceptTerms())) {
+            throw new BadRequestException("Please agree to the Terms of Service and Privacy Policy to create your account.");
+        }
+        if (!Boolean.TRUE.equals(request.acceptDpa())) {
+            throw new BadRequestException("Please accept the Data Processing Agreement on behalf of your organization.");
+        }
 
         Role companyAdmin = roles.findByName("COMPANY_ADMIN")
                 .orElseThrow(() -> new BadRequestException("Registration is temporarily unavailable. Please try again later."));
@@ -79,6 +89,7 @@ public class RegistrationService {
         company.setCountry(request.country().trim());
         company.setWorkspaceInterests(normalizeInterests(request.interests()));
         Company savedCompany = companies.save(company);
+        DefaultLeaveTypes.seedFor(savedCompany, leaveTypes);
 
         User user = new User();
         user.setUsername(email);
@@ -97,6 +108,7 @@ public class RegistrationService {
                     : planName;
             user.setAccountStatus("PENDING_PAYMENT");
             User savedUser = users.save(user);
+            recordLegalAcceptance(savedUser, savedCompany, httpRequest);
 
             String billingCycle = BillingPricing.normalizeBillingCycle(request.billingCycle());
             int employeeCount = BillingPricing.normalizeEmployeeCount(request.employeeCount());
@@ -124,6 +136,7 @@ public class RegistrationService {
 
         user.setAccountStatus("ACTIVE");
         User savedUser = users.saveAndFlush(user);
+        recordLegalAcceptance(savedUser, savedCompany, httpRequest);
 
         LocalDate trialStart = LocalDate.now();
         Subscription subscription = new Subscription();
@@ -155,6 +168,17 @@ public class RegistrationService {
         login.setUsername(email);
         login.setPassword(request.password());
         return authService.login(login, httpRequest);
+    }
+
+    /** Optional field injection keeps the constructor unchanged for other callers. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.haodaone.privacy.service.LegalAcceptanceService legalAcceptanceService;
+
+    /** Terms + Privacy (+ Acceptable Use) by the admin, and the DPA on behalf of the new company. */
+    private void recordLegalAcceptance(User savedUser, Company savedCompany, HttpServletRequest httpRequest) {
+        if (legalAcceptanceService != null) {
+            legalAcceptanceService.recordSignupAcceptance(savedUser, savedCompany, httpRequest);
+        }
     }
 
     private java.math.BigDecimal calculateAmount(String plan, int employeeCount, String billingCycle) {

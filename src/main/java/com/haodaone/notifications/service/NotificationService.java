@@ -30,6 +30,20 @@ public class NotificationService {
     private final JdbcTemplate jdbcTemplate;
     private final EmailService emailService;
 
+    /** Optional extra channels (setter injection keeps the constructor used by tests unchanged). */
+    private com.haodaone.notifications.whatsapp.WhatsAppNotificationChannel whatsAppChannel;
+    private com.haodaone.demo.service.DemoCompanyGuard demoCompanyGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setWhatsAppChannel(com.haodaone.notifications.whatsapp.WhatsAppNotificationChannel whatsAppChannel) {
+        this.whatsAppChannel = whatsAppChannel;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setDemoCompanyGuard(com.haodaone.demo.service.DemoCompanyGuard demoCompanyGuard) {
+        this.demoCompanyGuard = demoCompanyGuard;
+    }
+
     public NotificationService(JdbcTemplate jdbcTemplate, EmailService emailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.emailService = emailService;
@@ -154,6 +168,15 @@ public class NotificationService {
                 """, companyId, recipientUserId, type, title, message, entityType, entityId,
                 priority == null ? "NORMAL" : priority, deduplicationKey);
         if (inserted == 0) return;
+        // Sales demo workspaces keep the in-app notification but never email / WhatsApp anyone.
+        if (demoCompanyGuard != null && demoCompanyGuard.isDemo(companyId)) return;
+        if (whatsAppChannel != null) {
+            try {
+                whatsAppChannel.onNotification(companyId, recipientUserId, type, title, message, priority);
+            } catch (RuntimeException exception) {
+                log.warn("Could not queue WhatsApp notification for user {} type {}", recipientUserId, type, exception);
+            }
+        }
 
         Map<String, Object> recipient = recipients.get(0);
         Runnable sendEmail = () -> sendWorkflowEmail(recipient, companyId, recipientUserId, type, title, message);

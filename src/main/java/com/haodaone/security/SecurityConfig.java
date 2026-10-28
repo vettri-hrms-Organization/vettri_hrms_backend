@@ -100,7 +100,10 @@
             http = http.authorizeHttpRequests(auth -> auth
                                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/auth/logout", "/api/auth/verify-email",
                                     "/api/auth/forgot-password", "/api/auth/reset-password",
-                                    "/api/auth/invitation/**", "/api/auth/activate", "/api/auth/activate/**").permitAll()
+                                    "/api/auth/invitation/**", "/api/auth/activate", "/api/auth/activate/**",
+                                    "/api/auth/mfa/verify", "/api/auth/mfa/email/send").permitAll()
+                            .requestMatchers("/api/auth/sso/providers", "/api/auth/sso/*/start",
+                                    "/api/auth/sso/*/callback", "/api/auth/sso/exchange").permitAll()
                             .requestMatchers("/api/billing/create-order", "/api/billing/verify", "/api/billing/plans", "/api/billing/webhook").permitAll()
                             .requestMatchers("/api/interviews/my").authenticated()
                                     .requestMatchers("/api/holidays").authenticated()
@@ -136,7 +139,8 @@
             // The custom filters themselves are not part of the built-in order registry,
             // so they must be placed before/after a known filter class such as
             // UsernamePasswordAuthenticationFilter rather than one another.
-            http.addFilterBefore(agentTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            http.addFilterBefore(new AbuseProtectionFilter(), UsernamePasswordAuthenticationFilter.class)
+                    .addFilterBefore(agentTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                     .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                     .addFilterAfter(maskingRequestFilter(), UsernamePasswordAuthenticationFilter.class)
                     .addFilterAfter(tenantResolverFilter(companyRepository), UsernamePasswordAuthenticationFilter.class);

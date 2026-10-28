@@ -146,18 +146,18 @@ public class ReportsController {
         LocalDate yearEnd = LocalDate.of(targetYear, 12, 31);
 
         Set<Long> employeeIds = scope.orElse(Set.of());
-        List<LeaveReportDTO.LeaveTypeUsage> byLeaveType = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByLeaveType(targetYear) : leaveRequestRepository.sumApprovedDaysByLeaveTypeScoped(companyId, employeeIds, targetYear)).stream()
+        List<LeaveReportDTO.LeaveTypeUsage> byLeaveType = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByLeaveTypeForCompany(companyId, targetYear) : leaveRequestRepository.sumApprovedDaysByLeaveTypeScoped(companyId, employeeIds, targetYear)).stream()
                 .map(row -> new LeaveReportDTO.LeaveTypeUsage((String) row[0], ((Number) row[1]).doubleValue()))
                 .toList();
 
-        List<LeaveReportDTO.DepartmentUsage> byDepartment = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByDepartment(targetYear) : leaveRequestRepository.sumApprovedDaysByDepartmentScoped(companyId, employeeIds, targetYear)).stream()
+        List<LeaveReportDTO.DepartmentUsage> byDepartment = (scope.isEmpty() ? leaveRequestRepository.sumApprovedDaysByDepartmentForCompany(companyId, targetYear) : leaveRequestRepository.sumApprovedDaysByDepartmentScoped(companyId, employeeIds, targetYear)).stream()
                 .map(row -> new LeaveReportDTO.DepartmentUsage((String) row[0], ((Number) row[1]).doubleValue()))
                 .toList();
 
-        long approved = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("APPROVED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "APPROVED", yearStart, yearEnd);
-        long rejected = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("REJECTED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "REJECTED", yearStart, yearEnd);
-        long pending = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("PENDING", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "PENDING", yearStart, yearEnd);
-        long cancelled = scope.isEmpty() ? leaveRequestRepository.countByStatusAndStartDateBetween("CANCELLED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "CANCELLED", yearStart, yearEnd);
+        long approved = scope.isEmpty() ? leaveRequestRepository.countByCompany_IdAndStatusAndStartDateBetween(companyId, "APPROVED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "APPROVED", yearStart, yearEnd);
+        long rejected = scope.isEmpty() ? leaveRequestRepository.countByCompany_IdAndStatusAndStartDateBetween(companyId, "REJECTED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "REJECTED", yearStart, yearEnd);
+        long pending = scope.isEmpty() ? leaveRequestRepository.countByCompany_IdAndStatusAndStartDateBetween(companyId, "PENDING", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "PENDING", yearStart, yearEnd);
+        long cancelled = scope.isEmpty() ? leaveRequestRepository.countByCompany_IdAndStatusAndStartDateBetween(companyId, "CANCELLED", yearStart, yearEnd) : leaveRequestRepository.countByCompany_IdAndEmployee_IdInAndStatusAndStartDateBetween(companyId, employeeIds, "CANCELLED", yearStart, yearEnd);
 
         return new LeaveReportDTO(targetYear, approved + rejected + pending + cancelled, approved, rejected, pending, cancelled,
                 byLeaveType, byDepartment);

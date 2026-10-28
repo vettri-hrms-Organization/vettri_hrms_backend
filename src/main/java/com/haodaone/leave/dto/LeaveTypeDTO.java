@@ -12,6 +12,7 @@ public class LeaveTypeDTO {
     private boolean carryForward;
     private boolean autoApprove;
     private boolean active;
+    private boolean paid;
 
     public static LeaveTypeDTO from(LeaveType t) {
         LeaveTypeDTO dto = new LeaveTypeDTO();
@@ -22,7 +23,20 @@ public class LeaveTypeDTO {
         dto.carryForward = t.isCarryForward();
         dto.autoApprove = t.isAutoApprove();
         dto.active = t.isActive();
+        dto.paid = t.isPaid();
+        dto.policy = LeavePolicyDTOs.PolicyView.of(t);
         return dto;
+    }
+
+    /** Accrual / carry-forward / encashment policy (V45). */
+    private LeavePolicyDTOs.PolicyView policy;
+
+    public LeavePolicyDTOs.PolicyView getPolicy() {
+        return policy;
+    }
+
+    public boolean isPaid() {
+        return paid;
     }
 
     public Long getId() {
@@ -65,6 +79,16 @@ public class LeaveTypeDTO {
 
         private boolean carryForward;
         private boolean autoApprove;
+        /** Null = paid (create) / unchanged (update), so older clients never flip a type to unpaid by omission. */
+        private Boolean paid;
+
+        public Boolean getPaid() {
+            return paid;
+        }
+
+        public void setPaid(Boolean paid) {
+            this.paid = paid;
+        }
 
         public String getName() {
             return name;

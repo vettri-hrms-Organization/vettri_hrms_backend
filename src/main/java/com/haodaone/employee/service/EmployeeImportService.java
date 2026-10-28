@@ -50,6 +50,14 @@ public class EmployeeImportService {
         this.companies = companies; this.employeeService = employeeService; this.audit = audit;
     }
 
+    /** Optional so the constructor (used directly by tests) stays unchanged; extra columns are matched to custom fields by label or key. */
+    private com.haodaone.customfield.service.CustomFieldService customFieldService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCustomFieldService(com.haodaone.customfield.service.CustomFieldService customFieldService) {
+        this.customFieldService = customFieldService;
+    }
+
     public EmployeeImportResultDTO preview(MultipartFile file) {
         List<ParsedRow> parsed = parse(file);
         Long companyId = tenant();
@@ -81,10 +89,13 @@ public class EmployeeImportService {
             CreateEmployeeRequest request = row.request(companyId);
             departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream().filter(d -> d.getName().equalsIgnoreCase(row.department)).findFirst().ifPresent(d -> request.setDepartmentId(d.getId()));
             teams.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream().filter(t -> t.getName().equalsIgnoreCase(row.team)).findFirst().ifPresent(t -> request.setTeamId(t.getId()));
-            designations.findAllByDeletedFalseOrderByTitleAsc().stream().filter(d -> d.getTitle().equalsIgnoreCase(row.designation)).findFirst().ifPresent(d -> request.setDesignationId(d.getId()));
+            designations.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).stream().filter(d -> d.getTitle().equalsIgnoreCase(row.designation)).findFirst().ifPresent(d -> request.setDesignationId(d.getId()));
             if (!blank(row.managerEmail)) employees.findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(row.managerEmail, companyId).ifPresent(m -> request.setReportingManagerId(m.getId()));
             request.setStatus(blank(row.status) ? EmploymentStatus.ACTIVE : row.status);
-            employeeService.createWithCode(request, row.code, company);
+            com.haodaone.employee.dto.EmployeeDetailDTO created = employeeService.createWithCode(request, row.code, company);
+            if (customFieldService != null && created != null && !row.customValues.isEmpty()) {
+                customFieldService.saveImportedValues(companyId, created.getId(), row.customValues);
+            }
             imported++;
         }
         audit.log("Employee", null, "BULK_IMPORT", "Imported " + imported + " of " + result.totalRows() + " rows");
@@ -96,6 +107,8 @@ public class EmployeeImportService {
             Sheet sheet = workbook.createSheet("Employees"); Row header = sheet.createRow(0);
             CellStyle style = workbook.createCellStyle(); Font font = workbook.createFont(); font.setBold(true); style.setFont(font);
             for (int i = 0; i < HEADERS.size(); i++) { Cell cell = header.createCell(i); cell.setCellValue(HEADERS.get(i)); cell.setCellStyle(style); sheet.setColumnWidth(i, 18 * 256); }
+            List<String> customHeaders = customFieldService == null || TenantContext.getCurrentTenant() == null ? List.of() : customFieldService.importHeaders(TenantContext.getCurrentTenant());
+            for (int i = 0; i < customHeaders.size(); i++) { Cell cell = header.createCell(HEADERS.size() + i); cell.setCellValue(customHeaders.get(i)); cell.setCellStyle(style); sheet.setColumnWidth(HEADERS.size() + i, 18 * 256); }
             sheet.createRow(1).createCell(0).setCellValue("EMP0001"); sheet.getRow(1).createCell(1).setCellValue("Ada"); sheet.getRow(1).createCell(2).setCellValue("Lovelace"); sheet.getRow(1).createCell(3).setCellValue("ada@example.com"); sheet.getRow(1).createCell(7).setCellValue("2026-01-15");
             Sheet instructions = workbook.createSheet("Instructions");
             String[] lines = {"Required fields: Employee Code, First Name, Email, Date of Joining", "Dates must use YYYY-MM-DD format", "Employment Type: FULL_TIME, PART_TIME, CONTRACT, INTERN", "Status: Active, On Leave, Notice Period, Resigned, Terminated", "Department, Team, and Designation must already exist for the tenant", "Do not add company_id. The server determines the company."};
@@ -114,8 +127,17 @@ public class EmployeeImportService {
                 String actual = formatter.formatCellValue(header == null ? null : header.getCell(i)).trim();
                 if (!HEADERS.get(i).equalsIgnoreCase(actual)) throw new BadRequestException("Invalid template: column " + (i + 1) + " must be '" + HEADERS.get(i) + "'");
             }
+            // Columns after the standard ones are matched to custom fields by label or key; others are ignored.
+            Map<Integer, String> extraHeaders = new LinkedHashMap<>();
+            int lastColumn = header == null ? 0 : header.getLastCellNum();
+            for (int i = HEADERS.size(); i < lastColumn; i++) {
+                String text = formatter.formatCellValue(header.getCell(i)).trim();
+                if (!text.isEmpty()) extraHeaders.put(i, text);
+            }
+            Map<Integer, String> customColumns = customFieldService == null || extraHeaders.isEmpty()
+                    ? Map.of() : customFieldService.matchImportColumns(tenant(), extraHeaders);
             List<ParsedRow> rows = new ArrayList<>();
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) { Row r = sheet.getRow(i); if (r == null) continue; rows.add(ParsedRow.from(i + 1, r, formatter, workbook.getCreationHelper().createFormulaEvaluator())); }
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) { Row r = sheet.getRow(i); if (r == null) continue; rows.add(ParsedRow.from(i + 1, r, formatter, workbook.getCreationHelper().createFormulaEvaluator(), customColumns)); }
             return rows;
         } catch (IOException | RuntimeException e) { if (e instanceof BadRequestException b) throw b; throw new BadRequestException("Could not read the Excel file: " + e.getMessage()); }
     }
@@ -130,15 +152,16 @@ public class EmployeeImportService {
         if (!blank(row.status) && !EmploymentStatus.VALID_STATUSES.contains(row.status)) errors.add("Invalid status");
         if (!blank(row.department) && departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream().noneMatch(d -> d.getName().equalsIgnoreCase(row.department))) errors.add("Department \"" + row.department + "\" not found");
         if (!blank(row.team) && teams.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).stream().noneMatch(t -> t.getName().equalsIgnoreCase(row.team))) errors.add("Team \"" + row.team + "\" not found");
-        if (!blank(row.designation) && designations.findAllByDeletedFalseOrderByTitleAsc().stream().noneMatch(d -> d.getTitle().equalsIgnoreCase(row.designation))) errors.add("Designation \"" + row.designation + "\" not found");
+        if (!blank(row.designation) && designations.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).stream().noneMatch(d -> d.getTitle().equalsIgnoreCase(row.designation))) errors.add("Designation \"" + row.designation + "\" not found");
         if (!blank(row.managerEmail) && employees.findByEmailIgnoreCaseAndCompany_IdAndDeletedFalse(row.managerEmail, companyId).isEmpty()) errors.add("Manager email \"" + row.managerEmail + "\" not found");
+        if (customFieldService != null) errors.addAll(customFieldService.validateImportRow(companyId, row.customValues));
         return errors;
     }
     private Long tenant() { Long id = TenantContext.getCurrentTenant(); if (id == null) throw new BadRequestException("Company context is required"); return id; }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
 
-    private record ParsedRow(int number, String code, String firstName, String lastName, String email, String phone, String birthDateText, LocalDate birthDate, String gender, LocalDate joining, String department, String team, String designation, String managerEmail, String employmentType, String workLocation, String status) {
-        static ParsedRow from(int number, Row row, DataFormatter f, FormulaEvaluator evaluator) { String[] v = new String[15]; for (int i = 0; i < v.length; i++) v[i] = f.formatCellValue(row.getCell(i), evaluator).trim(); return new ParsedRow(number,v[0],v[1],v[2],v[3],v[4],v[5],date(row.getCell(5), v[5]),v[6],date(row.getCell(7), v[7]),v[8],v[9],v[10],v[11],v[12],v[13],v[14]); }
+    private record ParsedRow(int number, String code, String firstName, String lastName, String email, String phone, String birthDateText, LocalDate birthDate, String gender, LocalDate joining, String department, String team, String designation, String managerEmail, String employmentType, String workLocation, String status, Map<String, String> customValues) {
+        static ParsedRow from(int number, Row row, DataFormatter f, FormulaEvaluator evaluator, Map<Integer, String> customColumns) { String[] v = new String[15]; for (int i = 0; i < v.length; i++) v[i] = f.formatCellValue(row.getCell(i), evaluator).trim(); Map<String, String> custom = new LinkedHashMap<>(); customColumns.forEach((column, key) -> { Cell cell = row.getCell(column); String text = cell != null && cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell) ? cell.getLocalDateTimeCellValue().toLocalDate().toString() : f.formatCellValue(cell, evaluator).trim(); if (!text.isEmpty()) custom.put(key, text); }); return new ParsedRow(number,v[0],v[1],v[2],v[3],v[4],v[5],date(row.getCell(5), v[5]),v[6],date(row.getCell(7), v[7]),v[8],v[9],v[10],v[11],v[12],v[13],v[14],custom); }
         private static LocalDate date(Cell cell, String value) { if (cell != null && DateUtil.isCellDateFormatted(cell)) return cell.getDateCellValue().toInstant().atZone(ZoneId.systemDefault()).toLocalDate(); return date(value); }
         private static LocalDate date(String value) { if (value == null || value.isBlank()) return null; try { return LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE); } catch (DateTimeParseException e) { return null; } }
         EmployeeImportRowDTO preview(List<String> errors) { return new EmployeeImportRowDTO(number,code,firstName,lastName,email,department,designation,status,errors); }

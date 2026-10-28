@@ -78,6 +78,15 @@ public class AttendancePolicyService {
         company.setManualRegularizationEnabled(request.manualRegularizationEnabled());
         company.setRegularizationApprovalRequired(request.regularizationApprovalRequired());
         company.setAttendanceGraceMinutes(request.gracePeriodMinutes());
+        if (request.requireSelfieAtCheckIn() != null) {
+            company.setRequireSelfieAtCheckIn(request.requireSelfieAtCheckIn());
+        }
+        if (request.selfieRetentionDays() != null) {
+            if (request.selfieRetentionDays() < 7 || request.selfieRetentionDays() > 365) {
+                throw new BadRequestException("Selfie retention must be between 7 and 365 days.");
+            }
+            company.setSelfieRetentionDays(request.selfieRetentionDays());
+        }
         Company saved = companyRepository.save(company);
         auditLogService.log("AttendancePolicy", saved.getId(), "UPDATE",
                 "Attendance policy changed from [" + previous + "] to [" + describe(saved) + "]");
@@ -121,6 +130,14 @@ public class AttendancePolicyService {
         if (userId != null && userId.isEmpty()) userId = null;
         if (deviceId != null && userId == null) {
             throw new BadRequestException("Enter a biometric user ID for the selected device.");
+        }
+        if (userId != null) {
+            employeeRepository.findByCompany_IdAndBiometricDeviceUserIdAndDeletedFalse(companyId, userId)
+                    .filter(other -> !other.getId().equals(employee.getId()))
+                    .ifPresent(other -> {
+                        throw new BadRequestException("Biometric user ID " + other.getBiometricDeviceUserId()
+                                + " is already assigned to " + other.getFullName() + ".");
+                    });
         }
 
         String previous = "method=" + employee.getAttendanceMethodOverride()
@@ -217,6 +234,30 @@ public class AttendancePolicyService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public com.haodaone.attendance.dto.WorkingWeekDTO getWorkingWeek() {
+        return new com.haodaone.attendance.dto.WorkingWeekDTO(
+                com.haodaone.company.service.WorkingWeek.of(company(requiredTenant())).tokens());
+    }
+
+    @Transactional
+    public com.haodaone.attendance.dto.WorkingWeekDTO updateWorkingWeek(com.haodaone.attendance.dto.WorkingWeekDTO request) {
+        Company company = company(requiredTenant());
+        String normalized;
+        try {
+            normalized = com.haodaone.company.service.WorkingWeek.normalize(
+                    request == null || request.weeklyOffDays() == null ? List.of() : request.weeklyOffDays());
+        } catch (IllegalArgumentException invalid) {
+            throw new BadRequestException(invalid.getMessage());
+        }
+        String previous = company.getWeeklyOffDays();
+        company.setWeeklyOffDays(normalized);
+        Company saved = companyRepository.save(company);
+        auditLogService.log("WorkingWeek", saved.getId(), "UPDATE",
+                "Weekly off days changed from [" + previous + "] to [" + normalized + "]");
+        return getWorkingWeek();
+    }
+
     private String normalizeMethod(String method) {
         String normalized = method == null ? "" : method.trim().toUpperCase(Locale.ROOT);
         if (!METHODS.contains(normalized)) {
@@ -233,14 +274,18 @@ public class AttendancePolicyService {
                 company.isRegularizationApprovalRequired(),
                 company.getAttendanceGraceMinutes(),
                 !"WEB_APP_ONLY".equals(method),
-                !"BIOMETRIC_ONLY".equals(method));
+                !"BIOMETRIC_ONLY".equals(method),
+                company.isRequireSelfieAtCheckIn(),
+                company.getSelfieRetentionDays());
     }
 
     private String describe(Company company) {
         return "method=" + company.getAttendanceMethod()
                 + ",regularizationEnabled=" + company.isManualRegularizationEnabled()
                 + ",approvalRequired=" + company.isRegularizationApprovalRequired()
-                + ",graceMinutes=" + company.getAttendanceGraceMinutes();
+                + ",graceMinutes=" + company.getAttendanceGraceMinutes()
+                + ",requireSelfie=" + company.isRequireSelfieAtCheckIn()
+                + ",selfieRetentionDays=" + company.getSelfieRetentionDays();
     }
 
     private Employee employee(Long employeeId, Long companyId) {

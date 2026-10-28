@@ -44,6 +44,20 @@ public class EmployeeDetailDTO {
     /** Populated only by getById, not in list views - who reports to this employee. */
     private List<EmployeeSummaryDTO> directReports;
 
+    /**
+     * Bank/statutory identity. from() only fills the masked account number
+     * and bank name; the full values are added by {@link #revealStatutory}
+     * for callers EmployeeService has checked (self, SALARY_VIEW, EMPLOYEE_MANAGE).
+     */
+    private String bankName;
+    private String bankAccountNumberMasked;
+    private String bankAccountNumber;
+    private String bankIfsc;
+    private String panNumber;
+    private String uanNumber;
+    private String esiNumber;
+    private boolean statutoryVisible;
+
     public static EmployeeDetailDTO from(Employee e) {
         EmployeeDetailDTO dto = new EmployeeDetailDTO();
         dto.id = e.getId();
@@ -58,6 +72,7 @@ public class EmployeeDetailDTO {
         dto.dateOfJoining = e.getDateOfJoining();
         dto.employmentType = e.getEmploymentType();
         dto.status = EmploymentStatus.normalize(e.getStatus());
+        dto.lastWorkingDate = e.getLastWorkingDate();
         dto.address = e.getAddress();
         dto.emergencyContactName = e.getEmergencyContactName();
         dto.emergencyContactPhone = e.getEmergencyContactPhone();
@@ -90,8 +105,38 @@ public class EmployeeDetailDTO {
         }
         dto.biometricDeviceUserId = e.getBiometricDeviceUserId();
         dto.companyId = e.getCompany() != null ? e.getCompany().getId() : null;
+        dto.bankName = e.getBankName();
+        dto.bankAccountNumberMasked = maskAccountNumber(e.getBankAccountNumber());
         return dto;
     }
+
+    /** Adds the unmasked bank/statutory identifiers. Call only after an authorization check. */
+    public EmployeeDetailDTO revealStatutory(Employee e) {
+        this.bankAccountNumber = e.getBankAccountNumber();
+        this.bankIfsc = e.getBankIfsc();
+        this.panNumber = e.getPanNumber();
+        this.uanNumber = e.getUanNumber();
+        this.esiNumber = e.getEsiNumber();
+        this.statutoryVisible = true;
+        return this;
+    }
+
+    /** "123456789012" -> "XXXXXXXX9012"; null/blank stays null. */
+    public static String maskAccountNumber(String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) return null;
+        String value = accountNumber.trim();
+        if (value.length() <= 4) return value;
+        return "X".repeat(value.length() - 4) + value.substring(value.length() - 4);
+    }
+
+    public String getBankName() { return bankName; }
+    public String getBankAccountNumberMasked() { return bankAccountNumberMasked; }
+    public String getBankAccountNumber() { return bankAccountNumber; }
+    public String getBankIfsc() { return bankIfsc; }
+    public String getPanNumber() { return panNumber; }
+    public String getUanNumber() { return uanNumber; }
+    public String getEsiNumber() { return esiNumber; }
+    public boolean isStatutoryVisible() { return statutoryVisible; }
 
     public void setDirectReports(List<EmployeeSummaryDTO> directReports) {
         this.directReports = directReports;
@@ -143,6 +188,13 @@ public class EmployeeDetailDTO {
 
     public String getStatus() {
         return status;
+    }
+
+    /** Set when the employee exits (Resigned / Terminated); null otherwise. */
+    private LocalDate lastWorkingDate;
+
+    public LocalDate getLastWorkingDate() {
+        return lastWorkingDate;
     }
 
     public String getAddress() {

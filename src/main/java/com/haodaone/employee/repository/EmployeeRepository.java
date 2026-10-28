@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -48,13 +50,19 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
         Optional<Employee> findByEmployeeCodeIgnoreCaseAndDeletedFalse(String employeeCode);
 
-    Optional<Employee> findByBiometricDeviceUserIdAndDeletedFalse(String biometricDeviceUserId);
+    /** Biometric PINs are unique per company only (ux_employee_company_biometric_user, V38). */
+    Optional<Employee> findByCompany_IdAndBiometricDeviceUserIdAndDeletedFalse(Long companyId, String biometricDeviceUserId);
 
     Optional<Employee> findByUser_UsernameAndDeletedFalse(String username);
 
         Optional<Employee> findByUser_IdAndDeletedFalse(Long userId);
 
         Optional<Employee> findByEmailIgnoreCaseAndDeletedFalse(String email);
+
+    /** Row lock that serialises balance-changing leave operations for one employee. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Employee e where e.id = :id")
+    Optional<Employee> lockById(@Param("id") Long id);
 
     boolean existsByEmail(String email);
 
@@ -209,4 +217,14 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     @Query("select e.employeeCode from Employee e where e.employeeCode like concat(:prefix, '%')")
     List<String> findEmployeeCodesByPrefix(@Param("prefix") String prefix);
+
+    /**
+     * Cross-tenant on purpose: used only by the daily EmployeeExitScheduler
+     * (no tenant context) to find exited employees whose last working date
+     * has passed but whose login is still enabled.
+     */
+    @Query("select e from Employee e join fetch e.user u where e.deleted = false and e.status in :statuses " +
+            "and e.lastWorkingDate is not null and e.lastWorkingDate < :today " +
+            "and (u.active = true or upper(u.accountStatus) = 'ACTIVE')")
+    List<Employee> findExitedWithActiveLogin(@Param("statuses") Set<String> statuses, @Param("today") java.time.LocalDate today);
 }

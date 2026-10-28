@@ -4,6 +4,9 @@ import com.haodaone.salary.entity.PayrollItem;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.TextStyle;
+import java.util.Locale;
 
 public class PayrollItemDTO {
 
@@ -21,6 +24,12 @@ public class PayrollItemDTO {
     private String status;
     private LocalDate paymentDate;
     private String remarks;
+    private BigDecimal lopDays;
+    private BigDecimal paidDays;
+    private int daysInPeriod;
+    private int periodMonth;
+    private int periodYear;
+    private String periodLabel;
 
     public static PayrollItemDTO from(PayrollItem i) {
         PayrollItemDTO dto = new PayrollItemDTO();
@@ -38,8 +47,64 @@ public class PayrollItemDTO {
         dto.status = i.getStatus();
         dto.paymentDate = i.getPaymentDate();
         dto.remarks = i.getRemarks();
+        dto.periodMonth = i.getPayrollRun().getPeriodMonth();
+        dto.periodYear = i.getPayrollRun().getPeriodYear();
+        YearMonth period = YearMonth.of(dto.periodYear, dto.periodMonth);
+        dto.periodLabel = period.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + dto.periodYear;
+        dto.daysInPeriod = period.lengthOfMonth();
+        dto.lopDays = i.getLopDays();
+        // Pre-V40 items were never prorated: they were paid for the whole month.
+        dto.paidDays = i.getPaidDays() != null ? i.getPaidDays() : BigDecimal.valueOf(dto.daysInPeriod);
+        dto.statutoryAuto = i.isStatutoryAuto();
+        dto.pfWages = i.getPfWages();
+        dto.employerEpf = i.getEmployerEpf();
+        dto.employerEps = i.getEmployerEps();
+        dto.employerEsi = i.getEmployerEsi();
+        dto.employerContributions = i.employerContributionsTotal();
+        dto.ptState = i.getPtState();
+        dto.adjustmentsTotal = i.getAdjustmentsTotal();
+        dto.taxableGross = i.effectiveTaxableGross();
+        dto.adjustments = i.getAdjustments().stream()
+                .filter(a -> !a.isDeleted())
+                .map(a -> new AdjustmentLine(a.getId(), a.getCode(), a.getLabel(), a.getAmount(), a.isTaxable(),
+                        a.getSourceType(), a.getSourceId(), a.isSettled()))
+                .toList();
         return dto;
     }
+
+    /** An extra earnings line (overtime, encashment, reimbursement...) on this item. */
+    public record AdjustmentLine(Long id, String code, String label, BigDecimal amount, boolean taxable,
+                                 String sourceType, Long sourceId, boolean settled) {
+    }
+
+    private boolean statutoryAuto;
+    private BigDecimal pfWages;
+    private BigDecimal employerEpf;
+    private BigDecimal employerEps;
+    private BigDecimal employerEsi;
+    private BigDecimal employerContributions;
+    private String ptState;
+    private BigDecimal adjustmentsTotal;
+    private BigDecimal taxableGross;
+    private java.util.List<AdjustmentLine> adjustments = java.util.List.of();
+
+    public boolean isStatutoryAuto() { return statutoryAuto; }
+    public BigDecimal getPfWages() { return pfWages; }
+    public BigDecimal getEmployerEpf() { return employerEpf; }
+    public BigDecimal getEmployerEps() { return employerEps; }
+    public BigDecimal getEmployerEsi() { return employerEsi; }
+    public BigDecimal getEmployerContributions() { return employerContributions; }
+    public String getPtState() { return ptState; }
+    public BigDecimal getAdjustmentsTotal() { return adjustmentsTotal; }
+    public BigDecimal getTaxableGross() { return taxableGross; }
+    public java.util.List<AdjustmentLine> getAdjustments() { return adjustments; }
+
+    public BigDecimal getLopDays() { return lopDays; }
+    public BigDecimal getPaidDays() { return paidDays; }
+    public int getDaysInPeriod() { return daysInPeriod; }
+    public int getPeriodMonth() { return periodMonth; }
+    public int getPeriodYear() { return periodYear; }
+    public String getPeriodLabel() { return periodLabel; }
 
     public Long getId() {
         return id;

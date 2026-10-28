@@ -34,6 +34,34 @@ public class Company extends BaseEntity {
     @Column(name = "attendance_grace_minutes", nullable = false)
     private int attendanceGraceMinutes = 10;
 
+    /** Comma list of weekly offs, e.g. "SATURDAY,SUNDAY" or "SUNDAY,SATURDAY#2,SATURDAY#4" - see WorkingWeek. */
+    @Column(name = "weekly_off_days", nullable = false, length = 100)
+    private String weeklyOffDays = "SATURDAY,SUNDAY";
+
+    /** Attendance policy: web/mobile check-in must carry a selfie (V52). */
+    @Column(name = "require_selfie_check_in", nullable = false)
+    private boolean requireSelfieAtCheckIn = false;
+
+    /** Days check-in selfies are kept before the nightly purge deletes them (V52). */
+    @Column(name = "selfie_retention_days", nullable = false)
+    private int selfieRetentionDays = 90;
+
+    public boolean isRequireSelfieAtCheckIn() {
+        return requireSelfieAtCheckIn;
+    }
+
+    public void setRequireSelfieAtCheckIn(boolean requireSelfieAtCheckIn) {
+        this.requireSelfieAtCheckIn = requireSelfieAtCheckIn;
+    }
+
+    public int getSelfieRetentionDays() {
+        return selfieRetentionDays;
+    }
+
+    public void setSelfieRetentionDays(int selfieRetentionDays) {
+        this.selfieRetentionDays = selfieRetentionDays;
+    }
+
     @Column(name = "neutral_threshold_percent")
     private Integer neutralThresholdPercent = 50;
 
@@ -57,6 +85,35 @@ public class Company extends BaseEntity {
 
     @Column(name = "gstin", length = 30)
     private String gstin;
+
+    /** GST billing profile (V49): buyer state for place of supply, optional PO number printed on invoices. */
+    @Column(name = "billing_state", length = 100)
+    private String billingState;
+
+    @Column(name = "billing_state_code", length = 2)
+    private String billingStateCode;
+
+    @Column(name = "billing_po_number", length = 60)
+    private String billingPoNumber;
+
+    public String getBillingState() { return billingState; }
+    public void setBillingState(String billingState) { this.billingState = billingState; }
+    public String getBillingStateCode() { return billingStateCode; }
+    public void setBillingStateCode(String billingStateCode) { this.billingStateCode = billingStateCode; }
+    public String getBillingPoNumber() { return billingPoNumber; }
+    public void setBillingPoNumber(String billingPoNumber) { this.billingPoNumber = billingPoNumber; }
+
+    /** Sales demo workspace (see demo.service.DemoCompanyService): billing enforcement, emails and WhatsApp are skipped. */
+    @Column(name = "is_demo", nullable = false)
+    private boolean demo = false;
+
+    public boolean isDemo() {
+        return demo;
+    }
+
+    public void setDemo(boolean demo) {
+        this.demo = demo;
+    }
 
     public String getName() {
         return name;
@@ -112,6 +169,14 @@ public class Company extends BaseEntity {
 
     public void setAttendanceGraceMinutes(int attendanceGraceMinutes) {
         this.attendanceGraceMinutes = attendanceGraceMinutes;
+    }
+
+    public String getWeeklyOffDays() {
+        return weeklyOffDays;
+    }
+
+    public void setWeeklyOffDays(String weeklyOffDays) {
+        this.weeklyOffDays = weeklyOffDays;
     }
 
     public Integer getNeutralThresholdPercent() {

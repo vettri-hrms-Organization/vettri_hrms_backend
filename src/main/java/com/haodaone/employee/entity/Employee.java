@@ -81,6 +81,37 @@ public class Employee extends BaseEntity {
         this.status = EmploymentStatus.normalize(status);
     }
 
+    /**
+     * Last day the employee works (set when status moves to Resigned /
+     * Terminated). Login is disabled once this date has passed - see
+     * EmployeeService#updateStatus and EmployeeExitScheduler. Nullable.
+     */
+    @Column(name = "last_working_date")
+    private LocalDate lastWorkingDate;
+
+    public LocalDate getLastWorkingDate() {
+        return lastWorkingDate;
+    }
+
+    public void setLastWorkingDate(LocalDate lastWorkingDate) {
+        this.lastWorkingDate = lastWorkingDate;
+    }
+
+    /**
+     * Work location (attendance OfficeLocation id). Drives which location-specific holidays apply
+     * (see leave HolidayCalendarService). Nullable: no location = only company-wide holidays.
+     */
+    @Column(name = "office_location_id")
+    private Long officeLocationId;
+
+    public Long getOfficeLocationId() {
+        return officeLocationId;
+    }
+
+    public void setOfficeLocationId(Long officeLocationId) {
+        this.officeLocationId = officeLocationId;
+    }
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
     private Department department;
@@ -126,7 +157,7 @@ public class Employee extends BaseEntity {
      * can't accidentally share a device identity. See attendance.service.
      * AttendanceIngestService for how incoming punches resolve this.
      */
-    @Column(name = "biometric_device_user_id", unique = true, length = 30)
+    @Column(name = "biometric_device_user_id", length = 30)
     private String biometricDeviceUserId;
 
     @Column(name = "attendance_method_override", length = 20)
@@ -134,6 +165,43 @@ public class Employee extends BaseEntity {
 
     @Column(name = "biometric_device_id")
     private Long biometricDeviceId;
+
+    /**
+     * Salary bank account + statutory identifiers (V40). Sensitive: the
+     * detail DTO only carries them in full for the employee themself or
+     * SALARY_VIEW/EMPLOYEE_MANAGE holders - see EmployeeService#getById.
+     */
+    @Column(name = "bank_account_number", length = 34)
+    private String bankAccountNumber;
+
+    @Column(name = "bank_ifsc", length = 11)
+    private String bankIfsc;
+
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    @Column(name = "pan_number", length = 10)
+    private String panNumber;
+
+    /** EPFO Universal Account Number (PF). */
+    @Column(name = "uan_number", length = 12)
+    private String uanNumber;
+
+    @Column(name = "esi_number", length = 17)
+    private String esiNumber;
+
+    public String getBankAccountNumber() { return bankAccountNumber; }
+    public void setBankAccountNumber(String bankAccountNumber) { this.bankAccountNumber = bankAccountNumber; }
+    public String getBankIfsc() { return bankIfsc; }
+    public void setBankIfsc(String bankIfsc) { this.bankIfsc = bankIfsc; }
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+    public String getPanNumber() { return panNumber; }
+    public void setPanNumber(String panNumber) { this.panNumber = panNumber; }
+    public String getUanNumber() { return uanNumber; }
+    public void setUanNumber(String uanNumber) { this.uanNumber = uanNumber; }
+    public String getEsiNumber() { return esiNumber; }
+    public void setEsiNumber(String esiNumber) { this.esiNumber = esiNumber; }
 
     public String getBiometricDeviceUserId() {
         return biometricDeviceUserId;

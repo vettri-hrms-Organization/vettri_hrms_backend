@@ -56,6 +56,10 @@ public class TeamService {
         Team team = new Team();
         team.setName(request.getName());
         team.setCompany(company);
+        if (request.getLeadEmployeeId() != null
+                && employeeRepository.findByIdAndCompany_IdAndDeletedFalse(request.getLeadEmployeeId(), companyId).isEmpty()) {
+            throw new BadRequestException("Unknown team lead: " + request.getLeadEmployeeId());
+        }
         team.setLeadEmployeeId(request.getLeadEmployeeId());
         if (request.getDepartmentId() != null) {
             Department department = departmentRepository.findByIdAndCompany_IdAndDeletedFalse(request.getDepartmentId(), companyId)
@@ -72,7 +76,7 @@ public class TeamService {
         TeamDTO dto = TeamDTO.from(team);
         dto.setMemberCount(employeeRepository.countByTeamIdAndDeletedFalse(team.getId()));
         if (team.getLeadEmployeeId() != null) {
-            employeeRepository.findById(team.getLeadEmployeeId())
+            employeeRepository.findByIdAndCompany_IdAndDeletedFalse(team.getLeadEmployeeId(), team.getCompany().getId())
                     .map(Employee::getFullName)
                     .ifPresent(dto::setLeadEmployeeName);
         }

@@ -54,6 +54,19 @@ public class PaymentTransaction extends BaseEntity {
     @Column(name = "webhook_event", length = 100)
     private String webhookEvent;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", length = 30)
+    private PaymentPurpose purpose;
+
+    /** Renewal invoice this order pays (plain id to avoid a circular association with Invoice). */
+    @Column(name = "invoice_id")
+    private Long invoiceId;
+
+    public PaymentPurpose getPurpose() { return purpose; }
+    public void setPurpose(PaymentPurpose purpose) { this.purpose = purpose; }
+    public Long getInvoiceId() { return invoiceId; }
+    public void setInvoiceId(Long invoiceId) { this.invoiceId = invoiceId; }
+
     public Company getCompany() {
         return company;
     }
