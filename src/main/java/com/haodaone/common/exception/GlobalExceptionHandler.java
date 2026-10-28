@@ -113,6 +113,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    /** Unknown URL (e.g. a newer frontend calling an endpoint this backend doesn't have yet) is a 404, not a server error. */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNoResource(Exception ex, HttpServletRequest request) {
+        log.debug("No endpoint for {} {}", request.getMethod(), request.getRequestURI());
+        return build(HttpStatus.NOT_FOUND, "This feature isn't available on the server yet.", request);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiError> handleMethodNotSupported(Exception ex, HttpServletRequest request) {
+        return build(HttpStatus.METHOD_NOT_ALLOWED, "This action isn't supported here.", request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex, HttpServletRequest request) {
         errorLogService.capture(ex, request, HttpStatus.INTERNAL_SERVER_ERROR.value(), "GlobalExceptionHandler");
