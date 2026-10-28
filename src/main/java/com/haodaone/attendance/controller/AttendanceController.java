@@ -298,7 +298,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('EMPLOYEE_VIEW') or hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("(hasAuthority('SELF_ATTENDANCE_CHECKIN') and @authorizationService.canAccessOwnAttendance()) or hasAuthority('EMPLOYEE_VIEW') or hasAuthority('ATTENDANCE_VIEW')")
     @Transactional
     public ResponseEntity<AttendanceSessionDTO> checkIn(@Valid @RequestBody AttendanceCheckInRequest request) {
         Employee employee = currentEmployee();
@@ -355,7 +355,7 @@ public class AttendanceController {
     }
 
     @PostMapping("/check-out")
-    @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('EMPLOYEE_VIEW') or hasAuthority('ATTENDANCE_VIEW')")
+    @PreAuthorize("(hasAuthority('SELF_ATTENDANCE_CHECKOUT') and @authorizationService.canAccessOwnAttendance()) or hasAuthority('EMPLOYEE_VIEW') or hasAuthority('ATTENDANCE_VIEW')")
     @Transactional
     public ResponseEntity<AttendanceSessionDTO> checkOut(@Valid @RequestBody AttendanceCheckOutRequest request) {
         Employee employee = currentEmployee();

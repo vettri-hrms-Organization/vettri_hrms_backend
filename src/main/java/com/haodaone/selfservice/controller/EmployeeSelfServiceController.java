@@ -29,7 +29,7 @@ public class EmployeeSelfServiceController {
     }
 
     @GetMapping("/employee-assets/me")
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('EMPLOYEE_VIEW')")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('SELF_ASSET_VIEW') or hasAuthority('EMPLOYEE_VIEW')")
     public List<Map<String, Object>> myAssets() {
         Employee employee = currentEmployee();
         return jdbcTemplate.queryForList("""

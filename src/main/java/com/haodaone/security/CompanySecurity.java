@@ -77,11 +77,17 @@ public class CompanySecurity {
         return currentRoles().contains("ROLE_HR_ADMIN") || currentRoles().contains("HR_ADMIN");
     }
 
-    /** True if the caller can create employees for their current tenant/company. */
+    /**
+     * True if the caller can create employees for their current tenant/company.
+     * Decided by the EMPLOYEE_CREATE permission at organization scope, so any
+     * role granted that permission (HR_ADMIN, HR_EXECUTIVE, custom roles) works,
+     * rather than a hard-coded list of role names.
+     */
     public boolean canCreateEmployee() {
         if (isSuperAdmin()) return true;
         if (!currentCompanyId().isPresent()) return false;
-        return isCompanyAdmin() || isHrAdmin();
+        if (authorizationService == null) return isCompanyAdmin() || isHrAdmin();
+        return authorizationService.hasOrganizationScope("EMPLOYEE_CREATE");
     }
 
     /** True if the caller can perform organization-level bulk employee import. */
@@ -91,20 +97,27 @@ public class CompanySecurity {
         return currentRoles().contains("EMPLOYEE_IMPORT");
     }
 
-    /** True if caller can manage the given employee id (company scope or super admin). */
+    /**
+     * True if caller can manage the given employee id: same company, the
+     * target is not a super admin, and the caller holds EMPLOYEE_MANAGE at a
+     * scope covering that employee (organization, department or team).
+     */
     public boolean canManageEmployee(Long employeeId) {
         if (employeeId == null) return false;
         if (isSuperAdmin()) return true;
-        if (!(isCompanyAdmin() || isHrAdmin())) return false;
+        if (authorizationService == null && !(isCompanyAdmin() || isHrAdmin())) return false;
         Optional<Long> myCompany = currentCompanyId();
         if (myCompany.isEmpty()) return false;
-        return employeeRepository.findById(employeeId)
+        boolean sameCompanyAndNotSuperAdmin = employeeRepository.findById(employeeId)
             .map(emp -> emp.getCompany() != null
                 && myCompany.get().equals(emp.getCompany().getId())
                 && (emp.getUser() == null || emp.getUser().getRoles().stream()
                 .noneMatch(role -> "SUPER_ADMIN".equals(role.getName())
                     || "ROLE_SUPER_ADMIN".equals(role.getName()))))
                 .orElse(false);
+        if (!sameCompanyAndNotSuperAdmin) return false;
+        return authorizationService == null
+                || authorizationService.isAllowed("EMPLOYEE_MANAGE", "EMPLOYEE", employeeId);
     }
 
     public boolean canManageDevice(Long deviceId) {

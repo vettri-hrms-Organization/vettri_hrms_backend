@@ -84,4 +84,18 @@ class DataSeederPermissionPolicyTest {
         assertTrue(permissions.contains("DEVICE_MANAGE"));
         assertFalse(permissions.contains("REMOTE_SUPPORT"));
     }
+
+    @Test
+    void itAdministratorHasSelfServiceButNoHrDirectoryAccess() {
+        var permissions = DataSeeder.itAdministratorPermissionCodes();
+
+        assertTrue(permissions.contains("SELF_PROFILE_VIEW"));
+        assertTrue(permissions.contains("SELF_ATTENDANCE_VIEW"));
+        assertTrue(permissions.contains("SELF_ATTENDANCE_CHECKIN"));
+        assertTrue(permissions.contains("SELF_LEAVE_VIEW"));
+        assertTrue(permissions.contains("SELF_PAYSLIP_VIEW"));
+        assertFalse(permissions.contains("EMPLOYEE_VIEW"));
+        assertFalse(permissions.contains("LEAVE_VIEW"));
+        assertFalse(permissions.contains("SALARY_VIEW"));
+    }
 }

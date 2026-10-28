@@ -356,8 +356,13 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> itAdministratorPermissionCodes() {
+        // IT administrators are usually employees too, so they get the same
+        // self-service baseline as every other staff role (their own profile,
+        // attendance, leave, payslip) - but no HR directory access.
         return Set.of("IT_MANAGEMENT_ACCESS", "IT_DEVICE_VIEW", "IT_DEVICE_ENROLL",
                 "IT_DEVICE_MAPPING_MANAGE", "MONITORING_VIEW", "MONITORING_MANAGE", "REMOTE_SUPPORT_MANAGE",
-                "DEVICE_MANAGE", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE");
+                "DEVICE_MANAGE", "SOFTWARE_VIEW", "SOFTWARE_DEPLOY", "SOFTWARE_MANAGE",
+                "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
+                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW");
     }
 }

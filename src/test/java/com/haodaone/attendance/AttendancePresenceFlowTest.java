@@ -218,6 +218,13 @@ public class AttendancePresenceFlowTest {
             role.setName("OPS_MANAGER");
             role.setLabel("Operations Manager");
             role.setPermissions(Set.of(selfCheckIn));
+            // Roles created through RoleService always carry a scope per
+            // permission; a permission only becomes an authority via its scope.
+            RolePermissionScope scope = new RolePermissionScope();
+            scope.setRole(role);
+            scope.setPermission(selfCheckIn);
+            scope.setScope(PermissionScope.SELF);
+            role.setPermissionScopes(new java.util.HashSet<>(Set.of(scope)));
             return roleRepository.save(role);
         });
 

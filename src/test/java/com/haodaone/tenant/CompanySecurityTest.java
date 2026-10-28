@@ -114,4 +114,80 @@ public class CompanySecurityTest {
 
         assertTrue(companySecurity.canImportEmployees());
     }
+
+    // ---- Permission-based checks (with AuthorizationService wired, as in production) ----
+
+    private CompanySecurity permissionAwareSecurity(com.haodaone.security.AuthorizationService authorizationService) {
+        return new CompanySecurity(employeeRepository, monitoredDeviceRepository, userRepository, authorizationService);
+    }
+
+    private Company companyWithId(long id) {
+        Company company = new Company();
+        company.setId(id);
+        return company;
+    }
+
+    @Test
+    void hrExecutive_withOrganizationScopedCreate_canCreateEmployee_withoutHrAdminRoleName() {
+        var authorizationService = Mockito.mock(com.haodaone.security.AuthorizationService.class);
+        when(authorizationService.hasOrganizationScope("EMPLOYEE_CREATE")).thenReturn(true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("hr-exec", null, "ROLE_HR_EXECUTIVE", "EMPLOYEE_CREATE"));
+        User current = new User();
+        current.setCompany(companyWithId(1L));
+        when(userRepository.findByUsernameAndDeletedFalse("hr-exec")).thenReturn(Optional.of(current));
+
+        assertTrue(permissionAwareSecurity(authorizationService).canCreateEmployee());
+    }
+
+    @Test
+    void hrAdminRoleName_withoutCreateScope_cannotCreateEmployee() {
+        var authorizationService = Mockito.mock(com.haodaone.security.AuthorizationService.class);
+        when(authorizationService.hasOrganizationScope("EMPLOYEE_CREATE")).thenReturn(false);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("hr-admin", null, "ROLE_HR_ADMIN"));
+        User current = new User();
+        current.setCompany(companyWithId(1L));
+        when(userRepository.findByUsernameAndDeletedFalse("hr-admin")).thenReturn(Optional.of(current));
+
+        assertFalse(permissionAwareSecurity(authorizationService).canCreateEmployee());
+    }
+
+    @Test
+    void employeeManageHolder_canManageSameCompanyEmployee_butNotAnotherCompanys() {
+        var authorizationService = Mockito.mock(com.haodaone.security.AuthorizationService.class);
+        when(authorizationService.isAllowed(Mockito.eq("EMPLOYEE_MANAGE"), Mockito.eq("EMPLOYEE"), anyLong())).thenReturn(true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("hr-exec", null, "ROLE_HR_EXECUTIVE", "EMPLOYEE_MANAGE"));
+        User current = new User();
+        current.setCompany(companyWithId(1L));
+        when(userRepository.findByUsernameAndDeletedFalse("hr-exec")).thenReturn(Optional.of(current));
+
+        Employee sameCompany = new Employee();
+        sameCompany.setCompany(companyWithId(1L));
+        when(employeeRepository.findById(10L)).thenReturn(Optional.of(sameCompany));
+        Employee otherCompany = new Employee();
+        otherCompany.setCompany(companyWithId(2L));
+        when(employeeRepository.findById(20L)).thenReturn(Optional.of(otherCompany));
+
+        CompanySecurity security = permissionAwareSecurity(authorizationService);
+        assertTrue(security.canManageEmployee(10L));
+        assertFalse(security.canManageEmployee(20L));
+    }
+
+    @Test
+    void sameCompanyEmployee_isNotManageable_withoutEmployeeManageScope() {
+        var authorizationService = Mockito.mock(com.haodaone.security.AuthorizationService.class);
+        when(authorizationService.isAllowed(Mockito.eq("EMPLOYEE_MANAGE"), Mockito.eq("EMPLOYEE"), anyLong())).thenReturn(false);
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("viewer", null, "ROLE_HR_COORDINATOR"));
+        User current = new User();
+        current.setCompany(companyWithId(1L));
+        when(userRepository.findByUsernameAndDeletedFalse("viewer")).thenReturn(Optional.of(current));
+        Employee sameCompany = new Employee();
+        sameCompany.setCompany(companyWithId(1L));
+        when(employeeRepository.findById(10L)).thenReturn(Optional.of(sameCompany));
+
+        assertFalse(permissionAwareSecurity(authorizationService).canManageEmployee(10L));
+    }
 }

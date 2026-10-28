@@ -20,7 +20,7 @@ public class HolidayController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('LEAVE_APPLY') or hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_MANAGE')")
+    @PreAuthorize("hasRole('EMPLOYEE') or hasAuthority('SELF_LEAVE_VIEW') or hasAuthority('LEAVE_APPLY') or hasAuthority('LEAVE_VIEW') or hasAuthority('LEAVE_MANAGE')")
     public List<HolidayDTO> listAll() {
         return holidayService.listAll();
     }
