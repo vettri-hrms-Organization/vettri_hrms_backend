@@ -60,6 +60,18 @@ public class ProductivityReportService {
         this.authorizationService = authorizationService;
     }
 
+    /** Laptop active for at least this long with no attendance punch -> NO_PUNCH. */
+    private static final long NO_PUNCH_ACTIVE_SECONDS = 30 * 60;
+    /** Attended at least an hour but the laptop was active for less than this share of it -> LOW_ACTIVITY. */
+    private static final double LOW_ACTIVITY_RATIO = 0.4;
+
+    private com.haodaone.attendance.shift.service.DailyAttendanceService dailyAttendanceService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setDailyAttendanceService(com.haodaone.attendance.shift.service.DailyAttendanceService dailyAttendanceService) {
+        this.dailyAttendanceService = dailyAttendanceService;
+    }
+
     /** Every row of the filtered report, one per employee/device/day - backs both the Activity Report table and the Productivity Summary table. */
     public List<ProductivitySummaryDTO> buildSummary(ReportFilter filter) {
         List<ActivitySession> sessions = fetchSessions(filter);
@@ -72,7 +84,40 @@ public class ProductivityReportService {
         }
         rows.sort(Comparator.comparing(ProductivitySummaryDTO::getDate).reversed()
                 .thenComparing(dto -> Objects.toString(dto.getEmployeeName(), "")));
+        attachAttendance(rows, sessions, filter);
         return rows;
+    }
+
+    /** Adds the same day's attendance to each row and flags mismatches for HR review (never auto-penalised). */
+    private void attachAttendance(List<ProductivitySummaryDTO> rows, List<ActivitySession> sessions, ReportFilter filter) {
+        Long companyId = TenantContext.getCurrentTenant();
+        if (dailyAttendanceService == null || companyId == null || rows.isEmpty()) return;
+        Map<Long, com.haodaone.employee.entity.Employee> employees = new LinkedHashMap<>();
+        for (ActivitySession session : sessions) {
+            if (session.getEmployee() != null) employees.putIfAbsent(session.getEmployee().getId(), session.getEmployee());
+        }
+        if (employees.isEmpty()) return;
+        var evaluated = dailyAttendanceService.evaluate(companyId, employees.values(), filter.getStartDate(), filter.getEndDate());
+        for (ProductivitySummaryDTO row : rows) {
+            if (row.getEmployeeId() == null || row.getDate() == null) continue;
+            var day = evaluated.getOrDefault(row.getEmployeeId(), Map.of()).get(row.getDate());
+            if (day == null) continue;
+            var evaluation = day.evaluation();
+            row.setAttendanceStatus(evaluation.status());
+            row.setAttendanceFirstIn(evaluation.firstIn());
+            row.setAttendanceLastOut(evaluation.lastOut());
+            row.setAttendanceWorkedMinutes(evaluation.workedMinutes());
+            row.setAttendanceCheck(attendanceCheck(row, evaluation.punched(), evaluation.workedMinutes(),
+                    day.holiday() || day.weekOff() || day.leave() == com.haodaone.attendance.shift.service.ShiftEvaluator.LeaveKind.FULL));
+        }
+    }
+
+    static String attendanceCheck(ProductivitySummaryDTO row, boolean punched, int workedMinutes, boolean dayOff) {
+        if (!punched) {
+            return !dayOff && row.getActiveSeconds() >= NO_PUNCH_ACTIVE_SECONDS ? "NO_PUNCH" : null;
+        }
+        if (workedMinutes >= 60 && row.getActiveSeconds() < workedMinutes * 60L * LOW_ACTIVITY_RATIO) return "LOW_ACTIVITY";
+        return "OK";
     }
 
     /** Management View's leaderboards and org-wide averages, computed over the same filtered rows as buildSummary. */

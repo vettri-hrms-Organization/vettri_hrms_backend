@@ -97,6 +97,23 @@ public class NotificationService {
         return unreadCount(currentCompanyId(), currentUserId());
     }
 
+    /**
+     * Unread notifications for one user newer than {@code afterId}, for the device agent's tray popups.
+     * Called with an explicit company/user (the caller is a device, not a logged-in user) and only
+     * looks back {@code maxAgeHours}, so a laptop that was off for a week doesn't replay old news.
+     */
+    public List<Map<String, Object>> recentUnreadForUser(long companyId, long userId, long afterId, int maxAgeHours, int limit) {
+        return jdbcTemplate.queryForList("""
+                SELECT id, type, title, message, priority, created_at
+                FROM notification
+                WHERE company_id = ? AND recipient_user_id = ? AND read_at IS NULL AND deleted = FALSE
+                  AND id > ? AND created_at >= ?
+                ORDER BY id ASC LIMIT ?
+                """, companyId, userId, afterId,
+                java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().minusHours(Math.max(1, maxAgeHours))),
+                Math.max(1, Math.min(limit, 20)));
+    }
+
     private long unreadCount(long companyId, long userId) {
         Long count = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM notification

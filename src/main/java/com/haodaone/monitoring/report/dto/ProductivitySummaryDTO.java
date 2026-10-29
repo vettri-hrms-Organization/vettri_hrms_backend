@@ -37,6 +37,15 @@ public class ProductivitySummaryDTO {
     private String productivityClassification;
     private List<AppUsageDTO> topApplications;
 
+    // Same day's attendance (web, tray and biometric punches, via DailyAttendanceService), so HR can
+    // compare "punched in" with "laptop actually active". attendanceCheck is a hint for review only:
+    // OK, NO_PUNCH (laptop active but no attendance) or LOW_ACTIVITY (attended, laptop mostly inactive).
+    private String attendanceStatus;
+    private LocalDateTime attendanceFirstIn;
+    private LocalDateTime attendanceLastOut;
+    private Integer attendanceWorkedMinutes;
+    private String attendanceCheck;
+
     public Long getEmployeeId() {
         return employeeId;
     }
@@ -167,4 +176,15 @@ public class ProductivitySummaryDTO {
     public void setTopApplications(List<AppUsageDTO> topApplications) {
         this.topApplications = topApplications;
     }
+
+    public String getAttendanceStatus() { return attendanceStatus; }
+    public void setAttendanceStatus(String attendanceStatus) { this.attendanceStatus = attendanceStatus; }
+    public LocalDateTime getAttendanceFirstIn() { return attendanceFirstIn; }
+    public void setAttendanceFirstIn(LocalDateTime attendanceFirstIn) { this.attendanceFirstIn = attendanceFirstIn; }
+    public LocalDateTime getAttendanceLastOut() { return attendanceLastOut; }
+    public void setAttendanceLastOut(LocalDateTime attendanceLastOut) { this.attendanceLastOut = attendanceLastOut; }
+    public Integer getAttendanceWorkedMinutes() { return attendanceWorkedMinutes; }
+    public void setAttendanceWorkedMinutes(Integer attendanceWorkedMinutes) { this.attendanceWorkedMinutes = attendanceWorkedMinutes; }
+    public String getAttendanceCheck() { return attendanceCheck; }
+    public void setAttendanceCheck(String attendanceCheck) { this.attendanceCheck = attendanceCheck; }
 }

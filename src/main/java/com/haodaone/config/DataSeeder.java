@@ -155,6 +155,7 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"MONITORING_VIEW", "View monitored devices and employee activity sessions", "Monitoring"},
                 new String[]{"MONITORING_MANAGE", "Manage monitored-device records and agent operations", "Monitoring"},
                 new String[]{"REMOTE_SUPPORT_MANAGE", "Start remote support and remote desktop operations", "IT Management"},
+                new String[]{"REMOTE_SCRIPT_RUN", "Run custom PowerShell/CMD scripts as SYSTEM on managed laptops (approved actions need only REMOTE_SUPPORT_MANAGE)", "IT Management"},
                 new String[]{"IT_MANAGEMENT_ACCESS", "Access IT Management tools for devices and software", "IT Management"},
                 new String[]{"IT_DEVICE_VIEW", "View IT device inventory and details", "IT Management"},
                 new String[]{"IT_DEVICE_ENROLL", "Enroll and revoke IT device enrollments", "IT Management"},

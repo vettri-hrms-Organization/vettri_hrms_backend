@@ -46,6 +46,9 @@ public class AgentController {
     private final RemoteSupportService remoteSupportService;
     private final com.haodaone.monitoring.service.DeviceOnboardingService deviceOnboardingService;
     private final DeviceInventoryService deviceInventoryService;
+    private com.haodaone.monitoring.service.AgentReleaseService agentReleaseService;
+    private com.haodaone.attendance.service.AgentAttendanceService agentAttendanceService;
+    private com.haodaone.monitoring.service.AgentNotificationService agentNotificationService;
 
     public AgentController(AgentIngestService agentIngestService,
                            SoftwareManagementService softwareManagementService,
@@ -63,6 +66,44 @@ public class AgentController {
         this.remoteSupportService = remoteSupportService;
         this.deviceOnboardingService = deviceOnboardingService;
         this.deviceInventoryService = deviceInventoryService;
+    }
+
+    // Setter-injected so the existing constructor (and tests that build this controller) stay unchanged.
+    @org.springframework.beans.factory.annotation.Autowired
+    void setAgentServices(com.haodaone.monitoring.service.AgentReleaseService agentReleaseService,
+                          com.haodaone.attendance.service.AgentAttendanceService agentAttendanceService,
+                          com.haodaone.monitoring.service.AgentNotificationService agentNotificationService) {
+        this.agentReleaseService = agentReleaseService;
+        this.agentAttendanceService = agentAttendanceService;
+        this.agentNotificationService = agentNotificationService;
+    }
+
+    /** Auto-update poll: the active release when it is newer than the calling agent, else updateAvailable=false. */
+    @GetMapping("/update")
+    public AgentEnvelope<com.haodaone.monitoring.dto.AgentReleaseDTO.AgentUpdate> update(
+            @AuthenticationPrincipal MonitoredDevice device,
+            @RequestHeader(value = "X-Agent-Version", required = false) String agentVersion) {
+        return AgentEnvelope.ok(agentReleaseService.updateFor(agentVersion != null ? agentVersion : device.getAgentVersion()));
+    }
+
+    /** Tray: today's attendance state for the employee this laptop is assigned to. */
+    @GetMapping("/attendance")
+    public AgentEnvelope<com.haodaone.attendance.dto.AgentAttendanceDTO.Status> attendance(@AuthenticationPrincipal MonitoredDevice device) {
+        return AgentEnvelope.ok(agentAttendanceService.status(device));
+    }
+
+    /** Tray: CLOCK_IN, CLOCK_OUT, BREAK_START or BREAK_END. Refusals come back with ok=false and a message. */
+    @PostMapping("/attendance/{action}")
+    public AgentEnvelope<com.haodaone.attendance.dto.AgentAttendanceDTO.Status> attendanceAction(
+            @AuthenticationPrincipal MonitoredDevice device, @PathVariable String action) {
+        return AgentEnvelope.ok(agentAttendanceService.perform(device, action));
+    }
+
+    /** Tray popups: unread HR notifications newer than afterId (last 24 hours, at most 5). */
+    @GetMapping("/notifications")
+    public AgentEnvelope<java.util.List<com.haodaone.monitoring.service.AgentNotificationService.Item>> notifications(
+            @AuthenticationPrincipal MonitoredDevice device, @RequestParam(defaultValue = "0") long afterId) {
+        return AgentEnvelope.ok(agentNotificationService.newSince(device, afterId));
     }
 
     @PostMapping("/enroll")
