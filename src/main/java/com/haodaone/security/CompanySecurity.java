@@ -101,7 +101,13 @@ public class CompanySecurity {
      * True if caller can manage the given employee id: same company, the
      * target is not a super admin, and the caller holds EMPLOYEE_MANAGE at a
      * scope covering that employee (organization, department or team).
+     *
+     * Read-only transaction: the super-admin check walks employee -> user -> roles,
+     * which are lazy, and these checks run in @PreAuthorize / controllers where
+     * open-in-view is off (no session) - without it the lookup threw
+     * LazyInitializationException (HTTP 500) for any employee with a login.
      */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public boolean canManageEmployee(Long employeeId) {
         if (employeeId == null) return false;
         if (isSuperAdmin()) return true;
