@@ -25,9 +25,16 @@ public class TenantResolverFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(TenantResolverFilter.class);
     private static final String COMPANY_HEADER = "X-Company-Id";
     private final CompanyRepository companyRepository;
+    private final org.springframework.beans.factory.ObjectProvider<com.haodaone.supportaccess.SupportAccessService> supportAccess;
 
     public TenantResolverFilter(CompanyRepository companyRepository) {
+        this(companyRepository, null);
+    }
+
+    public TenantResolverFilter(CompanyRepository companyRepository,
+                                org.springframework.beans.factory.ObjectProvider<com.haodaone.supportaccess.SupportAccessService> supportAccess) {
         this.companyRepository = companyRepository;
+        this.supportAccess = supportAccess;
     }
 
     @Override
@@ -60,6 +67,14 @@ public class TenantResolverFilter extends OncePerRequestFilter {
                         }
                         if (!companyRepository.existsById(companyId)) {
                             writeError(response, HttpServletResponse.SC_BAD_REQUEST, "Selected company does not exist");
+                            return;
+                        }
+                        // Platform staff only enter a company the company itself has opened to support
+                        // (or a Vettri demo workspace); read-only grants also refuse writes.
+                        com.haodaone.supportaccess.SupportAccessService gate = supportAccess == null ? null : supportAccess.getIfAvailable();
+                        String refusal = gate == null ? null : gate.refusalFor(companyId, request.getMethod());
+                        if (refusal != null) {
+                            writeError(response, HttpServletResponse.SC_FORBIDDEN, refusal);
                             return;
                         }
                     }

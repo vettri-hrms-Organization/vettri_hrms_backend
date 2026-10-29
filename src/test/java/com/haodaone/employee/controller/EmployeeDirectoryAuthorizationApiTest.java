@@ -46,6 +46,7 @@ class EmployeeDirectoryAuthorizationApiTest {
     @Autowired private JwtService jwtService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private DataSeeder dataSeeder;
+    @Autowired private com.haodaone.supportaccess.SupportAccessGrantRepository supportAccessGrants;
 
     @AfterEach
     void clearTenantContext() {
@@ -173,6 +174,11 @@ class EmployeeDirectoryAuthorizationApiTest {
         User superAdmin = createUser(homeCompany, superAdminRole, suffix);
         Employee selectedEmployee = createEmployee(selectedCompany, suffix);
         createEmployee(homeCompany, suffix);
+        // Platform staff may only enter a company that has granted support access (V56).
+        com.haodaone.supportaccess.SupportAccessGrant grant = new com.haodaone.supportaccess.SupportAccessGrant();
+        grant.setCompany(selectedCompany);
+        grant.setExpiresAt(java.time.LocalDateTime.now().plusHours(2));
+        supportAccessGrants.saveAndFlush(grant);
 
         mockMvc.perform(get("/api/employees")
                         .param("search", suffix)

@@ -210,9 +210,13 @@
             return registration;
         }
 
+        // Resolved lazily per request: the support-access gate for SUPER_ADMIN company selection.
+        @org.springframework.beans.factory.annotation.Autowired
+        private org.springframework.beans.factory.ObjectProvider<com.haodaone.supportaccess.SupportAccessService> supportAccessProvider;
+
         @Bean
         public com.haodaone.security.TenantResolverFilter tenantResolverFilter(CompanyRepository companyRepository) {
-            return new com.haodaone.security.TenantResolverFilter(companyRepository);
+            return new com.haodaone.security.TenantResolverFilter(companyRepository, supportAccessProvider);
         }
 
         @Bean
