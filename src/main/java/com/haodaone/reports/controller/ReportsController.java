@@ -69,6 +69,7 @@ public class ReportsController {
 
     @GetMapping("/employees")
     @PreAuthorize("hasAuthority('REPORTS_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public EmployeeReportDTO employeeReport() {
         Long companyId = requiredTenant();
         var scope = authorizationService.resolveEmployeeIds("REPORTS_VIEW");

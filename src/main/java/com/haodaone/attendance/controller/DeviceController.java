@@ -34,6 +34,7 @@ public class DeviceController {
 
     @GetMapping
     @PreAuthorize("@authorizationService.hasOrganizationScope('DEVICE_MANAGE')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<DeviceDTO> listAll() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {

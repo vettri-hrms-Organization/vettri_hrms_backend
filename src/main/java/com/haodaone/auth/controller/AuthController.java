@@ -96,6 +96,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public ResponseEntity<UserDTO> me(@AuthenticationPrincipal CustomUserPrincipal principal) {
         UserDTO dto = UserDTO.from(principal.getUser(), principal.getPermissionGrants());
         employeeRepository.findByUser_UsernameAndDeletedFalse(principal.getUsername())

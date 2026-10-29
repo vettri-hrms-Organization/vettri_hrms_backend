@@ -27,6 +27,7 @@ public class PermissionController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('ROLE_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<PermissionDTO> listAll() {
         return permissionRepository.findAllByDeletedFalse().stream().map(PermissionDTO::from).toList();
     }

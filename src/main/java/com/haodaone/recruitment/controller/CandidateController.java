@@ -66,6 +66,7 @@ public class CandidateController {
      */
     @GetMapping("/{id}/timeline")
     @PreAuthorize("hasAuthority('RECRUITMENT_VIEW') and @authorizationService.hasOrganizationScope('RECRUITMENT_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<AuditLog> timeline(@PathVariable Long id) {
         candidateService.getById(id); // 404s cleanly if the candidate doesn't exist, same as every other /{id} endpoint here
 

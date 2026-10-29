@@ -103,6 +103,7 @@ public class AttendanceController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<AttendanceRecordDTO> byDate(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
         LocalDate targetDate = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);
@@ -215,6 +216,7 @@ public class AttendanceController {
 
     @GetMapping("/employee/{employeeId}")
     @PreAuthorize("@authorizationService.isAllowed('ATTENDANCE_VIEW', 'EMPLOYEE', #employeeId) or @employeeSecurity.isSelf(#employeeId)")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<AttendanceRecordDTO> byEmployee(@PathVariable Long employeeId) {
         Long companyId = requiredTenant();
         return attendanceRecordRepository.findAllByCompany_IdAndEmployee_IdOrderByPunchTimeDesc(companyId, employeeId).stream()
@@ -285,6 +287,7 @@ public class AttendanceController {
 
     @GetMapping("/unmapped")
     @PreAuthorize("hasAuthority('ATTENDANCE_MANAGE')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<AttendanceRecordDTO> unmapped() {
         return attendanceRecordRepository.findAllByCompany_IdAndEmployeeIsNullOrderByPunchTimeDesc(requiredTenant()).stream()
                 .map(AttendanceRecordDTO::from)
@@ -425,6 +428,7 @@ public class AttendanceController {
 
     @GetMapping("/office-locations")
     @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('ATTENDANCE_VIEW') or @authorizationService.canViewOfficeLocations()")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<OfficeLocationDTO> officeLocations() {
         Long companyId = TenantContext.getCurrentTenant();
         if (companyId == null) {
@@ -480,6 +484,7 @@ public class AttendanceController {
 
     @GetMapping("/team")
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW') or hasAuthority('LEAVE_APPROVE')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<AttendanceSessionDTO> teamPresence(@RequestParam(required = false) String date) {
         Long companyId = requiredTenant();
         var employeeScope = authorizationService.resolveEmployeeIdsForAny("ATTENDANCE_VIEW", "LEAVE_APPROVE");

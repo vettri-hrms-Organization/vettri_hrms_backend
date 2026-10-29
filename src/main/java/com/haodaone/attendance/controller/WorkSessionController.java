@@ -127,6 +127,7 @@ public class WorkSessionController {
 
     @GetMapping("/me/today")
     @PreAuthorize("@authorizationService.canAccessOwnAttendance() or hasAuthority('EMPLOYEE_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public WorkSessionDTO todayForCurrentEmployee() {
         Employee me = currentEmployee();
         return workSessionRepository.findByEmployee_IdAndStatusAndSessionDate(me.getId(), "ACTIVE", LocalDate.now(applicationClock))
@@ -136,6 +137,7 @@ public class WorkSessionController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('ATTENDANCE_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<WorkSessionDTO> list(@RequestParam(required = false) String date,
                                      @RequestParam(required = false) String mode) {
         LocalDate target = date != null ? LocalDate.parse(date) : LocalDate.now(applicationClock);

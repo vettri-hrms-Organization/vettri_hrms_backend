@@ -28,6 +28,7 @@ public class AuditController {
 
     @GetMapping("/logs")
     @PreAuthorize("hasAuthority('AUDIT_VIEW')")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public Page<AuditLogDTO> logs(@RequestParam(defaultValue = "0") int page,
                                 @RequestParam(defaultValue = "50") int size,
                                 @RequestParam(required = false) String entityName) {
