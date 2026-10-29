@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
 @Service
 public class AssistantService {
     private static final Logger log = LoggerFactory.getLogger(AssistantService.class);
-    private static final int HISTORY_WINDOW = 12;
+    // Shorter history = smaller prompt = faster local-model replies; 8 messages still covers follow-ups.
+    private static final int HISTORY_WINDOW = 8;
     private static final int MAX_TOOL_RESULT_CHARACTERS = 8_000;
     private static final String PROVIDER_UNAVAILABLE = "Vettri Bot is temporarily unavailable. Please try again.";
     private static final String TOOL_UNAVAILABLE = "I couldn't retrieve that information right now.";
@@ -56,6 +57,13 @@ public class AssistantService {
     private final AssistantToolRegistry toolRegistry;
     private final ObjectMapper objectMapper;
     private final int maxToolIterations;
+    private AssistantQuickAnswers quickAnswers;
+
+    /** Optional fast path (instant answers for everyday questions); without it every question goes to the model. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setQuickAnswers(AssistantQuickAnswers quickAnswers) {
+        this.quickAnswers = quickAnswers;
+    }
 
     public AssistantService(
             AiProvider aiProvider,
@@ -175,6 +183,25 @@ public class AssistantService {
         if (isLeaveGuidanceQuestion(request.message())) {
             availableTools.removeIf(tool -> "prepare_leave_request".equals(tool.name()));
         }
+
+        // Fast path: greetings and everyday questions are answered from live data without the model.
+        if (quickAnswers != null) {
+            java.util.Set<String> toolNames = availableTools.stream().map(AiProvider.ModelTool::name)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (quickAnswers.isGreetingOrHelp(request.message())) {
+                return saveResponse(conversationId, context, quickAnswers.help(null, toolNames), "CHAT", List.of(), false);
+            }
+            var route = quickAnswers.route(request.message(), toolNames);
+            if (route.isPresent()) {
+                AssistantChatResponse quick = quickToolAnswer(conversationId, context, request.message(),
+                        route.get().tool(), route.get().arguments());
+                if (quick != null) return quick;
+            }
+        }
+
+        // Today's date and who is asking, so "tomorrow", "this month" and role-specific answers are right.
+        messages.add(0, AiProvider.ModelMessage.system(contextNote(context)));
+
         if (!aiProvider.isConfigured()) {
             return saveResponse(conversationId, context, PROVIDER_UNAVAILABLE, "ERROR", List.of(), false);
         }
@@ -206,6 +233,14 @@ public class AssistantService {
                             return saveResponse(conversationId, context, result.message(), "CHAT",
                                     result.action() == null ? List.of() : List.of(result.action()), false);
                         }
+                        // One tool answer we can phrase ourselves: skip the second (slow) model call.
+                        if (quickAnswers != null && modelTurn.toolCalls().size() == 1) {
+                            var direct = quickAnswers.format(toolCall.name(), result.sanitizedJson(), request.message());
+                            if (direct.isPresent()) {
+                                if (result.action() != null) actions.add(result.action());
+                                return saveResponse(conversationId, context, direct.get(), "CHAT", actions, true);
+                            }
+                        }
                         messages.add(AiProvider.ModelMessage.tool(
                                 toolCall.name(), boundedToolResult(result.sanitizedJson())));
                         if (result.action() != null) actions.add(result.action());
@@ -224,6 +259,44 @@ public class AssistantService {
         } catch (AssistantProviderException ex) {
             return saveResponse(conversationId, context, PROVIDER_UNAVAILABLE, "ERROR", List.of(), false);
         }
+    }
+
+    /** Runs one routed tool and phrases its result; null means fall back to the model. */
+    private AssistantChatResponse quickToolAnswer(UUID conversationId, AssistantContext context, String message,
+                                                  String tool, Map<String, Object> arguments) {
+        try {
+            AssistantToolRegistry.ToolResult result = toolRegistry.execute(tool, arguments, contextResolver.resolve());
+            if (result.message() != null) {
+                return saveResponse(conversationId, context, result.message(), "CHAT",
+                        result.action() == null ? List.of() : List.of(result.action()), false);
+            }
+            var answer = quickAnswers.format(tool, result.sanitizedJson(), message);
+            if (answer.isEmpty()) return null;
+            return saveResponse(conversationId, context, answer.get(), "CHAT",
+                    result.action() == null ? List.of() : List.of(result.action()), false);
+        } catch (AssistantToolException ex) {
+            return saveResponse(conversationId, context, ex.isForbidden() ? TOOL_FORBIDDEN : TOOL_UNAVAILABLE,
+                    "ERROR", List.of(), false);
+        } catch (RuntimeException ex) {
+            log.warn("Vettri assistant quick answer failed ({})", tool);
+            return null;
+        }
+    }
+
+    private static String contextNote(AssistantContext context) {
+        java.time.LocalDate today = java.time.LocalDate.now(AssistantQuickAnswers.IST);
+        StringBuilder note = new StringBuilder("Today is ")
+                .append(today.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM uuuu", Locale.ENGLISH)))
+                .append(" (India, IST). Interpret relative dates from today.");
+        if (context.designation() != null && !context.designation().isBlank()) {
+            note.append(" The user works as ").append(context.designation());
+            if (context.department() != null && !context.department().isBlank()) note.append(" in ").append(context.department());
+            note.append('.');
+        }
+        note.append(" Reply in short, friendly Indian English. Use ₹ for money, Indian digit grouping (1,23,456) and dates like 12 Nov 2026."
+                + " Prefer 1-4 sentences or a few bullet points. Understand HR shorthand: CL casual leave, SL sick leave,"
+                + " EL earned leave, LOP loss of pay, comp-off, WFH, PF, ESI, PT, TDS, CTC.");
+        return note.toString();
     }
 
     private boolean isDeviceMappingGuidanceRequest(String message) {

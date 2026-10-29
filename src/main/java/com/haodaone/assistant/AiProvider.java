@@ -11,6 +11,11 @@ public interface AiProvider {
     String providerName();
 
     record ModelMessage(String role, String content, String toolName, List<ToolCall> toolCalls) {
+        /** Extra system context (date, user, style) added after the provider's own base instructions. */
+        public static ModelMessage system(String content) {
+            return new ModelMessage("system", content, null, List.of());
+        }
+
         public static ModelMessage user(String content) {
             return new ModelMessage("user", content, null, List.of());
         }

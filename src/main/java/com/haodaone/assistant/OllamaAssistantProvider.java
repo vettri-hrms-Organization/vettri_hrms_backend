@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -38,7 +41,19 @@ public class OllamaAssistantProvider implements AiProvider {
     private final Duration connectTimeout;
     private final Duration readTimeout;
     private final HttpClient httpClient;
+    /** How long Ollama keeps the model in memory after a request; avoids a slow reload after idle time. */
+    private final String keepAlive;
+    /** Context window; smaller is faster on CPU. 4096 tokens fits the prompt, tools and 8 history messages. */
+    private final int numCtx;
+    private final boolean warmUp;
 
+    public OllamaAssistantProvider(
+            ObjectMapper objectMapper, String provider, String baseUrl, String model, double temperature,
+            int maxTokens, Duration connectTimeout, Duration readTimeout) {
+        this(objectMapper, provider, baseUrl, model, temperature, maxTokens, connectTimeout, readTimeout, "30m", 4096, false);
+    }
+
+    @Autowired
     public OllamaAssistantProvider(
             ObjectMapper objectMapper,
             @Value("${app.assistant.ai.provider:ollama}") String provider,
@@ -47,7 +62,10 @@ public class OllamaAssistantProvider implements AiProvider {
             @Value("${app.assistant.ai.ollama.temperature:0.2}") double temperature,
             @Value("${app.assistant.ai.ollama.max-tokens:512}") int maxTokens,
             @Value("${app.assistant.ai.ollama.connect-timeout:10s}") Duration connectTimeout,
-            @Value("${app.assistant.ai.ollama.read-timeout:180s}") Duration readTimeout
+            @Value("${app.assistant.ai.ollama.read-timeout:180s}") Duration readTimeout,
+            @Value("${app.assistant.ai.ollama.keep-alive:30m}") String keepAlive,
+            @Value("${app.assistant.ai.ollama.num-ctx:4096}") int numCtx,
+            @Value("${app.assistant.ai.ollama.warm-up:true}") boolean warmUp
     ) {
         this.objectMapper = objectMapper;
         this.provider = provider;
@@ -57,6 +75,9 @@ public class OllamaAssistantProvider implements AiProvider {
         this.maxTokens = maxTokens;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
+        this.keepAlive = keepAlive == null || keepAlive.isBlank() ? "30m" : keepAlive.trim();
+        this.numCtx = Math.max(1024, Math.min(numCtx, 32768));
+        this.warmUp = warmUp;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(connectTimeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -180,6 +201,35 @@ public class OllamaAssistantProvider implements AiProvider {
         }
     }
 
+    /**
+     * Loads the model into memory when the backend starts, so the first question of the day
+     * doesn't wait for a cold load. Runs in the background and never blocks or fails startup.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmUpModel() {
+        if (!warmUp || !isConfigured()) return;
+        Thread loader = new Thread(() -> {
+            try {
+                ObjectNode payload = objectMapper.createObjectNode();
+                payload.put("model", model);
+                payload.put("keep_alive", keepAlive);
+                String root = baseUrl.replaceAll("/+$", "");
+                HttpRequest request = HttpRequest.newBuilder(URI.create(root + "/api/generate"))
+                        .timeout(readTimeout)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                        .build();
+                HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+                log.info("Ollama model warm-up finished (HTTP {})", response.statusCode());
+            } catch (Exception ex) {
+                if (ex instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.info("Ollama model warm-up skipped ({})", ex.getClass().getSimpleName());
+            }
+        }, "ollama-warm-up");
+        loader.setDaemon(true);
+        loader.start();
+    }
+
     @Override
     public String providerName() {
         return "ollama";
@@ -190,9 +240,11 @@ public class OllamaAssistantProvider implements AiProvider {
         payload.put("model", model);
         payload.put("stream", false);
         payload.put("think", false);
+        payload.put("keep_alive", keepAlive);
         ObjectNode options = payload.putObject("options");
         options.put("temperature", responseTemperature);
         options.put("num_predict", responseTokens);
+        options.put("num_ctx", numCtx);
         return payload;
     }
 

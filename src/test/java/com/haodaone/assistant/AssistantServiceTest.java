@@ -583,4 +583,63 @@ class AssistantServiceTest {
                 .anyMatch(message -> "How do I request leave?".equals(message.content()))
                 && messages.stream().noneMatch(message -> message.content().contains("another user"))), anyList());
     }
+    // ---------------------------------------------------------------- fast path (AssistantQuickAnswers)
+
+    private void enableQuickAnswers() {
+        assistantService.setQuickAnswers(new AssistantQuickAnswers(new ObjectMapper()));
+        lenient().when(toolRegistry.availableTools(context)).thenReturn(List.of(
+                new AiProvider.ModelTool("get_my_leave_balance", "balance", Map.of()),
+                new AiProvider.ModelTool("get_my_payslip", "payslip", Map.of())));
+    }
+
+    @Test
+    void greetingIsAnsweredInstantlyWithoutTheModel() {
+        enableQuickAnswers();
+
+        AssistantChatResponse response = assistantService.chat(new AssistantChatRequest("Hello", null, List.of()));
+
+        assertThat(response.message()).contains("Vettri Bot", "leave balance", "payslips");
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void everydayQuestionIsAnsweredFromToolDataWithoutTheModel() {
+        enableQuickAnswers();
+        when(toolRegistry.execute(eq("get_my_leave_balance"), anyMap(), eq(context)))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"year\":2026,\"balances\":[{\"leaveType\":\"Casual Leave\",\"allocatedDays\":12,\"usedDays\":4,\"remainingDays\":8}]}", null));
+
+        AssistantChatResponse response = assistantService.chat(new AssistantChatRequest("what's my leave balance", null, List.of()));
+
+        assertThat(response.message()).contains("Casual Leave: **8 days**");
+        verify(aiProvider, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void modelChosenToolIsPhrasedDirectlySavingTheSecondModelCall() {
+        enableQuickAnswers();
+        when(aiProvider.chat(anyList(), anyList())).thenReturn(new AiProvider.ModelTurn("",
+                List.of(new AiProvider.ToolCall("get_my_payslip", Map.of()))));
+        when(toolRegistry.execute(eq("get_my_payslip"), anyMap(), eq(context)))
+                .thenReturn(new AssistantToolRegistry.ToolResult(
+                        "{\"recentPayroll\":[{\"paymentDate\":\"2026-10-31\",\"grossSalary\":50000,\"totalDeductions\":5000,\"netSalary\":45000}]}", null));
+
+        AssistantChatResponse response = assistantService.chat(
+                new AssistantChatRequest("I want to know how much I was paid in October", null, List.of()));
+
+        assertThat(response.message()).contains("**₹45,000**");
+        verify(aiProvider, times(1)).chat(anyList(), anyList());
+    }
+
+    @Test
+    void modelReceivesTodaysDateAndRoleContext() {
+        enableQuickAnswers();
+        when(aiProvider.chat(anyList(), anyList())).thenReturn(new AiProvider.ModelTurn("Sure.", List.of()));
+
+        assistantService.chat(new AssistantChatRequest("Tell me something about my week", null, List.of()));
+
+        verify(aiProvider).chat(argThat(messages -> "system".equals(messages.get(0).role())
+                && messages.get(0).content().contains("Today is")
+                && messages.get(0).content().contains("Engineer")), anyList());
+    }
 }
