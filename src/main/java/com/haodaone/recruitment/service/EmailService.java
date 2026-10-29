@@ -47,13 +47,13 @@ public class EmailService {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
-    @Value("${app.email.from-system-address:noreply@vettrihrms.in}")
+    @Value("${app.email.from-system-address:customersupport@vettrihrms.in}")
     private String systemFromAddress;
 
     @Value("${app.email.from-system-name:Vettri HRMS}")
     private String systemFromName;
 
-    @Value("${app.email.from-billing-address:billing@vettrihrms.in}")
+    @Value("${app.email.from-billing-address:customersupport@vettrihrms.in}")
     private String billingFromAddress;
 
     @Value("${app.email.from-billing-name:Vettri Billing}")
@@ -64,6 +64,12 @@ public class EmailService {
 
     @Value("${app.email.from-support-name:Vettri Customer Support}")
     private String supportFromName;
+
+    /** Attach the product overview deck (classpath email/Vettri-HRMS-Overview.pptx) to the signup welcome email. */
+    @Value("${app.email.welcome-overview-enabled:true}")
+    private boolean welcomeOverviewEnabled = true;
+
+    private volatile byte[] welcomeOverview;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -363,14 +369,19 @@ public class EmailService {
     public void sendWelcomeEmail(String toEmail, String customerName, String organizationName,
                      String plan, Integer employeeCount, String billingCycle,
                      String trialStart, String trialEnd) {
+        Attachment overview = welcomeOverview();
+        String overviewNote = overview == null ? ""
+            : "<p>We have attached a short overview of everything Vettri does (PowerPoint). Feel free to share it with your HR and IT team.</p>";
         String body = brandedBody("Welcome to Vettri HRMS", "Hello " + escape(customerName) + ",",
                 "Your Vettri HRMS trial for <strong>" + escape(organizationName) + "</strong> is ready.",
             rowIfPresent("Plan", plan) + rowIfPresent("Employees", employeeCount)
                 + rowIfPresent("Billing cycle", billingCycle)
                 + rowIfPresent("Trial starts", formatDateValue(trialStart)) + rowIfPresent("Trial ends", formatDateValue(trialEnd)),
-            button("Open Vettri HRMS", applicationUrl()));
+            button("Open Vettri HRMS", applicationUrl()) + overviewNote
+                + "<p>Questions? Just reply to this email and our team will help you.</p>");
+        // Sent from noreply, but replies go to the support mailbox so a new customer reaches a person.
         sendSafely(toEmail, customerName, "Your Vettri HRMS trial is ready", body,
-            EmailChannel.SYSTEM, null);
+            EmailChannel.SYSTEM, supportFromAddress, overview);
     }
 
             public void sendVerificationEmail(String toEmail, String customerName, String verificationToken) {
@@ -417,7 +428,7 @@ public class EmailService {
         String body = brandedBody("Your Vettri HRMS " + escape(documentLabel), "Hello " + escape(customerName) + ",",
             "Your " + escape(documentLabel).toLowerCase(java.util.Locale.ROOT) + " <strong>" + escape(invoiceNumber) + "</strong> is attached for your records.",
             row("Reference number", escape(invoiceNumber)) + row("Document", escape(documentLabel)) + row("Sender", "Vettri Billing"),
-                "Regards,<br>Vettri Billing<br>billing@vettrihrms.in");
+                "Regards,<br>Vettri Billing<br>customersupport@vettrihrms.in");
         try {
             sendHtmlEmail(toEmail, customerName,
                 "Vettri HRMS " + documentLabel + " " + invoiceNumber,
@@ -453,8 +464,13 @@ public class EmailService {
 
     private void sendSafely(String toEmail, String toName, String subject, String body,
                             EmailChannel channel, String replyTo) {
+        sendSafely(toEmail, toName, subject, body, channel, replyTo, null);
+    }
+
+    private void sendSafely(String toEmail, String toName, String subject, String body,
+                            EmailChannel channel, String replyTo, Attachment attachment) {
         try {
-            sendHtmlEmail(toEmail, toName, subject, body, channel, replyTo);
+            sendHtmlEmail(toEmail, toName, subject, body, channel, replyTo, attachment);
         } catch (Exception exception) {
             log.error("Failed to send notification email to {} <{}>: {}", toName, toEmail, exception.getMessage(), exception);
         }
@@ -465,6 +481,24 @@ public class EmailService {
             + "<p style=\"margin:0 0 16px;\">" + greeting + "</p><p>" + message + "</p>"
                 + "<table style=\"border-collapse:collapse;margin:16px 0;\">" + details + "</table>"
             + "<p>" + closing + "</p></div>";
+    }
+
+    /** The overview deck, read once from the classpath; null when switched off or not packaged. */
+    private Attachment welcomeOverview() {
+        if (!welcomeOverviewEnabled) return null;
+        byte[] bytes = welcomeOverview;
+        if (bytes == null) {
+            var resource = new org.springframework.core.io.ClassPathResource("email/Vettri-HRMS-Overview.pptx");
+            if (!resource.exists()) return null;
+            try (var input = resource.getInputStream()) {
+                bytes = input.readAllBytes();
+                welcomeOverview = bytes;
+            } catch (java.io.IOException exception) {
+                log.warn("Could not read the welcome overview deck; sending the welcome email without it", exception);
+                return null;
+            }
+        }
+        return new Attachment("Vettri-HRMS-Overview.pptx", bytes);
     }
 
     private record Attachment(String filename, byte[] bytes) {}
