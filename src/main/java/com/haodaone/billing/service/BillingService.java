@@ -364,7 +364,9 @@ public class BillingService {
         // The ₹1 verification starts the 30-day free trial (TRIALING; BillingLifecycleService takes it from
         // there). It only activates a signup that is still awaiting payment: a ₹1 order must never extend or
         // re-activate an existing subscription - renewals are paid through RenewalPaymentService.
-        if (subscription.getId() == null || subscription.getStatus() == SubscriptionStatus.PENDING_PAYMENT) {
+        // True only on the one call that starts the trial, so the welcome email is sent exactly once.
+        boolean trialStarted = subscription.getId() == null || subscription.getStatus() == SubscriptionStatus.PENDING_PAYMENT;
+        if (trialStarted) {
             subscription.setCompany(company);
             subscription.setPlan(Plan.valueOf(normalizedPlan));
             subscription.setStatus(SubscriptionStatus.TRIALING);
@@ -408,6 +410,11 @@ public class BillingService {
             normalizedPlan, normalizedEmployees, normalizedCycle, verificationAmount, paymentDate,
             razorpayOrderId, razorpayPaymentId));
         createdInvoice.ifPresent(invoice -> afterCommit(() -> sendReceiptEmailAfterCommit(invoice.getId(), company.getId(), customerEmail, customerName)));
+        if (trialStarted) {
+            // The ₹1 signup path is the normal way a company starts: this is its welcome email
+            // (with the product overview deck attached by EmailService).
+            sendTrialWelcomeAfterCommit(subscription, customerEmail, customerName, organizationName);
+        }
 
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("status", "verified");
@@ -535,6 +542,11 @@ public class BillingService {
                 Subscription subscription = paymentTransaction.getSubscription();
                 subscription.setStatus(SubscriptionStatus.TRIALING);
                 subscriptions.save(subscription);
+                // The webhook started the trial (the browser never finished checkout): welcome the
+                // company here. verifyPayment then sees TRIALING and does not send it again.
+                Company company = paymentTransaction.getCompany();
+                users.findAllByCompanyIdAndDeletedFalse(company.getId()).stream().findFirst().ifPresent(owner ->
+                        sendTrialWelcomeAfterCommit(subscription, owner.getEmail(), owner.getFullName(), company.getName()));
             }
             paymentTransaction.setStatus(PaymentTransactionStatus.VERIFIED);
             paymentTransaction.setPaidAt(LocalDateTime.now());
@@ -597,6 +609,21 @@ public class BillingService {
 
     private void notifyPaymentFailure(User user, Company company, String orderId) {
         emailService.sendPaymentFailureEmail(user.getEmail(), user.getFullName(), company.getName(), orderId);
+    }
+
+    private void sendTrialWelcomeAfterCommit(Subscription subscription, String email, String name, String organizationName) {
+        String plan = subscription.getPlan() == null ? null : subscription.getPlan().name();
+        Integer employees = subscription.getEmployeeLimit();
+        String cycle = subscription.getBillingCycle();
+        String trialStart = subscription.getStartDate() == null ? null : subscription.getStartDate().toString();
+        String trialEnd = subscription.getRenewalDate() == null ? null : subscription.getRenewalDate().toString();
+        afterCommit(() -> {
+            try {
+                emailService.sendWelcomeEmail(email, name, organizationName, plan, employees, cycle, trialStart, trialEnd);
+            } catch (RuntimeException exception) {
+                log.error("Trial started but the welcome email could not be sent to {}", email, exception);
+            }
+        });
     }
 
     private void sendReceiptEmailAfterCommit(Long invoiceId, Long companyId, String recipientEmail, String recipientName) {
