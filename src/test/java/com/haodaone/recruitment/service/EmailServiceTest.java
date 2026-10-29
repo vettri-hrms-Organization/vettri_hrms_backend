@@ -54,7 +54,8 @@ class EmailServiceTest {
         assertEquals("Your Vettri HRMS trial is ready", message.getSubject());
         assertEquals("customer@example.com", message.getAllRecipients()[0].toString());
         assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
-        String content = String.valueOf(message.getContent());
+        // The welcome email is multipart now (it carries the overview deck), so read its text parts.
+        String content = textOf(message.getContent());
         assertTrue(content.contains("Acme Technologies"));
         assertTrue(content.contains("TRIAL"));
         assertTrue(content.contains("25"));
@@ -80,5 +81,17 @@ class EmailServiceTest {
         assertTrue(content.contains("Accept invitation and set password"));
         assertTrue(content.contains("https://app.vettrihrms.in/activate-account?token="));
         assertFalse(content.contains("If the button does not work, copy and paste this link"));
+    }
+
+    private static String textOf(Object content) throws Exception {
+        if (content instanceof jakarta.mail.Multipart multipart) {
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < multipart.getCount(); i++) {
+                jakarta.mail.BodyPart part = multipart.getBodyPart(i);
+                if (part.getFileName() == null) text.append(textOf(part.getContent()));
+            }
+            return text.toString();
+        }
+        return String.valueOf(content);
     }
 }
