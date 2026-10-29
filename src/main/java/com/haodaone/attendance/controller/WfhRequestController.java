@@ -75,6 +75,8 @@ public class WfhRequestController {
 
     @GetMapping("/wfh/team")
     @PreAuthorize("hasAuthority('LEAVE_APPROVE') or hasAuthority('ATTENDANCE_VIEW')")
+    // toDto reads each request's employee; without a transaction that lazy load fails ("no session").
+    @Transactional(readOnly = true)
     public List<WfhRequestDTO> teamWfhRequests() {
         Long companyId = requireCompany(currentEmployee()).getId();
         var scope = authorizationService.resolveEmployeeIds("LEAVE_APPROVE");
