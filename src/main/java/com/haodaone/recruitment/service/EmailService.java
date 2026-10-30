@@ -47,13 +47,13 @@ public class EmailService {
     @Value("${spring.mail.password:}")
     private String mailPassword;
 
-    @Value("${app.email.from-system-address:customersupport@vettrihrms.in}")
+    @Value("${app.email.from-system-address:noreply@vettrihrms.in}")
     private String systemFromAddress;
 
     @Value("${app.email.from-system-name:Vettri HRMS}")
     private String systemFromName;
 
-    @Value("${app.email.from-billing-address:customersupport@vettrihrms.in}")
+    @Value("${app.email.from-billing-address:billing@vettrihrms.in}")
     private String billingFromAddress;
 
     @Value("${app.email.from-billing-name:Vettri Billing}")
@@ -340,6 +340,10 @@ public class EmailService {
         }
         helper.setTo(recipient);
         helper.setSubject(subject);
+        // System mail comes from noreply@, so replies are routed to the support mailbox instead of being lost.
+        if ((replyTo == null || replyTo.isBlank()) && (channel == null || channel == EmailChannel.SYSTEM)) {
+            replyTo = supportFromAddress;
+        }
         if (replyTo != null && !replyTo.isBlank()) {
             InternetAddress replyAddress = new InternetAddress(replyTo);
             replyAddress.validate();
@@ -385,9 +389,9 @@ public class EmailService {
                 + rowIfPresent("Trial starts", formatDateValue(trialStart)) + rowIfPresent("Trial ends", formatDateValue(trialEnd)),
             steps + button("Open your workspace", applicationUrl()) + overviewNote
                 + "<p style=\"margin:14px 0 0;\">Questions? Just reply to this email - a real person on our team will help you.</p>");
-        // Sent from noreply, but replies go to the support mailbox so a new customer reaches a person.
+        // Sent from the support mailbox: the email invites the customer to reply and reach a person.
         sendSafely(toEmail, customerName, "Your Vettri HRMS trial is ready", body,
-            EmailChannel.SYSTEM, supportFromAddress, overview);
+            EmailChannel.SUPPORT, null, overview);
     }
 
             public void sendVerificationEmail(String toEmail, String customerName, String verificationToken) {

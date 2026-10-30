@@ -42,7 +42,7 @@ class EmailServiceTest {
     }
 
     @Test
-    void sendsSignupWelcomeWithActualTrialDataAndSystemSender() throws Exception {
+    void sendsSignupWelcomeWithActualTrialDataAndSupportSender() throws Exception {
         MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
         when(mailSender.createMimeMessage()).thenReturn(message);
         doNothing().when(mailSender).send(message);
@@ -53,7 +53,7 @@ class EmailServiceTest {
         verify(mailSender).send(message);
         assertEquals("Your Vettri HRMS trial is ready", message.getSubject());
         assertEquals("customer@example.com", message.getAllRecipients()[0].toString());
-        assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
+        assertEquals("Vettri Customer Support <customersupport@vettrihrms.in>", message.getFrom()[0].toString());
         // The welcome email is multipart now (it carries the overview deck), so read its text parts.
         String content = textOf(message.getContent());
         assertTrue(content.contains("Acme Technologies"));
@@ -76,6 +76,7 @@ class EmailServiceTest {
         verify(mailSender).send(message);
         assertEquals("Your Vettri HRMS invitation has been resent", message.getSubject());
         assertEquals("Vettri HRMS <noreply@vettrihrms.in>", message.getFrom()[0].toString());
+        assertEquals("customersupport@vettrihrms.in", message.getReplyTo()[0].toString());
         String content = String.valueOf(message.getContent());
         assertTrue(content.contains("A new invitation has been generated"));
         assertTrue(content.contains("Accept invitation and set password"));
