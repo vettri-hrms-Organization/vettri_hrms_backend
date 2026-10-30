@@ -69,6 +69,17 @@ public class EmployeeAnonymisationService {
     private final MonitoringConsentRepository consentRepository;
     private final AuditLogService auditLogService;
 
+    /** Setter-injected so existing constructors (and tests using them) stay unchanged. */
+    private com.haodaone.profile.ProfileService profileService;
+    private com.haodaone.profile.ProfilePhotoStorageService profilePhotos;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setProfileCleanup(com.haodaone.profile.ProfileService profileService,
+                                  com.haodaone.profile.ProfilePhotoStorageService profilePhotos) {
+        this.profileService = profileService;
+        this.profilePhotos = profilePhotos;
+    }
+
     @Autowired(required = false)
     private EmployeeDocumentS3StorageService documentStorage;
 
@@ -145,6 +156,7 @@ public class EmployeeAnonymisationService {
         employee.setEmergencyContactName(null);
         employee.setEmergencyContactPhone(null);
         fields.add("emergencyContact");
+        if (profilePhotos != null) profilePhotos.deleteQuietly(employee.getProfilePhotoUrl());
         employee.setProfilePhotoUrl(null);
         fields.add("profilePhoto");
         employee.setBiometricDeviceUserId(null);
@@ -163,6 +175,7 @@ public class EmployeeAnonymisationService {
             fields.add("uan");
             fields.add("esi");
         }
+        if (profileService != null) fields.addAll(profileService.erasePersonalData(employee));
         employeeRepository.save(employee);
 
         User user = employee.getUser();

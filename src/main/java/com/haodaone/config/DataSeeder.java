@@ -81,7 +81,7 @@ public class DataSeeder implements CommandLineRunner {
             "SELF_EXPENSE_SUBMIT"));
         Role hrExecutive = seedRole("HR_EXECUTIVE", "HR operations without role administration, payroll management, or IT access",
                 permissionsByCode("EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
-                        "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
+                        "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE", "TIMESHEET_APPROVE",
                         "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                         "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
@@ -93,7 +93,7 @@ public class DataSeeder implements CommandLineRunner {
                         "SELF_EXPENSE_SUBMIT"));
         Role departmentManager = seedRole("DEPARTMENT_MANAGER", "Department-scoped people and workflow management",
                 permissionsByCode("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_VIEW", "LEAVE_APPROVE",
-                        "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "EXPENSE_APPROVE",
+                        "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "EXPENSE_APPROVE", "TIMESHEET_APPROVE",
                         "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                         "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
                         "SELF_EXPENSE_SUBMIT"));
@@ -143,6 +143,8 @@ public class DataSeeder implements CommandLineRunner {
                 new String[]{"LEAVE_VIEW", "View all leave requests and the team leave calendar", "Leave"},
                 new String[]{"LEAVE_APPROVE", "Approve or reject leave requests", "Leave"},
                 new String[]{"OVERTIME_APPROVE", "Approve or reject overtime entries", "Attendance"},
+                new String[]{"TIMESHEET_APPROVE", "Approve or send back employee timesheets", "Timesheets"},
+                new String[]{"TIMESHEET_MANAGE", "Manage timesheet projects, settings and company-wide timesheet reports", "Timesheets"},
                 new String[]{"LEAVE_MANAGE", "Manage leave types and the holiday calendar", "Leave"},
                 new String[]{"RECRUITMENT_VIEW", "View job openings, candidates, and interviews", "Recruitment"},
                 new String[]{"RECRUITMENT_MANAGE", "Manage job openings, candidate pipeline, and interviews", "Recruitment"},
@@ -318,6 +320,7 @@ public class DataSeeder implements CommandLineRunner {
                 "LETTER_MANAGE", "ONBOARDING_MANAGE",
                 "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
                 "OFFICE_LOCATION_DEACTIVATE", "EXPENSE_MANAGE", "ANNOUNCEMENT_MANAGE", "PRIVACY_MANAGE",
+                "TIMESHEET_APPROVE", "TIMESHEET_MANAGE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                 "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
                 "SELF_EXPENSE_SUBMIT");
@@ -335,7 +338,7 @@ public class DataSeeder implements CommandLineRunner {
 
     static Set<String> managerPermissionCodes() {
         return Set.of("EMPLOYEE_VIEW", "ATTENDANCE_VIEW", "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE",
-                "OVERTIME_APPROVE",
+                "OVERTIME_APPROVE", "TIMESHEET_APPROVE",
                 "INTERVIEW_DECISION", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE", "EXPENSE_APPROVE",
                 "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
                 "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
@@ -347,7 +350,7 @@ public class DataSeeder implements CommandLineRunner {
                 "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
                 "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
                 "OFFICE_LOCATION_DEACTIVATE",
-                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "OVERTIME_APPROVE",
+                "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "OVERTIME_APPROVE", "TIMESHEET_APPROVE", "TIMESHEET_MANAGE",
                 "LEAVE_APPLY", "LEAVE_VIEW", "LEAVE_APPROVE", "LEAVE_MANAGE",
                 "RECRUITMENT_VIEW", "RECRUITMENT_MANAGE", "PERFORMANCE_VIEW", "PERFORMANCE_MANAGE",
                 "SALARY_VIEW", "SALARY_MANAGE", "REPORTS_VIEW",

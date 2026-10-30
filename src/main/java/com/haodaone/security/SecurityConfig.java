@@ -115,6 +115,8 @@
                                     "/api/roles/**", "/api/permissions/**", "/api/holidays/**", "/api/leave-types/**")
                                 .authenticated()
                             .requestMatchers("/api/careers/**").permitAll()
+                            // Profile photos: unguessable names, served to plain img tags (see ProfilePhotoStorageService).
+                            .requestMatchers(HttpMethod.GET, "/api/profile-photos/*").permitAll()
                             // These capability-token endpoints are public by design; the rest of
                             // /api/agent/** continues to require the device's permanent bearer token.
                             .requestMatchers(HttpMethod.POST, "/api/agent/enroll").permitAll()

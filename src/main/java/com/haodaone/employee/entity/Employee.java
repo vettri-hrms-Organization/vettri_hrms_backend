@@ -147,6 +147,25 @@ public class Employee extends BaseEntity {
     @Column(name = "emergency_contact_phone", length = 30)
     private String emergencyContactPhone;
 
+    /** Self-service profile (V57): details the employee keeps up to date themselves. */
+    @Column(name = "personal_email", length = 150)
+    private String personalEmail;
+
+    @Column(name = "blood_group", length = 5)
+    private String bloodGroup;
+
+    @Column(name = "marital_status", length = 20)
+    private String maritalStatus;
+
+    @Column(name = "permanent_address", length = 300)
+    private String permanentAddress;
+
+    @Column(name = "emergency_contact_relation", length = 40)
+    private String emergencyContactRelation;
+
+    @Column(name = "about_me", length = 1000)
+    private String aboutMe;
+
     @Column(name = "profile_photo_url", length = 500)
     private String profilePhotoUrl;
 
@@ -382,4 +401,17 @@ public class Employee extends BaseEntity {
     public String getFullName() {
         return firstName + " " + lastName;
     }
+
+    public String getPersonalEmail() { return personalEmail; }
+    public void setPersonalEmail(String personalEmail) { this.personalEmail = personalEmail; }
+    public String getBloodGroup() { return bloodGroup; }
+    public void setBloodGroup(String bloodGroup) { this.bloodGroup = bloodGroup; }
+    public String getMaritalStatus() { return maritalStatus; }
+    public void setMaritalStatus(String maritalStatus) { this.maritalStatus = maritalStatus; }
+    public String getPermanentAddress() { return permanentAddress; }
+    public void setPermanentAddress(String permanentAddress) { this.permanentAddress = permanentAddress; }
+    public String getEmergencyContactRelation() { return emergencyContactRelation; }
+    public void setEmergencyContactRelation(String emergencyContactRelation) { this.emergencyContactRelation = emergencyContactRelation; }
+    public String getAboutMe() { return aboutMe; }
+    public void setAboutMe(String aboutMe) { this.aboutMe = aboutMe; }
 }
