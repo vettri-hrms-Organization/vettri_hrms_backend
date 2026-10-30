@@ -201,9 +201,10 @@ public class EmailService {
             + row("Organization", escape(safeOrganizationName))
             + row("Email", escape(toEmail))
             + "<p>Your employee account has been created and you've been invited to access your HRMS workspace.</p>"
-            + button("Accept invitation and set password", activationLink)
+            // No copyable link under the button: the activation token should not be pasted around.
+            + buttonOnly("Accept invitation and set password", activationLink)
             + "<p>This invitation will expire on " + escape(formatTimestamp(expiresAt.toString())) + ". If you were not expecting this invitation, contact your HR administrator.</p>"
-            + "<p>Regards,<br>Vettri HRMS</p><p>Need help? customersupport@vettrihrms.in</p></div>";
+            + signature() + "</div>";
         return sendAndReport(toEmail, toName, subject, body);
     }
 
@@ -371,14 +372,19 @@ public class EmailService {
                      String trialStart, String trialEnd) {
         Attachment overview = welcomeOverview();
         String overviewNote = overview == null ? ""
-            : "<p>We have attached a short overview of everything Vettri does (PowerPoint). Feel free to share it with your HR and IT team.</p>";
+            : "<p style=\"margin:18px 0 0;\">&#128206; We've attached a short overview of everything Vettri does (PowerPoint) - handy to share with your HR and IT team.</p>";
+        String steps = "<p style=\"margin:4px 0 10px;font-weight:700;color:#10172A;\">Get started in 3 steps</p>"
+            + step(1, "Add your team", "Import employees from Excel or add them one by one.")
+            + step(2, "Set your rules", "Leave types, shifts, holidays and payroll settings.")
+            + step(3, "Connect laptops", "Install the Vettri Agent to manage company devices.");
         String body = brandedBody("Welcome to Vettri HRMS", "Hello " + escape(customerName) + ",",
-                "Your Vettri HRMS trial for <strong>" + escape(organizationName) + "</strong> is ready.",
+                "Welcome aboard! Your Vettri HRMS workspace for <strong>" + escape(organizationName)
+                    + "</strong> is ready - HR, payroll and IT for your whole team, in one place.",
             rowIfPresent("Plan", plan) + rowIfPresent("Employees", employeeCount)
                 + rowIfPresent("Billing cycle", billingCycle)
                 + rowIfPresent("Trial starts", formatDateValue(trialStart)) + rowIfPresent("Trial ends", formatDateValue(trialEnd)),
-            button("Open Vettri HRMS", applicationUrl()) + overviewNote
-                + "<p>Questions? Just reply to this email and our team will help you.</p>");
+            steps + button("Open your workspace", applicationUrl()) + overviewNote
+                + "<p style=\"margin:14px 0 0;\">Questions? Just reply to this email - a real person on our team will help you.</p>");
         // Sent from noreply, but replies go to the support mailbox so a new customer reaches a person.
         sendSafely(toEmail, customerName, "Your Vettri HRMS trial is ready", body,
             EmailChannel.SYSTEM, supportFromAddress, overview);
@@ -388,10 +394,10 @@ public class EmailService {
             String verificationLink = applicationUrl() + "/verify-email?token="
                 + java.net.URLEncoder.encode(verificationToken, java.nio.charset.StandardCharsets.UTF_8);
             String body = brandedBody("Verify your Vettri HRMS email address", "Hi " + escape(customerName) + ",",
-                "Please verify your email address to continue using Vettri HRMS.",
+                "Please confirm this is your email address so we can keep your Vettri HRMS account secure.",
+                row("Link valid for", "24 hours"),
                 button("Verify email address", verificationLink)
-                    + row("Expires", "This verification link expires in 24 hours."),
-                "If you did not create this account, you can safely ignore this email.<br>Regards,<br>Vettri HRMS<br><a href=\"https://vettrihrms.in\">https://vettrihrms.in</a>");
+                    + "<p style=\"margin:18px 0 0;font-size:13px;color:#64748B;\">If you did not create a Vettri HRMS account, you can safely ignore this email.</p>");
             sendSafely(toEmail, customerName, "Verify your Vettri HRMS email", body, EmailChannel.SYSTEM, null);
             }
 
@@ -399,10 +405,10 @@ public class EmailService {
             String resetLink = applicationUrl() + "/reset-password?token="
                 + java.net.URLEncoder.encode(rawToken, java.nio.charset.StandardCharsets.UTF_8);
             String body = brandedBody("Reset your Vettri HRMS password", "Hi " + escape(customerName) + ",",
-                "We received a request to reset your Vettri HRMS password.",
+                "We received a request to reset the password for your Vettri HRMS account. Use the button below to choose a new one.",
+                row("Link valid for", expiryMinutes + " minutes") + row("Can be used", "Once"),
                 button("Choose a new password", resetLink)
-                    + row("Expires", "This one-time reset link expires in " + expiryMinutes + " minutes."),
-                "If you did not request this change, you can ignore this email. Your password will remain unchanged.");
+                    + "<p style=\"margin:18px 0 0;font-size:13px;color:#64748B;\">Didn't ask for this? You can ignore this email - your password stays the same.</p>");
             sendSafely(toEmail, customerName, "Reset your Vettri HRMS password", body, EmailChannel.SYSTEM, null);
             }
 
@@ -411,12 +417,12 @@ public class EmailService {
                                         java.math.BigDecimal amount, String paymentDate,
                                         String orderId, String paymentId) {
         String body = brandedBody("Payment successful", "Hello " + escape(customerName) + ",",
-                "Your Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong> was successful.",
-                row("Plan", escape(plan)) + row("Employees", String.valueOf(employeeCount))
-                        + row("Billing cycle", escape(billingCycle)) + row("Amount paid", escape(formatAmount(amount)))
+                "Thank you! We received your payment for <strong>" + escape(organizationName) + "</strong>. Your receipt is on its way in a separate email.",
+                row("Amount paid", escape(formatAmount(amount))) + row("Plan", escape(plan)) + row("Employees", String.valueOf(employeeCount))
+                        + row("Billing cycle", escape(billingCycle))
                         + row("Payment date", escape(formatTimestamp(paymentDate))) + row("Order ID", escape(orderId))
                         + row("Payment ID", escape(paymentId)),
-                    button("Go to Vettri HRMS", applicationUrl()));
+                    button("Open Vettri HRMS", applicationUrl()));
                 sendSafely(toEmail, customerName, "Payment successful - Vettri HRMS", body, EmailChannel.BILLING, null);
     }
 
@@ -427,8 +433,8 @@ public class EmailService {
         }
         String body = brandedBody("Your Vettri HRMS " + escape(documentLabel), "Hello " + escape(customerName) + ",",
             "Your " + escape(documentLabel).toLowerCase(java.util.Locale.ROOT) + " <strong>" + escape(invoiceNumber) + "</strong> is attached for your records.",
-            row("Reference number", escape(invoiceNumber)) + row("Document", escape(documentLabel)) + row("Sender", "Vettri Billing"),
-                "Regards,<br>Vettri Billing<br>customersupport@vettrihrms.in");
+            row("Reference number", escape(invoiceNumber)) + row("Document", escape(documentLabel)),
+                "<p style=\"margin:0;\">The PDF is attached to this email. Keep it for your GST and accounting records.</p>");
         try {
             sendHtmlEmail(toEmail, customerName,
                 "Vettri HRMS " + documentLabel + " " + invoiceNumber,
@@ -444,9 +450,10 @@ public class EmailService {
     public void sendPaymentFailureEmail(String toEmail, String customerName, String organizationName,
                                         String orderId) {
         String body = brandedBody("Payment failed", "Hello " + escape(customerName) + ",",
-                "We could not complete the Vettri HRMS payment for <strong>" + escape(organizationName) + "</strong>.",
+                "Your payment for <strong>" + escape(organizationName) + "</strong> did not go through, so no money was taken. This usually happens when a bank or UPI app declines or times out - trying again normally works.",
                 row("Order reference", escape(orderId)),
-                button("Retry payment", applicationUrl()) + "<p>Please contact customersupport@vettrihrms.in if you need help.</p>");
+                button("Try the payment again", applicationUrl() + "/billing")
+                    + "<p style=\"margin:18px 0 0;font-size:13px;color:#64748B;\">Still stuck? Reply to this email and we'll help you finish it.</p>");
             sendSafely(toEmail, customerName, "Action required: Vettri HRMS payment", body, EmailChannel.BILLING, null);
     }
 
@@ -476,11 +483,35 @@ public class EmailService {
         }
     }
 
+    /**
+     * Body of Vettri's own account emails (welcome, verification, billing...): greeting, message,
+     * a summary panel for the key facts, the action, and the Team Vettri sign-off.
+     */
     private String brandedBody(String heading, String greeting, String message, String details, String closing) {
-        return "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#17212b;\">"
-            + "<p style=\"margin:0 0 16px;\">" + greeting + "</p><p>" + message + "</p>"
-                + "<table style=\"border-collapse:collapse;margin:16px 0;\">" + details + "</table>"
-            + "<p>" + closing + "</p></div>";
+        String panel = details == null || details.isBlank() ? ""
+            : "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" "
+                + "style=\"margin:22px 0;border-collapse:separate;background:#F6F8FC;border:1px solid #E3E8F5;border-radius:12px;\">"
+                + "<tr><td style=\"padding:6px 18px;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:collapse;\">"
+                + details + "</table></td></tr></table>";
+        return "<p style=\"margin:0 0 14px;font-weight:600;color:#10172A;\">" + greeting + "</p>"
+            + "<p style=\"margin:0 0 6px;\">" + message + "</p>"
+            + panel
+            + "<div style=\"margin:0;\">" + closing + "</div>"
+            + signature();
+    }
+
+    /** Numbered step row for onboarding emails. */
+    private static String step(int number, String title, String detail) {
+        return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:0 0 10px;\"><tr>"
+            + "<td valign=\"top\" style=\"padding-right:12px;\"><div style=\"width:28px;height:28px;line-height:28px;border-radius:50%;"
+            + "background:#EEF2FF;color:#4169E1;font-weight:800;font-size:14px;text-align:center;\">" + number + "</div></td>"
+            + "<td valign=\"top\" style=\"font-size:14px;line-height:1.5;\"><strong style=\"color:#10172A;\">" + title + "</strong><br>"
+            + "<span style=\"color:#64748B;\">" + detail + "</span></td></tr></table>";
+    }
+
+    private static String signature() {
+        return "<p style=\"margin:28px 0 0;padding-top:20px;border-top:1px solid #E3E8F5;font-size:14px;line-height:1.6;\">"
+            + "Warm regards,<br><strong style=\"color:#10172A;\">Team Vettri</strong></p>";
     }
 
     /** The overview deck, read once from the classpath; null when switched off or not packaged. */
@@ -506,8 +537,8 @@ public class EmailService {
     private record SenderProfile(String address, String name) {}
 
     private String row(String label, String value) {
-        return "<tr><td style=\"padding:4px 12px 4px 0;color:#555;\">" + escape(label) + "</td>"
-                + "<td style=\"padding:4px 0;font-weight:600;\">" + value + "</td></tr>";
+        return "<tr><td style=\"padding:11px 12px 11px 0;border-bottom:1px solid #E9EDF6;color:#64748B;font-size:13px;width:42%;\">" + escape(label) + "</td>"
+                + "<td style=\"padding:11px 0;border-bottom:1px solid #E9EDF6;color:#10172A;font-size:14px;font-weight:700;text-align:right;\">" + value + "</td></tr>";
     }
 
     private String rowIfPresent(String label, Object value) {
@@ -517,11 +548,18 @@ public class EmailService {
         return row(label, escape(value.toString()));
     }
 
+    /** Table-based button so it keeps its shape in Outlook; the link is repeated below for plain clients. */
     private String button(String label, String url) {
-        return "<p style=\"margin:24px 0 8px;\"><a href=\"" + escape(url) + "\" style=\"display:inline-block;background:#2563EB;color:#FFFFFF;text-decoration:none;padding:13px 20px;border-radius:7px;font-weight:700;font-size:14px;\">"
-                + escape(label) + " &rarr;</a></p>"
-                + "<p style=\"font-size:12px;color:#5F6F86;word-break:break-all;\">If the button does not work, open: "
-                + escape(url) + "</p>";
+        return buttonOnly(label, url)
+                + "<p style=\"margin:0;font-size:12px;line-height:1.5;color:#64748B;word-break:break-all;\">If the button does not work, copy and paste this link into your browser:<br>"
+                + "<a href=\"" + escape(url) + "\" style=\"color:#4169E1;\">" + escape(url) + "</a></p>";
+    }
+
+    private String buttonOnly(String label, String url) {
+        return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:26px 0 10px;\"><tr>"
+                + "<td bgcolor=\"#4169E1\" style=\"border-radius:10px;background:#4169E1;background-image:linear-gradient(120deg,#4169E1,#6558F5);\">"
+                + "<a href=\"" + escape(url) + "\" style=\"display:inline-block;padding:14px 28px;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;border-radius:10px;\">"
+                + escape(label) + " &rarr;</a></td></tr></table>";
     }
 
     private String formatAmount(BigDecimal amount) {
