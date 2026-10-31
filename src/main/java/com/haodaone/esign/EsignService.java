@@ -137,7 +137,8 @@ public class EsignService {
         x.setSignerIp(signer == null ? null : trim(signer.ip(), 64));
         x.setSignerUserAgent(signer == null ? null : trim(signer.userAgent(), 400));
         byte[] signed = stamp(original, x, me);
-        String key = "esign/" + x.getCompanyId() + "/" + UUID.randomUUID() + ".pdf";
+        // Same storage location as the employee's other letters, so the bucket's existing permissions cover it.
+        String key = storage.employeeLetterKey(x.getCompanyId(), x.getEmployeeId());
         storage.put(key, signed, "application/pdf");
         x.setSignedObjectKey(key);
         x.setSignedSha256(sha256(signed));
