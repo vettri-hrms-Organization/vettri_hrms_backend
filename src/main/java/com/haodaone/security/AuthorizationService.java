@@ -406,8 +406,16 @@ public class AuthorizationService {
         Long tenantId = TenantContext.getCurrentTenant();
         if (tenantId == null) return false;
         return leaveRequestRepository.findByIdAndCompany_Id(leaveRequestId, tenantId)
-                .map(request -> isAllowed(permissionCode, "EMPLOYEE", request.getEmployee().getId()))
+                .map(request -> isAllowed(permissionCode, "EMPLOYEE", request.getEmployee().getId())
+                        || isPendingWithMe(permissionCode, request))
                 .orElse(false);
+    }
+
+    /** A multi-level approval chain can put a leave request with a named approver (e.g. a skip-level manager). */
+    private boolean isPendingWithMe(String permissionCode, com.haodaone.leave.entity.LeaveRequest request) {
+        if (!"LEAVE_APPROVE".equals(permissionCode) || !"PENDING".equals(request.getStatus()) || request.getPendingApproverEmployeeId() == null) return false;
+        Employee me = resolveCurrentEmployee();
+        return me != null && me.getId().equals(request.getPendingApproverEmployeeId());
     }
 
     @Transactional(readOnly = true)
@@ -444,10 +452,27 @@ public class AuthorizationService {
         if (tenantId != null && !tenantId.equals(current.getCompany().getId())) {
             return null;
         }
-        if (current.getStatus() != null && !"Active".equalsIgnoreCase(current.getStatus())) {
+        if (!stillEmployed(current)) {
             return null;
         }
         return current;
+    }
+
+    /**
+     * Still working here: Active, On Leave or serving notice - including Resigned/Terminated people whose last
+     * working day hasn't passed yet (their login stays on until then; EmployeeExitScheduler disables it after).
+     */
+    static boolean stillEmployed(Employee employee) {
+        String status = com.haodaone.employee.entity.EmploymentStatus.normalize(employee.getStatus());
+        if (com.haodaone.employee.entity.EmploymentStatus.ACTIVE.equals(status)
+                || com.haodaone.employee.entity.EmploymentStatus.ON_LEAVE.equals(status)
+                || com.haodaone.employee.entity.EmploymentStatus.NOTICE_PERIOD.equals(status)) {
+            return true;
+        }
+        boolean exiting = com.haodaone.employee.entity.EmploymentStatus.RESIGNED.equals(status)
+                || com.haodaone.employee.entity.EmploymentStatus.TERMINATED.equals(status);
+        return exiting && employee.getLastWorkingDate() != null
+                && !employee.getLastWorkingDate().isBefore(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")));
     }
 
     private boolean isAccountActive(Authentication authentication) {

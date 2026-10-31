@@ -33,6 +33,7 @@ public final class LeavePolicyDTOs {
         private Double maxEncashableDaysPerYear;
         private String encashmentBasis;
         private Integer creditExpiryDays;
+        private Boolean sandwichRule;
 
         public String getAccrualMode() { return accrualMode; }
         public void setAccrualMode(String accrualMode) { this.accrualMode = accrualMode; }
@@ -60,6 +61,8 @@ public final class LeavePolicyDTOs {
         public void setMaxEncashableDaysPerYear(Double maxEncashableDaysPerYear) { this.maxEncashableDaysPerYear = maxEncashableDaysPerYear; }
         public String getEncashmentBasis() { return encashmentBasis; }
         public void setEncashmentBasis(String encashmentBasis) { this.encashmentBasis = encashmentBasis; }
+        public Boolean getSandwichRule() { return sandwichRule; }
+        public void setSandwichRule(Boolean sandwichRule) { this.sandwichRule = sandwichRule; }
         public Integer getCreditExpiryDays() { return creditExpiryDays; }
         public void setCreditExpiryDays(Integer creditExpiryDays) { this.creditExpiryDays = creditExpiryDays; }
     }
@@ -68,12 +71,12 @@ public final class LeavePolicyDTOs {
                              Double maxBalanceDays, Integer probationDays, Double negativeBalanceDays,
                              Double maxCarryForwardDays, Integer carryForwardExpiryMonths, boolean encashable,
                              Double maxEncashableDaysPerYear, String encashmentBasis, boolean systemManaged,
-                             Integer creditExpiryDays) {
+                             Integer creditExpiryDays, boolean sandwichRule) {
         public static PolicyView of(LeaveType t) {
             return new PolicyView(t.getAccrualMode(), t.getAccrualRounding(), t.isProrateOnJoining(), t.getJoiningCutoffDay(),
                     t.getMaxBalanceDays(), t.getProbationDays(), t.getNegativeBalanceDays(), t.getMaxCarryForwardDays(),
                     t.getCarryForwardExpiryMonths(), t.isEncashable(), t.getMaxEncashableDaysPerYear(), t.getEncashmentBasis(),
-                    t.isSystemManaged(), t.getCreditExpiryDays());
+                    t.isSystemManaged(), t.getCreditExpiryDays(), t.isSandwichRule());
         }
     }
 

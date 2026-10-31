@@ -118,6 +118,7 @@ public class LeaveTypeService {
             type.setEncashable(request.isEncashable());
             type.setMaxEncashableDaysPerYear(request.getMaxEncashableDaysPerYear());
             type.setEncashmentBasis(basis);
+            if (request.getSandwichRule() != null) type.setSandwichRule(request.getSandwichRule());
         }
         LeaveType saved = leaveTypeRepository.save(type);
         auditLogService.log("LeaveType", saved.getId(), "UPDATE_POLICY", String.format(java.util.Locale.ROOT,

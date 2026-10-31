@@ -69,6 +69,10 @@ public class PayrollItemDTO {
                 .map(a -> new AdjustmentLine(a.getId(), a.getCode(), a.getLabel(), a.getAmount(), a.isTaxable(),
                         a.getSourceType(), a.getSourceId(), a.isSettled()))
                 .toList();
+        dto.deductionLines = i.getDeductionLines().stream()
+                .filter(d -> !d.isDeleted())
+                .map(d -> new DeductionLine(d.getId(), d.getCode(), d.getLabel(), d.getAmount(), d.getSourceType(), d.getSourceId()))
+                .toList();
         return dto;
     }
 
@@ -76,6 +80,13 @@ public class PayrollItemDTO {
     public record AdjustmentLine(Long id, String code, String label, BigDecimal amount, boolean taxable,
                                  String sourceType, Long sourceId, boolean settled) {
     }
+
+    /** A post-tax deduction line (loan EMI, advance recovery) on this item. */
+    public record DeductionLine(Long id, String code, String label, BigDecimal amount, String sourceType, Long sourceId) {
+    }
+
+    private java.util.List<DeductionLine> deductionLines = java.util.List.of();
+    public java.util.List<DeductionLine> getDeductionLines() { return deductionLines; }
 
     private boolean statutoryAuto;
     private BigDecimal pfWages;

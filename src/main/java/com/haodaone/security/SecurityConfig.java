@@ -117,6 +117,10 @@
                             .requestMatchers("/api/careers/**").permitAll()
                             // Profile photos: unguessable names, served to plain img tags (see ProfilePhotoStorageService).
                             .requestMatchers(HttpMethod.GET, "/api/profile-photos/*").permitAll()
+                            // Personal calendar feeds (secret token in the URL) and the API-key public API, which
+                            // authenticate in their controllers (CalendarFeedService / PublicApiController).
+                            .requestMatchers(HttpMethod.GET, "/api/calendar/feed/*").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/public/v1/**").permitAll()
                             // These capability-token endpoints are public by design; the rest of
                             // /api/agent/** continues to require the device's permanent bearer token.
                             .requestMatchers(HttpMethod.POST, "/api/agent/enroll").permitAll()

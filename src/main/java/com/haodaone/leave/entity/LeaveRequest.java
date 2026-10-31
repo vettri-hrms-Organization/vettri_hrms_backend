@@ -58,6 +58,28 @@ public class LeaveRequest extends BaseEntity {
     @Column(name = "decision_note", length = 500)
     private String decisionNote;
 
+    /** Multi-level approval (V67): index of the level now deciding, who it's with, and the JSON trail of earlier levels. */
+    @Column(name = "approval_level", nullable = false)
+    private int approvalLevel = 0;
+
+    @Column(name = "approval_trail", columnDefinition = "TEXT")
+    private String approvalTrail;
+
+    @Column(name = "pending_approver_employee_id")
+    private Long pendingApproverEmployeeId;
+
+    @Column(name = "pending_with", length = 150)
+    private String pendingWith;
+
+    public int getApprovalLevel() { return approvalLevel; }
+    public void setApprovalLevel(int approvalLevel) { this.approvalLevel = approvalLevel; }
+    public String getApprovalTrail() { return approvalTrail; }
+    public void setApprovalTrail(String approvalTrail) { this.approvalTrail = approvalTrail; }
+    public Long getPendingApproverEmployeeId() { return pendingApproverEmployeeId; }
+    public void setPendingApproverEmployeeId(Long pendingApproverEmployeeId) { this.pendingApproverEmployeeId = pendingApproverEmployeeId; }
+    public String getPendingWith() { return pendingWith; }
+    public void setPendingWith(String pendingWith) { this.pendingWith = pendingWith; }
+
     public Employee getEmployee() {
         return employee;
     }

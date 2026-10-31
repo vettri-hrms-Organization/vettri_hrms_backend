@@ -37,6 +37,13 @@ public class TimesheetEntry extends BaseEntity {
     @Column(nullable = false)
     private boolean billable;
 
+    /** The client invoice that billed this entry (V68); null = not invoiced yet. */
+    @Column(name = "invoice_id")
+    private Long invoiceId;
+
+    public Long getInvoiceId() { return invoiceId; }
+    public void setInvoiceId(Long invoiceId) { this.invoiceId = invoiceId; }
+
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
     public Long getEmployeeId() { return employeeId; }

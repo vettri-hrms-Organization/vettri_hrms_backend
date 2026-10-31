@@ -125,6 +125,9 @@ public class PayslipPdfService {
                 addIfPositive(deductions, "Professional tax", c.getProfessionalTax());
                 addIfPositive(deductions, "Income tax (TDS)", c.getTds());
                 addIfPositive(deductions, "Other deductions", c.getOtherDeductions());
+                for (var line : item.getDeductionLines()) {
+                    if (!line.isDeleted()) addIfPositive(deductions, line.getLabel(), line.getAmount());
+                }
 
                 float rowY = y - 40;
                 int rows = Math.max(earnings.size(), deductions.size());

@@ -11,6 +11,8 @@ import com.haodaone.user.entity.User;
 import com.haodaone.user.repository.RoleRepository;
 import com.haodaone.user.repository.UserRepository;
 import com.jayway.jsonpath.JsonPath;
+import com.haodaone.config.DataSeeder;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -53,6 +55,13 @@ class TimesheetFlowTest {
     @Autowired private PasswordEncoder passwordEncoder;
     /** notification is a Flyway-only table; the flow itself is what's under test here. */
     @MockitoBean private NotificationService notificationService;
+    @Autowired private DataSeeder dataSeeder;
+
+    /** Other tests share this database and rewrite system roles; start from the canonical ones. */
+    @BeforeEach
+    void restoreSystemRoles() {
+        dataSeeder.run();
+    }
 
     @Test
     void employeeLogsSubmitsAndGetsApproved() throws Exception {

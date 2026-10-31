@@ -105,6 +105,12 @@ public class PayrollItem extends BaseEntity {
     @org.hibernate.annotations.BatchSize(size = 100)
     private java.util.List<PayrollItemAdjustment> adjustments = new java.util.ArrayList<>();
 
+    /** Post-tax deduction lines (loan EMI, advance recovery); part of total deductions only (V60). */
+    @OneToMany(mappedBy = "payrollItem", cascade = CascadeType.ALL)
+    @OrderBy("id ASC")
+    @org.hibernate.annotations.BatchSize(size = 100)
+    private java.util.List<PayrollItemDeduction> deductionLines = new java.util.ArrayList<>();
+
     public BigDecimal getPfWages() { return pfWages; }
     public void setPfWages(BigDecimal pfWages) { this.pfWages = nz(pfWages); }
     public BigDecimal getEpsWages() { return epsWages; }
@@ -125,6 +131,21 @@ public class PayrollItem extends BaseEntity {
     public boolean isStatutoryAuto() { return statutoryAuto; }
     public void setStatutoryAuto(boolean statutoryAuto) { this.statutoryAuto = statutoryAuto; }
     public java.util.List<PayrollItemAdjustment> getAdjustments() { return adjustments; }
+    public java.util.List<PayrollItemDeduction> getDeductionLines() { return deductionLines; }
+
+    /** Attaches a post-tax deduction line (cascade-saved with this item). Call {@link #recalculate()} afterwards. */
+    public void addDeductionLine(PayrollItemDeduction line) {
+        line.setPayrollItem(this);
+        deductionLines.add(line);
+    }
+
+    public BigDecimal sumDeductionLines() {
+        BigDecimal total = BigDecimal.ZERO;
+        for (PayrollItemDeduction line : deductionLines) {
+            if (!line.isDeleted()) total = total.add(nz(line.getAmount()));
+        }
+        return total;
+    }
 
     /** Attaches an adjustment line to this item (cascade-saved with it). Call {@link #recalculate()} afterwards. */
     public void addAdjustment(PayrollItemAdjustment adjustment) {
@@ -167,7 +188,7 @@ public class PayrollItem extends BaseEntity {
         this.adjustmentsTotal = extra;
         this.grossSalary = components.grossSalary().add(extra);
         this.taxableGross = this.grossSalary.subtract(extra.subtract(sumAdjustments(true)));
-        this.totalDeductions = components.totalDeductions();
+        this.totalDeductions = components.totalDeductions().add(sumDeductionLines());
         this.netSalary = this.grossSalary.subtract(this.totalDeductions);
     }
 

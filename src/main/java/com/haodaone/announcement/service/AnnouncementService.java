@@ -204,6 +204,15 @@ public class AnnouncementService {
         return adminView(saved);
     }
 
+
+    private com.haodaone.integration.IntegrationEventService integrationEvents;
+
+    /** Slack/Teams posts and outbound webhooks (optional so unit tests can omit it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIntegrationEvents(com.haodaone.integration.IntegrationEventService integrationEvents) {
+        this.integrationEvents = integrationEvents;
+    }
+
     @Transactional
     public AdminItem publishNow(Long id) {
         Announcement announcement = load(id);
@@ -218,6 +227,10 @@ public class AnnouncementService {
         announcement.setPublishedAt(now);
         Announcement saved = announcementRepository.save(announcement);
         auditLogService.log(ENTITY, saved.getId(), "PUBLISH", "Published announcement '" + saved.getTitle() + "'");
+        if (integrationEvents != null && saved.getCompany() != null) {
+            integrationEvents.publish(saved.getCompany().getId(), com.haodaone.integration.IntegrationEventService.ANNOUNCEMENT_PUBLISHED, "Announcement: " + saved.getTitle(),
+                    java.util.Map.of("announcementId", saved.getId(), "title", saved.getTitle()));
+        }
         return adminView(saved);
     }
 

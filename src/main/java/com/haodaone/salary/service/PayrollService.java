@@ -44,6 +44,14 @@ public class PayrollService {
     private final com.haodaone.security.AuthorizationService authorizationService;
     private NotificationService notificationService;
 
+    private com.haodaone.integration.IntegrationEventService integrationEvents;
+
+    /** Slack/Teams posts and outbound webhooks (optional so unit tests can omit it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIntegrationEvents(com.haodaone.integration.IntegrationEventService integrationEvents) {
+        this.integrationEvents = integrationEvents;
+    }
+
     public PayrollService(PayrollRunRepository payrollRunRepository, PayrollItemRepository payrollItemRepository,
                            SalaryStructureRepository salaryStructureRepository, AuditLogService auditLogService,
                            CompanyRepository companyRepository,
@@ -93,6 +101,55 @@ public class PayrollService {
     }
 
     private List<PayrollExclusionProvider> exclusionProviders = List.of();
+
+    private List<com.haodaone.salary.adjustment.PayrollDeductionProvider> deductionProviders = List.of();
+
+    /** Every PayrollDeductionProvider bean (loan EMIs, advance recovery); empty when none exist. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setDeductionProviders(List<com.haodaone.salary.adjustment.PayrollDeductionProvider> deductionProviders) {
+        this.deductionProviders = deductionProviders != null ? deductionProviders : List.of();
+    }
+
+    /**
+     * Attaches post-tax recoveries after statutory deductions are final. A line goes on only if net pay still
+     * covers it in full; anything left off is offered again by the next run (never a negative payslip).
+     */
+    private void attachDeductions(PayrollItem item, Company company, Long employeeId, YearMonth period) {
+        for (var provider : deductionProviders) {
+            var lines = provider.deductionsFor(company.getId(), employeeId, period);
+            if (lines == null) continue;
+            for (var line : lines) {
+                if (line == null || line.amount() == null || line.amount().signum() <= 0) continue;
+                java.math.BigDecimal amount = line.amount().setScale(2, java.math.RoundingMode.HALF_UP);
+                if (item.getNetSalary() == null || item.getNetSalary().compareTo(amount) < 0) continue;
+                com.haodaone.salary.entity.PayrollItemDeduction row = new com.haodaone.salary.entity.PayrollItemDeduction();
+                row.setCompany(company);
+                row.setCode(line.code() != null ? line.code() : "DEDUCTION");
+                row.setLabel(line.label() != null ? line.label() : row.getCode());
+                row.setAmount(amount);
+                row.setSourceType(line.sourceType());
+                row.setSourceId(line.sourceId());
+                item.addDeductionLine(row);
+                item.recalculate();
+            }
+        }
+    }
+
+    private void settleDeductions(PayrollItem item) {
+        if (item.getDeductionLines().isEmpty() || deductionProviders.isEmpty()) return;
+        for (var provider : deductionProviders) {
+            java.util.Set<String> types = provider.sourceTypes() != null ? provider.sourceTypes() : java.util.Set.of();
+            var rows = item.getDeductionLines().stream()
+                    .filter(d -> !d.isDeleted() && !d.isSettled() && d.getSourceType() != null && types.contains(d.getSourceType()))
+                    .toList();
+            if (rows.isEmpty()) continue;
+            provider.markSettled(rows.stream()
+                    .map(d -> new com.haodaone.salary.adjustment.PayrollDeductionProvider.PayrollDeduction(
+                            d.getCode(), d.getLabel(), d.getAmount(), d.getSourceType(), d.getSourceId()))
+                    .toList(), item.getId());
+            rows.forEach(d -> d.setSettled(true));
+        }
+    }
 
     /** Every PayrollExclusionProvider bean (e.g. Full & Final settlement); empty when none exist. */
     @Autowired(required = false)
@@ -236,6 +293,7 @@ public class PayrollService {
                 // Overwrites PF/ESI/PT/TDS, fills employer contributions, caps deductions at gross, recalculates.
                 statutoryPayrollEngine.apply(item, structure, period, statutory);
             }
+            attachDeductions(item, company, employee.getId(), period);
             item.setStatus(PayrollItemStatus.PENDING);
             payrollItemRepository.save(item);
             included++;
@@ -290,6 +348,7 @@ public class PayrollService {
             if (PayrollItemStatus.PENDING.equals(item.getStatus())) {
                 item.setStatus(PayrollItemStatus.PROCESSED);
                 settleAdjustments(item);
+                settleDeductions(item);
                 payrollItemRepository.save(item);
             }
         }
@@ -304,6 +363,11 @@ public class PayrollService {
         auditLogService.log("PayrollRun", saved.getId(), "PROCESS",
                 "Processed payroll for " + saved.getPeriodMonth() + "/" + saved.getPeriodYear()
                         + " - net payout " + saved.getTotalNet());
+        if (integrationEvents != null && com.haodaone.tenant.TenantContext.getCurrentTenant() != null) {
+            integrationEvents.publish(com.haodaone.tenant.TenantContext.getCurrentTenant(), com.haodaone.integration.IntegrationEventService.PAYROLL_PROCESSED,
+                    "Payroll for " + java.time.Month.of(saved.getPeriodMonth()).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + " " + saved.getPeriodYear() + " has been processed.",
+                    java.util.Map.of("payrollRunId", saved.getId(), "periodMonth", saved.getPeriodMonth(), "periodYear", saved.getPeriodYear()));
+        }
         return getRunData(saved.getId());
     }
 

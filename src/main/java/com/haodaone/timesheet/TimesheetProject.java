@@ -56,6 +56,18 @@ public class TimesheetProject extends BaseEntity {
     @Column(name = "employee_id", nullable = false)
     private Set<Long> memberEmployeeIds = new HashSet<>();
 
+    /** Hourly rate billed to the client (V68); null = not billed. Per-member overrides live in memberRatesJson. */
+    @Column(name = "billing_rate", precision = 12, scale = 2)
+    private java.math.BigDecimal billingRate;
+
+    @Column(name = "member_rates_json", columnDefinition = "TEXT")
+    private String memberRatesJson;
+
+    public java.math.BigDecimal getBillingRate() { return billingRate; }
+    public void setBillingRate(java.math.BigDecimal billingRate) { this.billingRate = billingRate; }
+    public String getMemberRatesJson() { return memberRatesJson; }
+    public void setMemberRatesJson(String memberRatesJson) { this.memberRatesJson = memberRatesJson; }
+
     public boolean isOpenTo(Long employeeId) {
         return allEmployees || memberEmployeeIds.contains(employeeId);
     }

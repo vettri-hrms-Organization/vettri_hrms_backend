@@ -149,6 +149,14 @@ public class EmployeeService {
         return dto;
     }
 
+    private com.haodaone.integration.IntegrationEventService integrationEvents;
+
+    /** Slack/Teams posts and outbound webhooks (optional so unit tests can omit it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIntegrationEvents(com.haodaone.integration.IntegrationEventService integrationEvents) {
+        this.integrationEvents = integrationEvents;
+    }
+
     @Transactional
     public EmployeeDetailDTO create(CreateEmployeeRequest request) {
         if (employeeRepository.existsByEmail(request.getEmail())) {
@@ -193,6 +201,13 @@ public class EmployeeService {
         auditLogService.log("Employee", saved.getId(), "CREATE",
                 "Onboarded '" + saved.getFullName() + "' (" + saved.getEmployeeCode() + ")");
         publishEvent(new com.haodaone.employee.event.EmployeeCreatedEvent(company.getId(), saved.getId()));
+        if (integrationEvents != null && saved.getCompany() != null) {
+            integrationEvents.publish(saved.getCompany().getId(), com.haodaone.integration.IntegrationEventService.EMPLOYEE_JOINED,
+                    "Please welcome " + saved.getFullName() + (saved.getDesignation() != null ? ", " + saved.getDesignation().getTitle() : "")
+                            + (saved.getDepartment() != null ? " (" + saved.getDepartment().getName() + ")" : "") + "!",
+                    java.util.Map.of("employeeId", saved.getId(), "employeeCode", java.util.Objects.toString(saved.getEmployeeCode(), ""),
+                            "name", saved.getFullName(), "dateOfJoining", java.util.Objects.toString(saved.getDateOfJoining(), "")));
+        }
         return withStatutoryVisibility(EmployeeDetailDTO.from(saved), saved);
     }
 

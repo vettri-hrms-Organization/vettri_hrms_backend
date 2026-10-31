@@ -24,6 +24,9 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long
     @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
     List<LeaveRequest> findAllByCompany_IdAndStatusOrderByStartDateAsc(Long companyId, String status);
 
+    /** Requests a multi-level chain has put with one specific approver (e.g. a skip-level manager). */
+    List<LeaveRequest> findAllByCompany_IdAndStatusAndPendingApproverEmployeeIdOrderByStartDateAsc(Long companyId, String status, Long pendingApproverEmployeeId);
+
     @EntityGraph(attributePaths = {"employee", "employee.department", "employee.designation", "leaveType", "decidedBy"})
     List<LeaveRequest> findAllByEmployeeIdOrderByStartDateDesc(Long employeeId);
 

@@ -92,6 +92,10 @@ public class LeaveType extends BaseEntity {
     @Column(name = "credit_expiry_days")
     private Integer creditExpiryDays;
 
+    /** Sandwich rule (V67): weekly offs and holidays between two leave days are counted as leave. */
+    @Column(name = "sandwich_rule", nullable = false)
+    private boolean sandwichRule = false;
+
     public String getAccrualMode() { return accrualMode; }
     public void setAccrualMode(String accrualMode) { this.accrualMode = accrualMode; }
     public String getAccrualRounding() { return accrualRounding; }
@@ -118,6 +122,8 @@ public class LeaveType extends BaseEntity {
     public void setEncashmentBasis(String encashmentBasis) { this.encashmentBasis = encashmentBasis; }
     public boolean isSystemManaged() { return systemManaged; }
     public void setSystemManaged(boolean systemManaged) { this.systemManaged = systemManaged; }
+    public boolean isSandwichRule() { return sandwichRule; }
+    public void setSandwichRule(boolean sandwichRule) { this.sandwichRule = sandwichRule; }
     public Integer getCreditExpiryDays() { return creditExpiryDays; }
     public void setCreditExpiryDays(Integer creditExpiryDays) { this.creditExpiryDays = creditExpiryDays; }
 

@@ -23,6 +23,11 @@ public class LeaveRequestDTO {
     private String decidedByName;
     private LocalDateTime decidedAt;
     private String decisionNote;
+    private String pendingWith;
+    private Long pendingApproverEmployeeId;
+    private int approvalLevel;
+    private java.util.List<java.util.Map<String, Object>> approvalTrail = java.util.List.of();
+    private static final com.fasterxml.jackson.databind.ObjectMapper TRAIL_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public static LeaveRequestDTO from(LeaveRequest lr) {
         LeaveRequestDTO dto = new LeaveRequestDTO();
@@ -43,8 +48,23 @@ public class LeaveRequestDTO {
         dto.decidedByName = lr.getDecidedBy() != null ? lr.getDecidedBy().getFullName() : null;
         dto.decidedAt = lr.getDecidedAt();
         dto.decisionNote = lr.getDecisionNote();
+        dto.pendingWith = "PENDING".equals(lr.getStatus()) ? lr.getPendingWith() : null;
+        dto.pendingApproverEmployeeId = "PENDING".equals(lr.getStatus()) ? lr.getPendingApproverEmployeeId() : null;
+        dto.approvalLevel = lr.getApprovalLevel();
+        if (lr.getApprovalTrail() != null && !lr.getApprovalTrail().isBlank()) {
+            try {
+                dto.approvalTrail = TRAIL_MAPPER.readValue(lr.getApprovalTrail(), new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() { });
+            } catch (Exception ignored) {
+                dto.approvalTrail = java.util.List.of();
+            }
+        }
         return dto;
     }
+
+    public String getPendingWith() { return pendingWith; }
+    public Long getPendingApproverEmployeeId() { return pendingApproverEmployeeId; }
+    public int getApprovalLevel() { return approvalLevel; }
+    public java.util.List<java.util.Map<String, Object>> getApprovalTrail() { return approvalTrail; }
 
     public Long getId() {
         return id;

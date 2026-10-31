@@ -111,6 +111,14 @@ public class FinalSettlementService {
         this.adjustmentProviders = adjustmentProviders != null ? adjustmentProviders : List.of();
     }
 
+    private List<com.haodaone.salary.adjustment.PayrollDeductionProvider> deductionProviders = List.of();
+
+    /** Loans and advances: a leaving employee's outstanding balance is recovered in the settlement. */
+    @Autowired(required = false)
+    public void setDeductionProviders(List<com.haodaone.salary.adjustment.PayrollDeductionProvider> deductionProviders) {
+        this.deductionProviders = deductionProviders != null ? deductionProviders : List.of();
+    }
+
     @Autowired(required = false)
     public void setLeaveEncashmentService(LeaveEncashmentService leaveEncashmentService) {
         this.leaveEncashmentService = leaveEncashmentService;
@@ -552,6 +560,21 @@ public class FinalSettlementService {
             }
         }
 
+        // ---- outstanding loans / salary advances
+        int recoveryOrder = 140;
+        for (var provider : deductionProviders) {
+            var recoveries = provider.settlementRecoveries(companyId, employee.getId());
+            if (recoveries == null) continue;
+            for (var d : recoveries) {
+                if (d == null || d.amount() == null || d.amount().signum() <= 0) continue;
+                FinalSettlementLine line = line(FinalSettlementLine.DEDUCTION, d.code() == null ? "RECOVERY" : d.code(),
+                        d.label() == null ? "Recovery" : d.label(), d.amount(), recoveryOrder++);
+                line.setSourceType(d.sourceType());
+                line.setSourceId(d.sourceId());
+                s.addLine(line);
+            }
+        }
+
         // ---- notice shortfall recovery
         SettlementMath.Notice notice = SettlementMath.notice(s.getResignationDate(), lwd, s.getNoticePeriodDays(), s.isNoticeWaived(), noticeOverride);
         s.setNoticeServedDays(notice.servedDays());
@@ -651,6 +674,23 @@ public class FinalSettlementService {
             }
             provider.markSettled(mine.stream().map(l -> new PayrollAdjustment(l.getCode(), l.getLabel(), l.getAmount(),
                     l.getTaxableAmount().signum() > 0, l.getSourceType(), l.getSourceId())).toList(), marker);
+        }
+        for (var provider : deductionProviders) {
+            Set<String> types = provider.sourceTypes() == null ? Set.of() : provider.sourceTypes();
+            List<FinalSettlementLine> mine = sourced.stream()
+                    .filter(l -> FinalSettlementLine.DEDUCTION.equals(l.getKind()) && types.contains(l.getSourceType())).toList();
+            if (mine.isEmpty()) continue;
+            Set<String> stillOwed = new HashSet<>();
+            var current = provider.settlementRecoveries(companyId, s.getEmployee().getId());
+            if (current != null) current.forEach(d -> stillOwed.add(d.sourceType() + ":" + d.sourceId() + ":" + d.amount().stripTrailingZeros().toPlainString()));
+            for (FinalSettlementLine l : mine) {
+                if (!stillOwed.contains(l.getSourceType() + ":" + l.getSourceId() + ":" + l.getAmount().stripTrailingZeros().toPlainString())) {
+                    throw new BadRequestException("'" + l.getLabel() + "' has changed since this settlement was calculated (an EMI was "
+                            + "deducted or a payment recorded). Send the settlement back to draft and save it again to recalculate.");
+                }
+            }
+            provider.markRecovered(mine.stream().map(l -> new com.haodaone.salary.adjustment.PayrollDeductionProvider.PayrollDeduction(
+                    l.getCode(), l.getLabel(), l.getAmount(), l.getSourceType(), l.getSourceId())).toList(), marker);
         }
     }
 

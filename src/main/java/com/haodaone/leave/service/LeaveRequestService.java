@@ -57,6 +57,34 @@ public class LeaveRequestService {
         this.authorizationService = authorizationService;
     }
 
+
+    private com.haodaone.integration.IntegrationEventService integrationEvents;
+
+    /** Slack/Teams posts and outbound webhooks (optional so unit tests can omit it). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIntegrationEvents(com.haodaone.integration.IntegrationEventService integrationEvents) {
+        this.integrationEvents = integrationEvents;
+    }
+
+    private com.haodaone.workflow.ApprovalWorkflowService approvalWorkflowService;
+
+    /** Multi-level approval chains; optional so unit tests can omit it (single-step approval then). */
+    @Autowired(required = false)
+    public void setApprovalWorkflowService(com.haodaone.workflow.ApprovalWorkflowService approvalWorkflowService) {
+        this.approvalWorkflowService = approvalWorkflowService;
+    }
+
+    private java.util.List<com.haodaone.workflow.ApprovalWorkflowService.Level> chainFor(LeaveRequest lr) {
+        if (approvalWorkflowService == null) return java.util.List.of();
+        return approvalWorkflowService.chainFor(com.haodaone.workflow.ApprovalWorkflowService.LEAVE, lr.getCompany().getId(), lr.getEmployee(), lr.getDays());
+    }
+
+    private void setPending(LeaveRequest lr, com.haodaone.workflow.ApprovalWorkflowService.Level level, int index) {
+        lr.setApprovalLevel(index);
+        lr.setPendingApproverEmployeeId(level == null ? null : level.approverEmployeeId());
+        lr.setPendingWith(level == null ? null : level.pendingWith());
+    }
+
     @Autowired
     public void setNotificationService(NotificationService notificationService) {
         this.notificationService = notificationService;
@@ -103,7 +131,18 @@ public class LeaveRequestService {
     @Transactional(readOnly = true)
     public List<LeaveRequestDTO> listForManagerTeam(String username, String status) {
         var scope = authorizationService.resolveEmployeeIds("LEAVE_APPROVE");
-        if (scope.isPresent()) return listForEmployees(scope.get(), status);
+        if (scope.isPresent()) {
+            List<LeaveRequestDTO> team = new java.util.ArrayList<>(listForEmployees(scope.get(), status));
+            // Multi-level chains can put a request with someone outside their usual scope (a skip-level manager).
+            if (status == null || status.isBlank() || "PENDING".equalsIgnoreCase(status)) {
+                java.util.Set<Long> seen = new java.util.HashSet<>();
+                team.forEach(d -> seen.add(d.getId()));
+                currentEmployee().ifPresent(me -> leaveRequestRepository
+                        .findAllByCompany_IdAndStatusAndPendingApproverEmployeeIdOrderByStartDateAsc(requiredTenant(), "PENDING", me.getId())
+                        .stream().filter(lr -> seen.add(lr.getId())).map(LeaveRequestDTO::from).forEach(team::add));
+            }
+            return team;
+        }
         Long companyId = requiredTenant();
         List<LeaveRequest> requests = (status == null || status.isBlank())
                 ? leaveRequestRepository.findAllByCompany_IdOrderByStartDateDesc(companyId)
@@ -174,6 +213,10 @@ public class LeaveRequestService {
             leaveRequest.setDecisionNote("Automatically approved by leave policy");
         }
 
+        if (!autoApproved) {
+            var chain = chainFor(leaveRequest);
+            if (!chain.isEmpty()) setPending(leaveRequest, chain.get(0), 0);
+        }
         LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
         if (notificationService != null) {
             if (autoApproved) {
@@ -243,6 +286,9 @@ public class LeaveRequestService {
 
         WorkingWeek workingWeek = WorkingWeek.of(employee.getCompany());
         double workingDays = countBusinessDays(companyId, employee, workingWeek, request.getStartDate(), request.getEndDate());
+        if (leaveType.isSandwichRule() && !halfDay && workingDays > 0) {
+            workingDays = countWithSandwich(companyId, employee, workingWeek, request.getStartDate(), request.getEndDate());
+        }
         if (workingDays <= 0) {
             throw new BadRequestException(halfDay
                     ? "Half-day leave can only be applied on a working day"
@@ -292,7 +338,10 @@ public class LeaveRequestService {
         LeaveRequest leaveRequest = leaveRequestRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Leave request not found: " + id));
         if (leaveRequest.getCompany() == null || !requiredTenant().equals(leaveRequest.getCompany().getId())) throw new ResourceNotFoundException("Leave request not found: " + id);
-        if (!authorizationService.isAllowed("LEAVE_APPROVE", "EMPLOYEE", leaveRequest.getEmployee().getId())) {
+        var chain = "PENDING".equals(leaveRequest.getStatus()) ? chainFor(leaveRequest) : java.util.List.<com.haodaone.workflow.ApprovalWorkflowService.Level>of();
+        Employee actor = currentEmployee().orElse(null);
+        boolean chainApprover = !chain.isEmpty() && approvalWorkflowService.canAct(com.haodaone.workflow.ApprovalWorkflowService.LEAVE, chain, leaveRequest.getApprovalLevel(), actor);
+        if (!chainApprover && !authorizationService.isAllowed("LEAVE_APPROVE", "EMPLOYEE", leaveRequest.getEmployee().getId())) {
             throw new org.springframework.security.access.AccessDeniedException(
                     "LEAVE_APPROVE is not authorized for this employee.");
         }
@@ -318,6 +367,25 @@ public class LeaveRequestService {
             }
         }
 
+        if (!chain.isEmpty()) {
+            if (approve) {
+                var outcome = approvalWorkflowService.approve(com.haodaone.workflow.ApprovalWorkflowService.LEAVE, chain,
+                        leaveRequest.getApprovalLevel(), leaveRequest.getApprovalTrail(), actor, note);
+                leaveRequest.setApprovalTrail(outcome.trailJson());
+                if (!outcome.finalApproval()) {
+                    setPending(leaveRequest, outcome.next(), chain.indexOf(outcome.next()));
+                    LeaveRequest moved = leaveRequestRepository.save(leaveRequest);
+                    notifyNextApprover(moved, outcome.next());
+                    auditLogService.log("LeaveRequest", moved.getId(), "APPROVE_LEVEL",
+                            (actor == null ? "Approver" : actor.getFullName()) + " approved; now with " + outcome.next().pendingWith());
+                    return LeaveRequestDTO.from(moved);
+                }
+            } else {
+                leaveRequest.setApprovalTrail(approvalWorkflowService.reject(chain, leaveRequest.getApprovalLevel(), leaveRequest.getApprovalTrail(), actor, note));
+            }
+        }
+        setPending(leaveRequest, null, leaveRequest.getApprovalLevel());
+
         leaveRequest.setStatus(approve ? "APPROVED" : "REJECTED");
         leaveRequest.setDecidedAt(LocalDateTime.now());
         leaveRequest.setDecisionNote(note);
@@ -329,6 +397,12 @@ public class LeaveRequestService {
                     "LEAVE_DECISION", approve ? "Leave request approved" : "Leave request declined",
                     approve ? "Your leave request was approved." : "Your leave request was declined.",
                     "LeaveRequest", saved.getId(), "NORMAL");
+        }
+        if (approve && integrationEvents != null) {
+            integrationEvents.publish(saved.getCompany().getId(), com.haodaone.integration.IntegrationEventService.LEAVE_APPROVED,
+                    saved.getEmployee().getFullName() + " is on leave " + saved.getStartDate() + (saved.getEndDate().equals(saved.getStartDate()) ? "" : " to " + saved.getEndDate()) + ".",
+                    java.util.Map.of("leaveRequestId", saved.getId(), "employeeId", saved.getEmployee().getId(), "employeeCode", java.util.Objects.toString(saved.getEmployee().getEmployeeCode(), ""),
+                            "leaveType", saved.getLeaveType().getName(), "startDate", saved.getStartDate().toString(), "endDate", saved.getEndDate().toString(), "days", saved.getDays()));
         }
         auditLogService.log("LeaveRequest", saved.getId(), approve ? "APPROVE" : "REJECT",
                 (note != null && !note.isBlank()) ? note : "No note provided");
@@ -355,6 +429,7 @@ public class LeaveRequestService {
         }
 
         leaveRequest.setStatus("CANCELLED");
+        setPending(leaveRequest, null, leaveRequest.getApprovalLevel());
         LeaveRequest saved = leaveRequestRepository.save(leaveRequest);
         auditLogService.log("LeaveRequest", saved.getId(), "CANCEL", "Leave request cancelled");
         return LeaveRequestDTO.from(saved);
@@ -386,6 +461,42 @@ public class LeaveRequestService {
             }
         }
         return count;
+    }
+
+    /**
+     * Sandwich rule: weekly offs and holidays between the first and last working day of the leave are counted, and so
+     * is a run of off days that joins this leave to an existing full-day leave just before or after it (so a Friday
+     * leave followed by a Monday leave counts the weekend once, on whichever request comes second).
+     */
+    double countWithSandwich(Long companyId, Employee employee, WorkingWeek workingWeek, LocalDate start, LocalDate end) {
+        LocalDate from = start.minusDays(15);
+        LocalDate to = end.plusDays(15);
+        java.util.Collection<LocalDate> holidays = holidayCalendarService != null
+                ? holidayCalendarService.holidayDatesFor(companyId, employee, from, to)
+                : holidayRepository.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, from, to).stream().map(h -> h.getDate()).toList();
+        java.util.function.Predicate<LocalDate> off = d -> workingWeek.isWeeklyOff(d) || holidays.contains(d);
+        LocalDate first = start;
+        while (!first.isAfter(end) && off.test(first)) first = first.plusDays(1);
+        if (first.isAfter(end)) return 0;
+        LocalDate last = end;
+        while (off.test(last)) last = last.minusDays(1);
+        double count = java.time.temporal.ChronoUnit.DAYS.between(first, last) + 1;
+        count += adjacentOffRun(employee, off, first, -1);
+        count += adjacentOffRun(employee, off, last, 1);
+        return count;
+    }
+
+    private int adjacentOffRun(Employee employee, java.util.function.Predicate<LocalDate> off, LocalDate edge, int step) {
+        int run = 0;
+        LocalDate d = edge.plusDays(step);
+        while (off.test(d) && run < 15) {
+            run++;
+            d = d.plusDays(step);
+        }
+        if (run == 0) return 0;
+        LocalDate neighbour = d;
+        boolean joined = leaveRequestRepository.findOverlapping(employee.getId(), neighbour, neighbour).stream().anyMatch(lr -> !lr.isHalfDay());
+        return joined ? run : 0;
     }
 
     private String normalizeHalfDaySession(ApplyLeaveRequest request) {
@@ -432,6 +543,18 @@ public class LeaveRequestService {
     }
 
     private Long requiredTenant() { Long tenant = TenantContext.getCurrentTenant(); if (tenant == null) throw new BadRequestException("Company context is required"); return tenant; }
+
+    private void notifyNextApprover(LeaveRequest lr, com.haodaone.workflow.ApprovalWorkflowService.Level next) {
+        if (notificationService == null) return;
+        String message = lr.getEmployee().getFullName() + "'s leave from " + lr.getStartDate() + " to " + lr.getEndDate() + " needs your approval.";
+        if (next.approverEmployeeId() != null) {
+            employeeRepository.findById(next.approverEmployeeId()).filter(e -> e.getUser() != null).ifPresent(e ->
+                    notificationService.notifyUser(lr.getCompany().getId(), e.getUser().getId(), "LEAVE_SUBMITTED", "Leave request needs review", message, "LeaveRequest", lr.getId(), "NORMAL"));
+        } else {
+            notificationService.notifyPermissionRecipients(lr.getCompany().getId(), lr.getEmployee().getId(), "LEAVE_APPROVE", "LEAVE_SUBMITTED",
+                    "Leave request needs HR approval", message, "LeaveRequest", lr.getId());
+        }
+    }
 
     private java.util.Optional<Employee> currentEmployee() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
