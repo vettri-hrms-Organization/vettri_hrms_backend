@@ -134,23 +134,44 @@ public class EsignService {
         });
     }
 
+    private static int luminance(int argb) {
+        return (((argb >> 16) & 0xff) * 299 + ((argb >> 8) & 0xff) * 587 + (argb & 0xff) * 114) / 1000;
+    }
+
     static byte[] cleanSignature(byte[] bytes) throws java.io.IOException {
         BufferedImage src = ImageIO.read(new ByteArrayInputStream(bytes));
         if (src == null) throw new BadRequestException("We couldn't read that picture. Use a PNG or JPG photo of your signature.");
         if (src.getWidth() < 40 || src.getHeight() < 20) throw new BadRequestException("The picture is too small - use a clearer photo");
         if ((long) src.getWidth() * src.getHeight() > 40_000_000L) throw new BadRequestException("The picture is too large - crop it to the signature");
         int w = src.getWidth(), h = src.getHeight();
+        // Photos are often taken in dim light, so the paper is grey, not white. Measure this picture's paper
+        // (the bright 80th percentile of its pixels) and treat only pixels clearly darker than it as ink.
+        int[] histogram = new int[256];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = src.getRGB(x, y);
+                if (((argb >>> 24) & 0xff) <= 40) continue;
+                histogram[luminance(argb)]++;
+            }
+        }
+        int counted = 0, total = java.util.Arrays.stream(histogram).sum(), paper = 255;
+        for (int l = 0; l < 256; l++) {
+            counted += histogram[l];
+            if (counted >= total * 0.8) { paper = l; break; }
+        }
+        int threshold = Math.max(40, Math.min(paper - 45, Math.round(paper * 0.72f)));
         int minX = w, minY = h, maxX = -1, maxY = -1;
         BufferedImage ink = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int argb = src.getRGB(x, y);
-                int a = (argb >>> 24) & 0xff, r = (argb >> 16) & 0xff, g = (argb >> 8) & 0xff, b = argb & 0xff;
-                int lum = (r * 299 + g * 587 + b * 114) / 1000;
-                // Paper and light shadows become transparent; anything darker is ink, kept with its own colour.
-                boolean isInk = a > 40 && lum < 170;
-                if (!isInk) continue;
-                int alpha = Math.min(a, Math.max(90, 255 - lum));
+                int a = (argb >>> 24) & 0xff;
+                int lum = luminance(argb);
+                if (a <= 40 || lum >= threshold) continue;
+                // Ink keeps its hue but is deepened, and fades in near the threshold so strokes have smooth edges.
+                int r = ((argb >> 16) & 0xff) * 6 / 10, g = ((argb >> 8) & 0xff) * 6 / 10, b = (argb & 0xff) * 6 / 10;
+                int alpha = Math.min(a, Math.min(255, (threshold - lum) * 255 / Math.max(1, threshold / 3)));
+                if (alpha < 30) continue;
                 ink.setRGB(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
                 if (x < minX) minX = x;
                 if (y < minY) minY = y;
