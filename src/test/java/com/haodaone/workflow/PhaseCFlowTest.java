@@ -24,7 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -194,6 +196,21 @@ class PhaseCFlowTest {
         mockMvc.perform(get("/api/esign/" + rid + "/document").header("Authorization", me)).andExpect(status().isOk());
         mockMvc.perform(json(post("/api/esign/" + rid + "/sign"), me, "{\"fullName\":\"Someone Else\",\"consent\":true}")).andExpect(status().isBadRequest());
         mockMvc.perform(json(post("/api/esign/" + rid + "/sign"), mgr, "{\"fullName\":\"Meera\",\"consent\":true}")).andExpect(status().isNotFound());
+        // No saved signature yet: signing is refused with a clear message.
+        mockMvc.perform(json(post("/api/esign/" + rid + "/sign"), me, "{\"fullName\":\"" + emp.getFullName() + "\",\"consent\":true}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Add your signature first")));
+        mockMvc.perform(get("/api/esign/my-signature").header("Authorization", me)).andExpect(status().isNotFound());
+        // A blank white photo has no signature in it.
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/esign/my-signature").file(new MockMultipartFile("file", "blank.png", "image/png", signaturePhoto(false)))
+                .header("Authorization", me)).andExpect(status().isBadRequest());
+        mockMvc.perform(multipart(HttpMethod.PUT, "/api/esign/my-signature").file(new MockMultipartFile("file", "sign.jpg", "image/png", signaturePhoto(true)))
+                .param("source", "UPLOAD").header("Authorization", me))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.saved").value(true));
+        byte[] saved = mockMvc.perform(get("/api/esign/my-signature").header("Authorization", me)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        java.awt.image.BufferedImage cleaned = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(saved));
+        assertTrue(cleaned.getWidth() < 600, "cropped to the ink");
+        assertEquals(0, (cleaned.getRGB(0, 0) >>> 24), "paper made transparent");
         mockMvc.perform(json(post("/api/esign/" + rid + "/sign"), me, "{\"fullName\":\"" + emp.getFullName() + "\",\"consent\":true}").header("X-Forwarded-For", "203.0.113.9"))
                 .andExpect(jsonPath("$.status").value("SIGNED"))
                 .andExpect(jsonPath("$.signerIp").value("203.0.113.9"));
@@ -220,6 +237,23 @@ class PhaseCFlowTest {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** A 800x400 "photo": white paper, optionally with a dark pen stroke across the middle. */
+    private static byte[] signaturePhoto(boolean withInk) throws Exception {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(800, 400, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setColor(new java.awt.Color(246, 244, 240));
+        g.fillRect(0, 0, 800, 400);
+        if (withInk) {
+            g.setColor(new java.awt.Color(20, 30, 90));
+            g.setStroke(new java.awt.BasicStroke(6));
+            g.drawPolyline(new int[]{250, 300, 340, 390, 450, 520}, new int[]{220, 160, 230, 170, 240, 190}, 6);
+        }
+        g.dispose();
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", out);
+        return out.toByteArray();
+    }
 
     private static byte[] blankPdf() throws Exception {
         try (var doc = new org.apache.pdfbox.pdmodel.PDDocument(); var out = new java.io.ByteArrayOutputStream()) {

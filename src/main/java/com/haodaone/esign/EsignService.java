@@ -15,10 +15,15 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -31,25 +36,29 @@ import java.util.*;
  * Click-to-sign for issued letters (offer acceptance, appointment, policies, NDAs issued as letters). HR sends a letter
  * for signature; the employee reads it and signs by typing their full name and agreeing to sign electronically.
  * The service records the SHA-256 of the exact PDF shown, the time, IP and browser, refuses to sign if the stored file no
- * longer matches that hash, and keeps a signed copy with a signature certificate page appended.
+ * longer matches that hash, and keeps a signed copy with a signature certificate page appended. Employees save a
+ * signature picture once (uploaded photo or drawn on screen); it is fetched and stamped on every document they sign.
  * This is a simple electronic signature (IT Act s.3A-style click-wrap with an audit trail), not an Aadhaar eSign / DSC.
  */
 @Service
 public class EsignService {
 
-    public static final String CONSENT = "I have read this document and agree to sign it electronically. I understand my typed name is my signature.";
+    public static final String CONSENT = "I have read this document and agree to sign it electronically. My saved signature and typed name are my signature.";
+    static final int MAX_SIGNATURE_BYTES = 3 * 1024 * 1024;
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm:ss", Locale.ENGLISH);
 
     private final SignatureRequestRepository requests;
+    private final EmployeeSignatureRepository signatures;
     private final IssuedLetterRepository letters;
     private final LetterStorageService storage;
     private final PerfContext ctx;
     private final AuditLogService auditLogService;
     private final Clock clock;
 
-    public EsignService(SignatureRequestRepository requests, IssuedLetterRepository letters, LetterStorageService storage, PerfContext ctx,
-                        AuditLogService auditLogService, Clock applicationClock) {
+    public EsignService(SignatureRequestRepository requests, EmployeeSignatureRepository signatures, IssuedLetterRepository letters,
+                        LetterStorageService storage, PerfContext ctx, AuditLogService auditLogService, Clock applicationClock) {
         this.requests = requests;
+        this.signatures = signatures;
         this.letters = letters;
         this.storage = storage;
         this.ctx = ctx;
@@ -65,6 +74,109 @@ public class EsignService {
                              String signedName, LocalDateTime signedAt, String signerIp, String documentSha256, String signedSha256,
                              String declineReason, boolean canSign, String consentText) { }
     public record FileDownload(byte[] bytes, String fileName) { }
+    public record SignatureInfo(boolean saved, String source, LocalDateTime updatedAt) { }
+
+    // ------------------------------------------------------------------ my saved signature
+
+    @Transactional(readOnly = true)
+    public SignatureInfo mySignatureInfo() {
+        Employee me = ctx.me();
+        return signatures.findFirstByCompanyIdAndEmployeeIdAndDeletedFalseOrderByIdDesc(ctx.companyId(), me.getId())
+                .map(sig -> new SignatureInfo(true, sig.getSource(), sig.getUpdatedAt()))
+                .orElse(new SignatureInfo(false, null, null));
+    }
+
+    /** The caller's saved signature as PNG, or null when none is saved. */
+    @Transactional(readOnly = true)
+    public byte[] mySignatureImage() {
+        Employee me = ctx.me();
+        return signatures.findFirstByCompanyIdAndEmployeeIdAndDeletedFalseOrderByIdDesc(ctx.companyId(), me.getId())
+                .map(sig -> storage.get(sig.getS3ObjectKey())).orElse(null);
+    }
+
+    /**
+     * Saves the caller's signature from a photo or a drawing. The picture is cleaned before it is kept: paper-white
+     * background made transparent, cropped to the ink, scaled to at most 900px wide and re-encoded as PNG, so a phone
+     * photo of a signature on paper works and nothing but pixels is stored.
+     */
+    @Transactional
+    public SignatureInfo saveMySignature(MultipartFile file, String source) {
+        Employee me = ctx.me();
+        if (file == null || file.isEmpty()) throw new BadRequestException("Choose a picture of your signature");
+        if (file.getSize() > MAX_SIGNATURE_BYTES) throw new BadRequestException("The picture is too large - keep it under 3 MB");
+        byte[] png;
+        try {
+            png = cleanSignature(file.getBytes());
+        } catch (java.io.IOException ex) {
+            throw new BadRequestException("We couldn't read that picture. Use a PNG or JPG photo of your signature.");
+        }
+        String kind = EmployeeSignature.DRAWN.equalsIgnoreCase(source) ? EmployeeSignature.DRAWN : EmployeeSignature.UPLOAD;
+        String key = "employee-documents/" + ctx.companyId() + "/" + me.getId() + "/SIGNATURE/" + UUID.randomUUID() + ".png";
+        storage.put(key, png, "image/png");
+        EmployeeSignature sig = signatures.findFirstByCompanyIdAndEmployeeIdAndDeletedFalseOrderByIdDesc(ctx.companyId(), me.getId())
+                .orElseGet(EmployeeSignature::new);
+        sig.setCompanyId(ctx.companyId());
+        sig.setEmployeeId(me.getId());
+        sig.setS3ObjectKey(key);
+        sig.setContentSha256(sha256(png));
+        sig.setSource(kind);
+        sig = signatures.save(sig);
+        auditLogService.log("EMPLOYEE_SIGNATURE", sig.getId(), "SAVED", me.getFullName() + " saved a " + (EmployeeSignature.DRAWN.equals(kind) ? "drawn" : "uploaded") + " signature");
+        return new SignatureInfo(true, kind, LocalDateTime.now(clock));
+    }
+
+    @Transactional
+    public void deleteMySignature() {
+        Employee me = ctx.me();
+        signatures.findFirstByCompanyIdAndEmployeeIdAndDeletedFalseOrderByIdDesc(ctx.companyId(), me.getId()).ifPresent(sig -> {
+            sig.setDeleted(true);
+            signatures.save(sig);
+        });
+    }
+
+    static byte[] cleanSignature(byte[] bytes) throws java.io.IOException {
+        BufferedImage src = ImageIO.read(new ByteArrayInputStream(bytes));
+        if (src == null) throw new BadRequestException("We couldn't read that picture. Use a PNG or JPG photo of your signature.");
+        if (src.getWidth() < 40 || src.getHeight() < 20) throw new BadRequestException("The picture is too small - use a clearer photo");
+        if ((long) src.getWidth() * src.getHeight() > 40_000_000L) throw new BadRequestException("The picture is too large - crop it to the signature");
+        int w = src.getWidth(), h = src.getHeight();
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        BufferedImage ink = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = src.getRGB(x, y);
+                int a = (argb >>> 24) & 0xff, r = (argb >> 16) & 0xff, g = (argb >> 8) & 0xff, b = argb & 0xff;
+                int lum = (r * 299 + g * 587 + b * 114) / 1000;
+                // Paper and light shadows become transparent; anything darker is ink, kept with its own colour.
+                boolean isInk = a > 40 && lum < 170;
+                if (!isInk) continue;
+                int alpha = Math.min(a, Math.max(90, 255 - lum));
+                ink.setRGB(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX < 0 || (maxX - minX) < 20 || (maxY - minY) < 8)
+            throw new BadRequestException("We couldn't find a signature in that picture. Sign with a dark pen on white paper, or draw it instead.");
+        int pad = 8;
+        minX = Math.max(0, minX - pad);
+        minY = Math.max(0, minY - pad);
+        maxX = Math.min(w - 1, maxX + pad);
+        maxY = Math.min(h - 1, maxY + pad);
+        BufferedImage cropped = ink.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        int outW = Math.min(900, cropped.getWidth());
+        int outH = Math.max(1, Math.round(cropped.getHeight() * (outW / (float) cropped.getWidth())));
+        BufferedImage out = new BufferedImage(outW, outH, BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D g2 = out.createGraphics();
+        g2.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g2.drawImage(cropped, 0, 0, outW, outH, null);
+        g2.dispose();
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        ImageIO.write(out, "png", buf);
+        return buf.toByteArray();
+    }
 
     @Transactional
     public RequestDTO send(SendRequest r, String actor) {
@@ -129,14 +241,19 @@ public class EsignService {
         String typed = PerfContext.text(r.fullName(), 150);
         if (typed == null || !normalise(typed).equals(normalise(me.getFullName())))
             throw new BadRequestException("Type your full name exactly as it appears in your profile: " + me.getFullName());
+        EmployeeSignature sig = signatures.findFirstByCompanyIdAndEmployeeIdAndDeletedFalseOrderByIdDesc(ctx.companyId(), me.getId())
+                .orElseThrow(() -> new BadRequestException("Add your signature first: upload a photo of it or draw it."));
+        byte[] signatureImage = storage.get(sig.getS3ObjectKey());
         byte[] original = storage.get(letter(x).getS3ObjectKey());
         if (!sha256(original).equals(x.getDocumentSha256())) throw new BadRequestException("The document changed after it was sent. Ask HR to send it again.");
+        x.setSignatureImageKey(sig.getS3ObjectKey());
+        x.setSignatureImageSha256(sig.getContentSha256());
         LocalDateTime now = LocalDateTime.now(clock);
         x.setSignedName(typed);
         x.setSignedAt(now);
         x.setSignerIp(signer == null ? null : trim(signer.ip(), 64));
         x.setSignerUserAgent(signer == null ? null : trim(signer.userAgent(), 400));
-        byte[] signed = stamp(original, x, me);
+        byte[] signed = stamp(original, x, me, signatureImage);
         // Same storage location as the employee's other letters, so the bucket's existing permissions cover it.
         String key = storage.employeeLetterKey(x.getCompanyId(), x.getEmployeeId());
         storage.put(key, signed, "application/pdf");
@@ -176,8 +293,8 @@ public class EsignService {
 
     // ------------------------------------------------------------------ helpers
 
-    /** Appends a signature certificate page to the original PDF. */
-    byte[] stamp(byte[] original, SignatureRequest x, Employee signer) {
+    /** Appends an "accepted and signed" page to the original PDF: the signature picture, then the audit details. */
+    byte[] stamp(byte[] original, SignatureRequest x, Employee signer, byte[] signatureImage) {
         try (PDDocument doc = Loader.loadPDF(original); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PDPage page = new PDPage(PDRectangle.A4);
             doc.addPage(page);
@@ -185,8 +302,27 @@ public class EsignService {
             PDType1Font regular = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
             try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                 float y = 780;
-                y = line(cs, bold, 16, 50, y, "Electronic signature certificate");
-                y -= 10;
+                y = line(cs, bold, 16, 50, y, "Accepted and signed");
+                y = line(cs, regular, 10, 50, y, "I accept " + x.getTitle() + ".");
+                y -= 8;
+                if (signatureImage != null) {
+                    PDImageXObject img = PDImageXObject.createFromByteArray(doc, signatureImage, "signature");
+                    float maxW = 220, maxH = 90;
+                    float scale = Math.min(maxW / img.getWidth(), maxH / img.getHeight());
+                    float iw = img.getWidth() * scale, ih = img.getHeight() * scale;
+                    cs.drawImage(img, 50, y - ih, iw, ih);
+                    y -= ih + 6;
+                }
+                cs.setLineWidth(0.6f);
+                cs.moveTo(50, y);
+                cs.lineTo(290, y);
+                cs.stroke();
+                y -= 14;
+                y = line(cs, bold, 11, 50, y, x.getSignedName());
+                y = line(cs, regular, 10, 50, y, x.getSignedAt().format(STAMP) + " IST");
+                y -= 24;
+                y = line(cs, bold, 13, 50, y, "Electronic signature certificate");
+                y -= 6;
                 String[][] rows = {
                         {"Document", x.getTitle()},
                         {"Signed by", x.getSignedName() + " (" + signer.getEmployeeCode() + ")"},
@@ -195,6 +331,7 @@ public class EsignService {
                         {"Browser", Objects.toString(x.getSignerUserAgent(), "not recorded")},
                         {"Sent by", Objects.toString(x.getRequestedByName(), "HR") + " on " + x.getCreatedAt().format(STAMP)},
                         {"Document SHA-256", x.getDocumentSha256()},
+                        {"Signature SHA-256", Objects.toString(x.getSignatureImageSha256(), "none")},
                         {"Request ID", "ESIGN-" + x.getId()}};
                 for (String[] row : rows) {
                     line(cs, bold, 10, 50, y, row[0]);

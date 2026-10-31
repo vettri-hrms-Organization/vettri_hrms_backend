@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -46,6 +47,27 @@ public class EsignController {
                 .header("Cache-Control", "no-store")
                 .body(f.bytes());
     }
+
+    /** Whether the caller has a saved signature. */
+    @GetMapping("/my-signature/info")
+    public EsignService.SignatureInfo mySignatureInfo() { return service.mySignatureInfo(); }
+
+    /** The caller's saved signature picture (PNG), 404 when none is saved. */
+    @GetMapping("/my-signature")
+    public ResponseEntity<byte[]> mySignature() {
+        byte[] png = service.mySignatureImage();
+        if (png == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).header("Cache-Control", "no-store").body(png);
+    }
+
+    /** Save or replace the caller's signature from an uploaded photo or a drawing (source=UPLOAD|DRAWN). */
+    @PutMapping(value = "/my-signature", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public EsignService.SignatureInfo saveMySignature(@RequestParam("file") MultipartFile file, @RequestParam(value = "source", required = false) String source) {
+        return service.saveMySignature(file, source);
+    }
+
+    @DeleteMapping("/my-signature")
+    public void deleteMySignature() { service.deleteMySignature(); }
 
     @PostMapping("/{id}/sign")
     public EsignService.RequestDTO sign(@PathVariable Long id, @RequestBody EsignService.SignRequest r, HttpServletRequest request) {

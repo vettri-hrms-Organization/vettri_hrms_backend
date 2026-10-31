@@ -69,6 +69,18 @@ public class SignatureRequest extends BaseEntity {
     @Column(name = "decline_reason", length = 500)
     private String declineReason;
 
+    /** The signature picture stamped on this document (V69), kept even if the employee later changes theirs. */
+    @Column(name = "signature_image_key", length = 500)
+    private String signatureImageKey;
+
+    @Column(name = "signature_image_sha256", length = 64)
+    private String signatureImageSha256;
+
+    public String getSignatureImageKey() { return signatureImageKey; }
+    public void setSignatureImageKey(String signatureImageKey) { this.signatureImageKey = signatureImageKey; }
+    public String getSignatureImageSha256() { return signatureImageSha256; }
+    public void setSignatureImageSha256(String signatureImageSha256) { this.signatureImageSha256 = signatureImageSha256; }
+
     public Long getCompanyId() { return companyId; }
     public void setCompanyId(Long companyId) { this.companyId = companyId; }
     public Long getEmployeeId() { return employeeId; }
