@@ -140,7 +140,9 @@ class WhatsAppNotificationChannelTest {
     void phoneNumbersMustBeE164() {
         assertEquals("+919876543210", WhatsAppService.normalizePhone("+91 98765 43210"));
         assertEquals("+919876543210", WhatsAppService.normalizePhone("0091-98765-43210"));
-        assertEquals(null, WhatsAppService.normalizePhone("9876543210"));
+        assertEquals("+919876543210", WhatsAppService.normalizePhone("9876543210"));
+        assertEquals("+919876543210", WhatsAppService.normalizePhone("919876543210"));
+        assertEquals(null, WhatsAppService.normalizePhone("12345"));
         assertEquals(null, WhatsAppService.normalizePhone("+0123"));
         verify(client, never()).sendTemplate(anyString(), anyString(), anyString(), any());
     }

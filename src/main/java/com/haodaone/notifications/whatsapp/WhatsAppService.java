@@ -67,6 +67,9 @@ public class WhatsAppService {
         if (raw == null) return null;
         String value = raw.trim().replaceAll("[\\s().-]", "");
         if (value.startsWith("00")) value = "+" + value.substring(2);
+        // Indian mobiles typed without the "+": 10 digits, or 12 digits starting with 91.
+        else if (value.matches("[6-9]\\d{9}")) value = "+91" + value;
+        else if (value.matches("91[6-9]\\d{9}")) value = "+" + value;
         return E164.matcher(value).matches() ? value : null;
     }
 
