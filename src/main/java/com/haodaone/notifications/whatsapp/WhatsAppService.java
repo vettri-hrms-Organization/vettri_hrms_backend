@@ -137,9 +137,10 @@ public class WhatsAppService {
             }
             setting.setEventSet(events);
         }
-        settings.save(setting);
-        auditLogService.log("CompanyWhatsAppSetting", setting.getId(), "UPDATE",
-                "WhatsApp channel enabled=" + setting.isEnabled() + ", events=" + setting.getEvents());
+        // Use the returned entity: a first save merges (version starts at 0), so only the copy carries the new id.
+        CompanyWhatsAppSetting saved = settings.save(setting);
+        auditLogService.log("CompanyWhatsAppSetting", saved.getId(), "UPDATE",
+                "WhatsApp channel enabled=" + saved.isEnabled() + ", events=" + saved.getEvents());
         return settings(companyId);
     }
 
