@@ -51,6 +51,7 @@ public class LeaveRequestDTO {
         dto.pendingWith = "PENDING".equals(lr.getStatus()) ? lr.getPendingWith() : null;
         dto.pendingApproverEmployeeId = "PENDING".equals(lr.getStatus()) ? lr.getPendingApproverEmployeeId() : null;
         dto.approvalLevel = lr.getApprovalLevel();
+        dto.requestedAt = lr.getCreatedAt();
         if (lr.getApprovalTrail() != null && !lr.getApprovalTrail().isBlank()) {
             try {
                 dto.approvalTrail = TRAIL_MAPPER.readValue(lr.getApprovalTrail(), new com.fasterxml.jackson.core.type.TypeReference<java.util.List<java.util.Map<String, Object>>>() { });
@@ -61,6 +62,10 @@ public class LeaveRequestDTO {
         return dto;
     }
 
+    /** When the employee submitted the request ("Requested on" in leave history). */
+    private LocalDateTime requestedAt;
+
+    public LocalDateTime getRequestedAt() { return requestedAt; }
     public String getPendingWith() { return pendingWith; }
     public Long getPendingApproverEmployeeId() { return pendingApproverEmployeeId; }
     public int getApprovalLevel() { return approvalLevel; }
