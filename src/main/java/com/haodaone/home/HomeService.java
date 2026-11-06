@@ -17,6 +17,7 @@ import com.haodaone.loan.LoanService;
 import com.haodaone.monitoring.entity.MonitoredDevice;
 import com.haodaone.monitoring.repository.MonitoredDeviceRepository;
 import com.haodaone.org.repository.DepartmentRepository;
+import com.haodaone.org.repository.DesignationRepository;
 import com.haodaone.performance.suite.PerfContext;
 import com.haodaone.performance.suite.PipService;
 import com.haodaone.performance.suite.ReviewCycleService;
@@ -82,6 +83,7 @@ public class HomeService {
     private final MonitoredDeviceRepository monitoredDevices;
     private final CompanyRepository companies;
     private final DepartmentRepository departments;
+    private final DesignationRepository designations;
     private final LeaveTypeRepository leaveTypes;
     private final HolidayRepository holidays;
     private final DeviceRepository biometricDevices;
@@ -97,7 +99,7 @@ public class HomeService {
                        PipService pips, TravelService travel, ProfileService profile, LoanService loans, ResignationService resignations,
                        FbpService fbp, EmployeeDocumentService documents, AuthorizationService authorization, PerfContext ctx, EmployeeRepository employees,
                        LeaveRequestRepository leaveRequests, MonitoredDeviceRepository monitoredDevices, CompanyRepository companies,
-                       DepartmentRepository departments, LeaveTypeRepository leaveTypes, HolidayRepository holidays,
+                       DepartmentRepository departments, DesignationRepository designations, LeaveTypeRepository leaveTypes, HolidayRepository holidays,
                        DeviceRepository biometricDevices, OfficeLocationRepository officeLocations,
                        SalaryStructureRepository salaryStructures, PayrollRunRepository payrollRuns, UserRepository users,
                        TransactionTemplate tx, Clock applicationClock) {
@@ -123,6 +125,7 @@ public class HomeService {
         this.monitoredDevices = monitoredDevices;
         this.companies = companies;
         this.departments = departments;
+        this.designations = designations;
         this.leaveTypes = leaveTypes;
         this.holidays = holidays;
         this.biometricDevices = biometricDevices;
@@ -139,8 +142,11 @@ public class HomeService {
     public record Person(Long employeeId, String name, String photoUrl, String detail, LocalDate date) { }
     public record ItSnapshot(int devices, int online, int notSeenForWeek, int unassigned) { }
     public record Today(List<Person> outToday, List<Person> birthdays, List<Person> anniversaries, ItSnapshot it) { }
-    public record SetupStep(String key, String title, String detail, boolean done, String link) { }
-    public record Setup(boolean visible, int done, int total, List<SetupStep> steps) { }
+    /** required: must be done before the rest of the workspace unlocks for admins. */
+    public record SetupStep(String key, String title, String detail, boolean done, String link, boolean required) { }
+    /** locked: a required step is still open, so admins only see the setup sections. percent counts required steps. */
+    public record Setup(boolean visible, int done, int total, List<SetupStep> steps,
+                        int requiredDone, int requiredTotal, int percent, boolean locked) { }
 
     // ------------------------------------------------------------------ to-dos
 
@@ -257,7 +263,7 @@ public class HomeService {
     /** Setup progress for workspace admins; hidden for everyone else. */
     public Setup setup() {
         boolean admin = authorization.hasOrganizationScope("EMPLOYEE_MANAGE");
-        if (!admin) return new Setup(false, 0, 0, List.of());
+        if (!admin) return new Setup(false, 0, 0, List.of(), 0, 0, 100, false);
         return tx.execute(status -> {
             Long companyId = ctx.companyId();
             LocalDate today = LocalDate.now(clock);
@@ -265,26 +271,32 @@ public class HomeService {
             int people = (int) employees.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId).stream().filter(this::employed).count();
             List<SetupStep> steps = List.of(
                     new SetupStep("company", "Company details", "Add your industry and GSTIN so letters and invoices are correct",
-                            company != null && (notBlank(company.getIndustry()) || notBlank(company.getGstin())), "/settings/organization"),
+                            company != null && (notBlank(company.getIndustry()) || notBlank(company.getGstin())), "/settings/organization", true),
                     new SetupStep("departments", "Departments", "Create the teams people belong to",
-                            !departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/organization/structure"),
-                    new SetupStep("employees", "Add your employees", people > 1 ? people + " people added" : "Import everyone at once from Excel",
-                            people > 1, "/employees/import"),
+                            !departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization", true),
+                    new SetupStep("designations", "Designations", "Add the job titles and roles people hold",
+                            !designations.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).isEmpty(), "/settings/organization", true),
                     new SetupStep("leave", "Leave policy", "Set leave types and how many days people get",
-                            !leaveTypes.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/leave"),
+                            !leaveTypes.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/leave", true),
                     new SetupStep("holidays", "Holiday calendar", "Add this year's holidays",
-                            !holidays.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, today.withDayOfYear(1), today.withMonth(12).withDayOfMonth(31)).isEmpty(), "/settings/leave"),
+                            !holidays.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, today.withDayOfYear(1), today.withMonth(12).withDayOfMonth(31)).isEmpty(), "/settings/leave", true),
                     new SetupStep("attendance", "Attendance", "Connect a biometric machine or add an office location for phone check-in",
                             !biometricDevices.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId).isEmpty()
-                                    || !officeLocations.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization"),
+                                    || !officeLocations.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization", true),
+                    new SetupStep("employees", "Add your employees", people > 1 ? people + " people added" : "Import everyone at once from Excel",
+                            people > 1, "/employees/import", false),
                     new SetupStep("salary", "Salary structures", "Set up pay for your employees",
-                            salaryStructures.countActive(companyId) > 0, "/salary/employees"),
+                            salaryStructures.countActive(companyId) > 0, "/salary/employees", false),
                     new SetupStep("team", "Invite your team", "Give managers and HR their own logins",
-                            users.findAllByCompanyIdAndDeletedFalse(companyId).size() > 1, "/settings/users"),
+                            users.findAllByCompanyIdAndDeletedFalse(companyId).size() > 1, "/settings/users", false),
                     new SetupStep("payroll", "Run your first payroll", "Generate payslips for the month",
-                            !payrollRuns.findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(companyId).isEmpty(), "/salary/payroll-processing"));
+                            !payrollRuns.findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(companyId).isEmpty(), "/salary/payroll-processing", false));
             int done = (int) steps.stream().filter(SetupStep::done).count();
-            return new Setup(done < steps.size(), done, steps.size(), steps);
+            int requiredTotal = (int) steps.stream().filter(SetupStep::required).count();
+            int requiredDone = (int) steps.stream().filter(step -> step.required() && step.done()).count();
+            int percent = requiredTotal == 0 ? 100 : Math.round(requiredDone * 100f / requiredTotal);
+            return new Setup(done < steps.size(), done, steps.size(), steps,
+                    requiredDone, requiredTotal, percent, requiredDone < requiredTotal);
         });
     }
 

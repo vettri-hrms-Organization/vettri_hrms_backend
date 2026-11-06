@@ -10,15 +10,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DataSeederPermissionPolicyTest {
 
     @Test
-    void organizationAdministratorGetsWorkspaceAdministrationButNotFunctionalOrItAccess() {
-        var permissions = DataSeeder.companyAdminPermissionCodes();
+    void companyAdminAndHrAdminShareOnePermissionSet() {
+        assertEquals(DataSeeder.companyAdminPermissionCodes(), DataSeeder.hrManagerPermissionCodes());
+    }
+
+    @Test
+    void administratorsGetWorkspaceAndHrAdministrationButNotMonitoringOrIt() {
+        var permissions = DataSeeder.administratorPermissionCodes();
 
         assertTrue(permissions.contains("USER_PERMISSION_GRANT"));
         assertTrue(permissions.contains("ROLE_MANAGE"));
         assertTrue(permissions.contains("ORG_MANAGE"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_VIEW"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_CREATE"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_UPDATE"));
+        assertTrue(permissions.contains("EMPLOYEE_MANAGE"));
+        assertTrue(permissions.contains("EMPLOYEE_IMPORT"));
+        assertTrue(permissions.contains("ATTENDANCE_MANAGE"));
+        assertTrue(permissions.contains("SALARY_MANAGE"));
         assertTrue(permissions.contains("OFFICE_LOCATION_DEACTIVATE"));
         assertFalse(permissions.contains("MONITORING_VIEW"));
         assertFalse(permissions.contains("MONITORING_MANAGE"));
@@ -27,30 +33,8 @@ class DataSeederPermissionPolicyTest {
         assertFalse(permissions.contains("SOFTWARE_DEPLOY"));
         assertFalse(permissions.contains("SOFTWARE_MANAGE"));
         assertFalse(permissions.contains("DEVICE_MANAGE"));
-        assertFalse(permissions.contains("EMPLOYEE_MANAGE"));
-        assertFalse(permissions.contains("SALARY_MANAGE"));
         assertEquals(PermissionScope.SELF, DataSeeder.companyAdminScope("SELF_PAYSLIP_VIEW"));
         assertEquals(PermissionScope.ORGANIZATION, DataSeeder.companyAdminScope("ORG_MANAGE"));
-    }
-
-    @Test
-    void hrManagerDoesNotReceiveMonitoringByDefault() {
-        var permissions = DataSeeder.hrManagerPermissionCodes();
-        assertTrue(permissions.contains("EMPLOYEE_VIEW"));
-        assertTrue(permissions.contains("ATTENDANCE_MANAGE"));
-        assertTrue(permissions.contains("USER_VIEW"));
-        assertTrue(permissions.contains("ROLE_VIEW"));
-        assertTrue(permissions.contains("ROLE_ASSIGN"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_VIEW"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_CREATE"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_UPDATE"));
-        assertTrue(permissions.contains("OFFICE_LOCATION_DEACTIVATE"));
-        assertFalse(permissions.contains("ORG_MANAGE"));
-        assertFalse(permissions.contains("DEVICE_MANAGE"));
-        assertFalse(permissions.contains("MONITORING_VIEW"));
-        assertFalse(permissions.contains("MONITORING_MANAGE"));
-        assertFalse(permissions.contains("IT_MANAGEMENT_ACCESS"));
-        assertFalse(permissions.contains("SOFTWARE_VIEW"));
     }
 
     @Test

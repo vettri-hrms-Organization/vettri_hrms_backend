@@ -68,9 +68,10 @@ public class DataSeeder implements CommandLineRunner {
     public void run(String... args) {
         seedPermissions();
         Role superAdmin =         seedRole("SUPER_ADMIN", "Full platform access", allPermissions());
-        seedRole("HR_ADMIN", "HR administration - full platform HR management short of user/role administration",
+        // Company Admin and HR Admin share one permission set; only subscription
+        // payment and company-level legal/data actions stay with the Company Admin role.
+        seedRole("HR_ADMIN", "HR administration - full HR, payroll and workspace administration",
                 permissionsByCode(hrManagerPermissionCodes().toArray(String[]::new)));
-        // Workspace administration remains separate from HR, payroll, monitoring, and IT access.
         seedRole("COMPANY_ADMIN", "Company-level administrator (tenant-scoped)",
                 permissionsByCode(companyAdminPermissionCodes().toArray(String[]::new)));
         seedRole("MANAGER", "Team lead - visibility into their reports, leave approval, and performance management for their team",
@@ -315,15 +316,7 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> companyAdminPermissionCodes() {
-        return Set.of("USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
-                "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE", "ORG_VIEW", "ORG_MANAGE",
-                "LETTER_MANAGE", "ONBOARDING_MANAGE",
-                "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
-                "OFFICE_LOCATION_DEACTIVATE", "EXPENSE_MANAGE", "ANNOUNCEMENT_MANAGE", "PRIVACY_MANAGE",
-                "TIMESHEET_APPROVE", "TIMESHEET_MANAGE",
-                "SELF_PROFILE_VIEW", "SELF_ATTENDANCE_VIEW", "SELF_ATTENDANCE_CHECKIN", "SELF_ATTENDANCE_CHECKOUT",
-                "SELF_LEAVE_VIEW", "SELF_LEAVE_APPLY", "SELF_DOCUMENT_VIEW", "SELF_PAYSLIP_VIEW", "SELF_ASSET_VIEW",
-                "SELF_EXPENSE_SUBMIT");
+        return administratorPermissionCodes();
     }
 
     static PermissionScope companyAdminScope(String permissionCode) {
@@ -346,8 +339,14 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     static Set<String> hrManagerPermissionCodes() {
-        return Set.of("USER_VIEW", "ROLE_VIEW", "ROLE_ASSIGN",
-                "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "ORG_VIEW",
+        return administratorPermissionCodes();
+    }
+
+    /** The one permission set held by both COMPANY_ADMIN and HR_ADMIN. Monitoring and IT stay with IT_ADMINISTRATOR. */
+    static Set<String> administratorPermissionCodes() {
+        return Set.of("USER_VIEW", "USER_CREATE", "USER_MANAGE", "USER_PERMISSION_GRANT",
+                "ROLE_VIEW", "ROLE_ASSIGN", "ROLE_MANAGE",
+                "EMPLOYEE_VIEW", "EMPLOYEE_CREATE", "EMPLOYEE_MANAGE", "EMPLOYEE_IMPORT", "ORG_VIEW", "ORG_MANAGE",
                 "OFFICE_LOCATION_VIEW", "OFFICE_LOCATION_CREATE", "OFFICE_LOCATION_UPDATE",
                 "OFFICE_LOCATION_DEACTIVATE",
                 "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE", "OVERTIME_APPROVE", "TIMESHEET_APPROVE", "TIMESHEET_MANAGE",

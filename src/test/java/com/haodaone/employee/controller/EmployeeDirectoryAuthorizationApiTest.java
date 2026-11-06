@@ -96,7 +96,7 @@ class EmployeeDirectoryAuthorizationApiTest {
     }
 
     @Test
-    void employeeAndCompanyAdminCannotListDirectoryAndMonitoringRemainsProtected() throws Exception {
+    void employeeCannotListDirectoryAdminsCanAndMonitoringRemainsProtected() throws Exception {
         String suffix = suffix();
         Company company = createCompany("Protected directory " + suffix);
         Role employeeRole = role("EMPLOYEE");
@@ -113,9 +113,10 @@ class EmployeeDirectoryAuthorizationApiTest {
                         .header("Authorization", "Bearer " + tokenFor(employee, employeeRole)))
                 .andExpect(status().isForbidden());
 
+        // Company Admin and HR Admin share one permission set, so both can open the directory.
         mockMvc.perform(get("/api/employees")
                         .header("Authorization", "Bearer " + tokenFor(companyAdmin, companyAdminRole)))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/monitoring/devices")
                         .header("Authorization", "Bearer " + tokenFor(hrAdmin, hrAdminRole)))
