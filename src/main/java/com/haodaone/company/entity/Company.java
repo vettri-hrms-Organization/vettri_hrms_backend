@@ -115,6 +115,36 @@ public class Company extends BaseEntity {
         this.demo = demo;
     }
 
+    /** Self-service demo sandbox: the real company that opened it (null for platform sales demos and real companies). */
+    @Column(name = "demo_parent_company_id")
+    private Long demoParentCompanyId;
+
+    /** When a sandbox stops being usable; the cleanup job removes its records after this. */
+    @Column(name = "demo_expires_at")
+    private java.time.LocalDateTime demoExpiresAt;
+
+    @Column(name = "demo_cleaned_at")
+    private java.time.LocalDateTime demoCleanedAt;
+
+    /** Last cleanup failure, kept so the next run retries and support can see why. */
+    @Column(name = "demo_cleanup_error", length = 500)
+    private String demoCleanupError;
+
+    /** First-login choice on a real company: SETUP or DEMO (null = not asked yet). */
+    @Column(name = "onboarding_choice", length = 20)
+    private String onboardingChoice;
+
+    public Long getDemoParentCompanyId() { return demoParentCompanyId; }
+    public void setDemoParentCompanyId(Long demoParentCompanyId) { this.demoParentCompanyId = demoParentCompanyId; }
+    public java.time.LocalDateTime getDemoExpiresAt() { return demoExpiresAt; }
+    public void setDemoExpiresAt(java.time.LocalDateTime demoExpiresAt) { this.demoExpiresAt = demoExpiresAt; }
+    public java.time.LocalDateTime getDemoCleanedAt() { return demoCleanedAt; }
+    public void setDemoCleanedAt(java.time.LocalDateTime demoCleanedAt) { this.demoCleanedAt = demoCleanedAt; }
+    public String getDemoCleanupError() { return demoCleanupError; }
+    public void setDemoCleanupError(String demoCleanupError) { this.demoCleanupError = demoCleanupError; }
+    public String getOnboardingChoice() { return onboardingChoice; }
+    public void setOnboardingChoice(String onboardingChoice) { this.onboardingChoice = onboardingChoice; }
+
     public String getName() {
         return name;
     }

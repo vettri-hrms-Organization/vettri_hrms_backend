@@ -302,7 +302,8 @@ public class HomeService {
             int requiredDone = (int) steps.stream().filter(step -> step.required() && step.done()).count();
             int percent = requiredTotal == 0 ? 100 : Math.round(requiredDone * 100f / requiredTotal);
             return new Setup(done < steps.size(), done, steps.size(), steps,
-                    requiredDone, requiredTotal, percent, requiredDone < requiredTotal);
+                    // Demo workspaces arrive fully seeded, so they never ask for setup.
+                    requiredDone, requiredTotal, percent, requiredDone < requiredTotal && (company == null || !company.isDemo()));
         });
     }
 

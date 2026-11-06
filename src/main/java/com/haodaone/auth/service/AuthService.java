@@ -249,6 +249,22 @@ public class AuthService {
      * caller already proved both factors for the current session, so hand it a
      * fresh token pair instead of forcing a full (two-factor) sign-in again.
      */
+    /**
+     * Signs into a demo-workspace login on behalf of the person exploring it (see DemoSandboxService, which
+     * checks that the target belongs to a demo company the caller may open). Same success path as a
+     * password login: login history, audit entry and a normal token pair.
+     */
+    @Transactional
+    public LoginResponse issueDemoSession(User target, String openedBy, HttpServletRequest httpRequest) {
+        if (target.getCompany() == null || !target.getCompany().isDemo()) {
+            throw new AuthenticationFailedException("Only demo workspace logins can be opened this way");
+        }
+        if (!isAuthenticationEnabled(target)) {
+            throw new AuthenticationFailedException("This demo login is no longer active.");
+        }
+        return completeLogin(target, target.getUsername(), "Demo workspace sign-in opened by " + openedBy, httpRequest);
+    }
+
     @Transactional
     public LoginResponse issueSessionAfterPasswordChange(Long userId, HttpServletRequest httpRequest) {
         User user = userRepository.findById(userId)

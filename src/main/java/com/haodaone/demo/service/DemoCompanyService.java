@@ -2,6 +2,7 @@ package com.haodaone.demo.service;
 
 import com.haodaone.announcement.entity.Announcement;
 import com.haodaone.attendance.entity.AttendanceSession;
+import com.haodaone.attendance.entity.OfficeLocation;
 import com.haodaone.audit.service.AuditLogService;
 import com.haodaone.common.entity.BaseEntity;
 import com.haodaone.common.exception.BadRequestException;
@@ -174,19 +175,76 @@ public class DemoCompanyService {
                 .setParameter("name", name.toLowerCase(Locale.ROOT)).getSingleResult();
         if (clash > 0) throw new BadRequestException("A company with that name already exists");
 
+        Company company = newDemoCompany(name);
+        DemoCredentials credentials = seed(company, tag);
+        auditLogService.log("Company", company.getId(), "DEMO_CREATE", "Created demo workspace '" + name + "'");
+        return credentials;
+    }
+
+    private Company newDemoCompany(String name) {
         Company company = new Company();
         company.setName(name);
         company.setIndustry("Information Technology");
         company.setCompanySize("11-50");
         company.setCountry("India");
-        company.setLegalName("Sundaram Tech Solutions Private Limited");
+        company.setLegalName("Sundaram Tech Solutions Private Limited (sample)");
         company.setBillingAddress("4th Floor, Olympia Tech Park, Guindy, Chennai, Tamil Nadu 600032");
+        company.setBillingState("Tamil Nadu");
         company.setDemo(true);
         em.persist(company);
         em.flush();
-        DemoCredentials credentials = seed(company, tag);
-        auditLogService.log("Company", company.getId(), "DEMO_CREATE", "Created demo workspace '" + name + "'");
-        return credentials;
+        return company;
+    }
+
+    /**
+     * Customer self-service sandbox (see DemoSandboxService): a separate is_demo company linked to the
+     * customer's real company. The real company never receives demo rows.
+     */
+    @Transactional
+    public Company createSandbox(Company parent, LocalDateTime expiresAt) {
+        String name = parent.getName() + " - Demo " + generationTag().toUpperCase(Locale.ROOT);
+        Company company = newDemoCompany(name.length() > 255 ? name.substring(0, 255) : name);
+        company.setDemoParentCompanyId(parent.getId());
+        company.setDemoExpiresAt(expiresAt);
+        seed(company, generationTag());
+        auditLogService.log("Company", company.getId(), "DEMO_SANDBOX_CREATE",
+                "Created demo workspace for company " + parent.getId() + ", expires " + expiresAt);
+        return company;
+    }
+
+    /** Wipes and seeds an expired-or-cleaned sandbox again for a new demo period. */
+    @Transactional
+    public Company reseedSandbox(Long companyId, LocalDateTime expiresAt) {
+        Company company = requireSandbox(companyId);
+        wipe(companyId);
+        company = em.find(Company.class, companyId);
+        company.setDemoExpiresAt(expiresAt);
+        company.setDemoCleanedAt(null);
+        company.setDemoCleanupError(null);
+        seed(company, generationTag());
+        auditLogService.log("Company", companyId, "DEMO_SANDBOX_RESEED", "Seeded demo workspace again, expires " + expiresAt);
+        return company;
+    }
+
+    /** Removes a customer sandbox's records (soft delete, logins disabled). Refuses anything that is not a sandbox. */
+    @Transactional
+    public void cleanupSandbox(Long companyId) {
+        requireSandbox(companyId);
+        wipe(companyId);
+        Company company = em.find(Company.class, companyId);
+        company.setDemoCleanedAt(LocalDateTime.now(IST));
+        company.setDemoCleanupError(null);
+        auditLogService.log("Company", companyId, "DEMO_SANDBOX_CLEANUP", "Removed demo records after the demo period ended");
+    }
+
+    private Company requireSandbox(Long companyId) {
+        Company company = em.find(Company.class, companyId);
+        if (company == null || company.isDeleted()) throw new ResourceNotFoundException("Company not found");
+        // Two independent markers, so a real company can never be wiped by mistake.
+        if (!company.isDemo() || company.getDemoParentCompanyId() == null) {
+            throw new BadRequestException("Only customer demo workspaces can be cleaned up");
+        }
+        return company;
     }
 
     @Transactional
@@ -258,6 +316,7 @@ public class DemoCompanyService {
 
         Role adminRole = roles.findByName("COMPANY_ADMIN").orElseThrow(() -> new BadRequestException("Roles are not seeded"));
         Role managerRole = roles.findByName("MANAGER").orElse(null);
+        Role hrAdminRole = roles.findByName("HR_ADMIN").orElse(null);
         Role employeeRole = roles.findByName("EMPLOYEE").orElse(null);
 
         // --- org structure
@@ -292,6 +351,10 @@ public class DemoCompanyService {
             em.persist(team);
             teams.put(deptCode, team);
         }
+
+        // --- office locations (sample sites; coordinates are illustrative, not anyone's real location)
+        OfficeLocation headOffice = officeLocation(company, "Chennai HQ (sample)", "Olympia Tech Park, Guindy", "Chennai", "Tamil Nadu", 13.0108, 80.2206);
+        officeLocation(company, "Bengaluru Branch (sample)", "Outer Ring Road, Bellandur", "Bengaluru", "Karnataka", 12.9259, 77.6762);
 
         // --- employees (+ a login for each; only the admin's password is handed out)
         List<Employee> employees = new ArrayList<>();
@@ -338,6 +401,7 @@ public class DemoCompanyService {
                 Designation[] levels = designations.get(deptCode);
                 employee.setDesignation(i == 0 ? levels[0] : (i <= headcount / 3 ? levels[1] : levels[2]));
                 employee.setTeam(teams.get(deptCode));
+                employee.setOfficeLocationId(headOffice.getId());
                 employee.setAddress(CITIES[random.nextInt(CITIES.length)] + ", India");
                 employee.setBankName("HDFC Bank");
                 employee.setBankIfsc("HDFC0001234");
@@ -368,6 +432,8 @@ public class DemoCompanyService {
                     user.setEmail(employee.getEmail());
                     user.setPasswordHash(passwordEncoder.encode(randomPassword()));
                     if (i == 0 && managerRole != null) userRoles.add(managerRole);
+                    // The HR generalist holds the HR Admin login so the demo can be explored as HR.
+                    if ("HR".equals(deptCode) && i == 1 && hrAdminRole != null) userRoles.add(hrAdminRole);
                 }
                 if (employeeRole != null) userRoles.add(employeeRole);
                 user.setRoles(userRoles);
@@ -720,6 +786,7 @@ public class DemoCompanyService {
 
         Map<String, Long> counts = new LinkedHashMap<>();
         counts.put("departments", (long) departments.size());
+        counts.put("officeLocations", 2L);
         counts.put("employees", (long) employees.size());
         counts.put("attendanceSessions", attendanceRows);
         counts.put("leaveRequests", (long) leaveRequests);
@@ -767,6 +834,22 @@ public class DemoCompanyService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private OfficeLocation officeLocation(Company company, String name, String address, String city, String state,
+                                          double latitude, double longitude) {
+        OfficeLocation location = new OfficeLocation();
+        location.setCompany(company);
+        location.setName(name);
+        location.setAddress(address);
+        location.setCity(city);
+        location.setState(state);
+        location.setCountry("India");
+        location.setLatitude(latitude);
+        location.setLongitude(longitude);
+        location.setAllowedRadiusMeters(200);
+        em.persist(location);
+        return location;
+    }
 
     private void ensureSubscription(Company company, LocalDate today) {
         Long existing = em.createQuery("SELECT COUNT(s) FROM Subscription s WHERE s.company.id = :cid AND s.deleted = false", Long.class)
