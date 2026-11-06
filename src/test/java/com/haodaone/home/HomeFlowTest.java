@@ -107,8 +107,8 @@ class HomeFlowTest {
 
         mockMvc.perform(get("/api/home/setup").header("Authorization", hr))
                 .andExpect(jsonPath("$.visible").value(true))
-                .andExpect(jsonPath("$.total").value(10))
-                .andExpect(jsonPath("$.requiredTotal").value(6))
+                .andExpect(jsonPath("$.total").value(11))
+                .andExpect(jsonPath("$.requiredTotal").value(5))
                 .andExpect(jsonPath("$.locked").value(true))
                 .andExpect(jsonPath("$.steps[?(@.key == 'leave')].done").value(org.hamcrest.Matchers.contains(true)));
         mockMvc.perform(get("/api/home/setup").header("Authorization", me)).andExpect(jsonPath("$.visible").value(false));

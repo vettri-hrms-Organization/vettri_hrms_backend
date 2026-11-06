@@ -269,26 +269,32 @@ public class HomeService {
             LocalDate today = LocalDate.now(clock);
             var company = companies.findById(companyId).orElse(null);
             int people = (int) employees.findAllByCompany_IdAndDeletedFalseOrderByFirstNameAsc(companyId).stream().filter(this::employed).count();
+            boolean hasHrOrManager = users.findAllByCompanyIdAndDeletedFalse(companyId).stream()
+                    .filter(u -> u.isActive())
+                    .anyMatch(u -> u.getRoles().stream().anyMatch(r -> "HR_ADMIN".equals(r.getName()) || "MANAGER".equals(r.getName())));
+            // Required steps are the company admin's job; once they are done HR and managers take over the rest.
             List<SetupStep> steps = List.of(
-                    new SetupStep("company", "Company details", "Add your industry and GSTIN so letters and invoices are correct",
-                            company != null && (notBlank(company.getIndustry()) || notBlank(company.getGstin())), "/settings/organization", true),
+                    new SetupStep("company", "Company details", "Legal name, registered address and state for letters and tax invoices",
+                            company != null && notBlank(company.getLegalName()) && notBlank(company.getBillingAddress()) && notBlank(company.getBillingState()),
+                            "/billing", true),
                     new SetupStep("departments", "Departments", "Create the teams people belong to",
-                            !departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization", true),
+                            !departments.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization?tab=departments", true),
                     new SetupStep("designations", "Designations", "Add the job titles and roles people hold",
-                            !designations.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).isEmpty(), "/settings/organization", true),
+                            !designations.findAllByCompany_IdAndDeletedFalseOrderByTitleAsc(companyId).isEmpty(), "/settings/organization?tab=designations", true),
+                    new SetupStep("locations", "Company locations", "Add each office so check-in and payroll know where people work",
+                            !officeLocations.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization?tab=locations", true),
+                    new SetupStep("team", "Add HR and managers", "Give your HR team and managers their own logins and roles",
+                            hasHrOrManager, "/settings/users", true),
                     new SetupStep("leave", "Leave policy", "Set leave types and how many days people get",
-                            !leaveTypes.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/leave", true),
+                            !leaveTypes.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/leave", false),
                     new SetupStep("holidays", "Holiday calendar", "Add this year's holidays",
-                            !holidays.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, today.withDayOfYear(1), today.withMonth(12).withDayOfMonth(31)).isEmpty(), "/settings/leave", true),
-                    new SetupStep("attendance", "Attendance", "Connect a biometric machine or add an office location for phone check-in",
-                            !biometricDevices.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId).isEmpty()
-                                    || !officeLocations.findAllByCompany_IdAndDeletedFalseOrderByNameAsc(companyId).isEmpty(), "/settings/organization", true),
+                            !holidays.findAllByCompany_IdAndDateBetweenAndDeletedFalse(companyId, today.withDayOfYear(1), today.withMonth(12).withDayOfMonth(31)).isEmpty(), "/settings/leave", false),
+                    new SetupStep("attendance", "Biometric devices", "Connect a fingerprint or face machine if you use one",
+                            !biometricDevices.findAllByCompany_IdAndDeletedFalseOrderByDeviceNameAsc(companyId).isEmpty(), "/attendance/devices", false),
                     new SetupStep("employees", "Add your employees", people > 1 ? people + " people added" : "Import everyone at once from Excel",
                             people > 1, "/employees/import", false),
                     new SetupStep("salary", "Salary structures", "Set up pay for your employees",
                             salaryStructures.countActive(companyId) > 0, "/salary/employees", false),
-                    new SetupStep("team", "Invite your team", "Give managers and HR their own logins",
-                            users.findAllByCompanyIdAndDeletedFalse(companyId).size() > 1, "/settings/users", false),
                     new SetupStep("payroll", "Run your first payroll", "Generate payslips for the month",
                             !payrollRuns.findAllByCompany_IdAndDeletedFalseOrderByPeriodYearDescPeriodMonthDesc(companyId).isEmpty(), "/salary/payroll-processing", false));
             int done = (int) steps.stream().filter(SetupStep::done).count();
